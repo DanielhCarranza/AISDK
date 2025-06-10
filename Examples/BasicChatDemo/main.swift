@@ -1,0 +1,640 @@
+//
+//  main.swift
+//  BasicChatDemo
+//
+//  Simple CLI demo for testing AISDK chat functionality
+//
+
+import Foundation
+import AISDK
+
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
+@main
+struct BasicChatDemo {
+    
+    static func main() async {
+        print("🤖 AISDK Basic Chat Demo")
+        print("=" * 40)
+        
+        // Try to load .env file
+        loadEnvironmentVariables()
+        
+        // Check for environment variables
+        guard let openAIKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !openAIKey.isEmpty else {
+            print("❌ Please set OPENAI_API_KEY environment variable")
+            print("   Option 1: Create a .env file in the root directory with:")
+            print("   OPENAI_API_KEY=your_key_here")
+            print("   ")
+            print("   Option 2: Export environment variable:")
+            print("   export OPENAI_API_KEY=your_key_here")
+            print("   ")
+            print("   Option 3: Run with inline environment variable:")
+            print("   OPENAI_API_KEY=your_key_here swift run BasicChatDemo")
+            return
+        }
+        
+        // Initialize providers
+        let openAIProvider = OpenAIProvider(apiKey: openAIKey)
+        
+        // Check for Claude key (optional)
+        let claudeProvider: ClaudeProvider?
+        if let claudeKey = ProcessInfo.processInfo.environment["CLAUDE_API_KEY"],
+           !claudeKey.isEmpty {
+            claudeProvider = ClaudeProvider(apiKey: claudeKey)
+        } else {
+            claudeProvider = nil
+            print("ℹ️  Claude API key not found - only OpenAI tests will run")
+        }
+        
+        print("\n🧪 Starting Tests...")
+        
+        // Test 1: Basic Chat Completion
+        await testBasicChat(provider: openAIProvider, providerName: "OpenAI")
+        
+        if let claude = claudeProvider {
+            await testBasicChat(provider: claude, providerName: "Claude")
+        }
+        
+        // Test 2: Streaming Chat
+        await testStreamingChat(provider: openAIProvider, providerName: "OpenAI")
+        
+        // Test 3: Multimodal Tests (Images)
+        await testImageURL(provider: openAIProvider, providerName: "OpenAI")
+        await testImageBase64(provider: openAIProvider, providerName: "OpenAI")
+        await testMultipleImages(provider: openAIProvider, providerName: "OpenAI")
+        
+        // Test 4: JSON & Structured Output Tests
+        await testJSONMode(provider: openAIProvider, providerName: "OpenAI")
+        await testStructuredOutput(provider: openAIProvider, providerName: "OpenAI")
+        await testGenerateObjectMethod(provider: openAIProvider, providerName: "OpenAI")
+        
+        // Test 5: Interactive Chat
+        await interactiveChat(provider: openAIProvider)
+        
+        print("\n✅ Demo completed!")
+    }
+}
+
+// MARK: - Environment Loading
+
+func loadEnvironmentVariables() {
+    // Try to load from .env file
+    let envPath = ".env"
+    if let envContent = try? String(contentsOfFile: envPath) {
+        for line in envContent.components(separatedBy: .newlines) {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            if !trimmedLine.isEmpty && !trimmedLine.hasPrefix("#") {
+                let parts = trimmedLine.components(separatedBy: "=")
+                if parts.count >= 2 {
+                    let key = parts[0].trimmingCharacters(in: .whitespaces)
+                    let value = parts[1...].joined(separator: "=").trimmingCharacters(in: .whitespaces)
+                    setenv(key, value, 0) // Don't overwrite existing env vars
+                }
+            }
+        }
+        print("📄 Loaded environment variables from .env file")
+    }
+}
+
+// MARK: - Test Functions
+
+func testBasicChat(provider: LLM, providerName: String) async {
+    print("\n📝 Testing Basic Chat with \(providerName)...")
+    
+    do {
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o-mini" : "claude-3-haiku-20240307",
+            messages: [
+                .system(content: .text("You are a helpful assistant. Keep responses brief.")),
+                .user(content: .text("What is the capital of France? Answer in one sentence."))
+            ],
+            maxTokens: 50
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let content = response.choices.first?.message.content {
+            print("✅ \(providerName) Response: \(content)")
+            print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        } else {
+            print("❌ No content in response")
+        }
+        
+    } catch {
+        print("❌ \(providerName) Error: \(error)")
+    }
+}
+
+func testStreamingChat(provider: LLM, providerName: String) async {
+    print("\n🔄 Testing Streaming Chat with \(providerName)...")
+    
+    do {
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o-mini" : "claude-3-haiku-20240307",
+            messages: [
+                .user(content: .text("Count from 1 to 10, one number per response token."))
+            ],
+            maxTokens: 50,
+            stream: true
+        )
+        
+        print("📡 Streaming response: ", terminator: "")
+        
+        for try await chunk in try await provider.sendChatCompletionStream(request: request) {
+            if let content = chunk.choices.first?.delta.content {
+                print(content, terminator: "")
+                fflush(stdout)
+            }
+        }
+        
+        print("\n✅ Streaming completed")
+        
+    } catch {
+        print("❌ \(providerName) Streaming Error: \(error)")
+    }
+}
+
+func interactiveChat(provider: LLM) async {
+    print("\n💬 Interactive Chat Mode (type 'quit' to exit)")
+    print("   Using OpenAI provider")
+    
+    var conversationHistory: [Message] = [
+        .system(content: .text("You are a helpful assistant."))
+    ]
+    
+    while true {
+        print("\n👤 You: ", terminator: "")
+        
+        guard let input = readLine(), !input.isEmpty else {
+            continue
+        }
+        
+        if input.lowercased() == "quit" {
+            break
+        }
+        
+        // Add user message to conversation
+        conversationHistory.append(.user(content: .text(input)))
+        
+        do {
+            print("🤖 Assistant: ", terminator: "")
+            
+            // Use streaming for interactive feel
+            let streamRequest = ChatCompletionRequest(
+                model: "gpt-4o-mini",
+                messages: conversationHistory,
+                maxTokens: 150,
+                stream: true
+            )
+            
+            var assistantResponse = ""
+            
+            for try await chunk in try await provider.sendChatCompletionStream(request: streamRequest) {
+                if let content = chunk.choices.first?.delta.content {
+                    print(content, terminator: "")
+                    assistantResponse += content
+                    fflush(stdout)
+                }
+            }
+            
+            print() // New line after response
+            
+            // Add assistant response to conversation history
+            conversationHistory.append(.assistant(content: .text(assistantResponse)))
+            
+        } catch {
+            print("❌ Error: \(error)")
+        }
+    }
+    
+    print("👋 Goodbye!")
+}
+
+// MARK: - Multimodal Test Functions (Phase 1)
+
+func testImageURL(provider: LLM, providerName: String) async {
+    print("\n🖼️ Testing Image URL + Text with \(providerName)...")
+    
+    do {
+        let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+        
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .user(content: .parts([
+                    .text("What do you see in this image? Describe it in detail."),
+                    .imageURL(.url(URL(string: imageURL)!))
+                ]))
+            ],
+            maxTokens: 200
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let content = response.choices.first?.message.content {
+            print("✅ \(providerName) Image Analysis:")
+            print("   \(content)")
+            print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        } else {
+            print("❌ No content in response")
+        }
+        
+    } catch {
+        print("❌ \(providerName) Image URL Error: \(error)")
+    }
+}
+
+func testImageBase64(provider: LLM, providerName: String) async {
+    print("\n📸 Testing Base64 Image + Text with \(providerName)...")
+    
+    do {
+        // Create a simple test image programmatically
+        guard let testImageData = createTestImage() else {
+            print("❌ Failed to create test image")
+            return
+        }
+        
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .user(content: .parts([
+                    .text("This is a programmatically generated test image. What colors and shapes do you see?"),
+                    .imageURL(.base64(testImageData))
+                ]))
+            ],
+            maxTokens: 150
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let content = response.choices.first?.message.content {
+            print("✅ \(providerName) Base64 Image Analysis:")
+            print("   \(content)")
+            print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        } else {
+            print("❌ No content in response")
+        }
+        
+    } catch {
+        print("❌ \(providerName) Base64 Image Error: \(error)")
+    }
+}
+
+func testMultipleImages(provider: LLM, providerName: String) async {
+    print("\n🖼️🖼️ Testing Multiple Images with \(providerName)...")
+    
+    do {
+        let imageURL1 = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Cat_poster_1.jpg/1200px-Cat_poster_1.jpg"
+        let imageURL2 = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Golden_tabby_and_white_kitten_n01.jpg/1200px-Golden_tabby_and_white_kitten_n01.jpg"
+        
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .user(content: .parts([
+                    .text("Compare these two images. What are the similarities and differences?"),
+                    .imageURL(.url(URL(string: imageURL1)!)),
+                    .imageURL(.url(URL(string: imageURL2)!))
+                ]))
+            ],
+            maxTokens: 250
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let content = response.choices.first?.message.content {
+            print("✅ \(providerName) Multiple Images Analysis:")
+            print("   \(content)")
+            print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        } else {
+            print("❌ No content in response")
+        }
+        
+    } catch {
+        print("❌ \(providerName) Multiple Images Error: \(error)")
+    }
+}
+
+// MARK: - JSON & Structured Output Test Functions (Phase 2)
+
+func testJSONMode(provider: LLM, providerName: String) async {
+    print("\n📝 Testing JSON Mode with \(providerName)...")
+    
+    do {
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .system(content: .text("You are a helpful assistant that returns valid JSON.")),
+                .user(content: .text("Create a list of 3 programming languages with their main characteristics. Return as JSON with 'languages' array."))
+            ],
+            maxTokens: 300,
+            responseFormat: .jsonObject
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let content = response.choices.first?.message.content {
+            print("✅ \(providerName) JSON Response:")
+            
+            // Try to parse and format the JSON
+            if let jsonData = content.data(using: .utf8),
+               let jsonObject = try? JSONSerialization.jsonObject(with: jsonData, options: []),
+               let prettyData = try? JSONSerialization.data(withJSONObject: jsonObject, options: .prettyPrinted),
+               let prettyString = String(data: prettyData, encoding: .utf8) {
+                print("   \(prettyString)")
+            } else {
+                print("   \(content)")
+            }
+            
+            print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        } else {
+            print("❌ No content in response")
+        }
+        
+    } catch {
+        print("❌ \(providerName) JSON Mode Error: \(error)")
+    }
+}
+
+func testStructuredOutput(provider: LLM, providerName: String) async {
+    print("\n🏗️ Testing Structured Output with \(providerName)...")
+    
+    do {
+        // Define a simple structured model
+        struct Book: Codable {
+            let title: String
+            let author: String
+            let year: Int
+            let genre: String
+        }
+        
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .system(content: .text("Return a JSON object with the exact structure: {\"title\": string, \"author\": string, \"year\": number, \"genre\": string}")),
+                .user(content: .text("Recommend a classic science fiction book."))
+            ],
+            maxTokens: 150,
+            responseFormat: .jsonObject
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let content = response.choices.first?.message.content {
+            print("✅ \(providerName) Structured Response:")
+            
+            // Try to parse into our Book struct
+            if let jsonData = content.data(using: .utf8) {
+                do {
+                    let book = try JSONDecoder().decode(Book.self, from: jsonData)
+                    print("   📚 Title: \(book.title)")
+                    print("   ✍️  Author: \(book.author)")
+                    print("   📅 Year: \(book.year)")
+                    print("   🏷️  Genre: \(book.genre)")
+                } catch {
+                    print("   ⚠️  JSON parsing failed: \(error)")
+                    print("   Raw: \(content)")
+                }
+            }
+            
+            print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        } else {
+            print("❌ No content in response")
+        }
+        
+    } catch {
+        print("❌ \(providerName) Structured Output Error: \(error)")
+    }
+}
+
+func testGenerateObjectMethod(provider: LLM, providerName: String) async {
+    print("\n🏗️ Testing Generate Object Method with \(providerName)...")
+    
+    do {
+        // Define schema models using JSONSchemaModel and @Field (like the fruit example)
+        struct Product: JSONSchemaModel {
+            @Field(
+                description: "The name of the product",
+                validation: [
+                    "type": .string("string"),
+                    "minLength": .integer(1),
+                    "maxLength": .integer(100)
+                ]
+            )
+            var name: String = ""
+            
+            @Field(
+                description: "The price of the product in USD",
+                validation: [
+                    "type": .string("number"),
+                    "minimum": .number(0.01),
+                    "maximum": .number(10000.0)
+                ]
+            )
+            var price: Double = 0.0
+            
+            @Field(
+                description: "The category of the product",
+                validation: [
+                    "type": .string("string"),
+                    "enum": .array([.string("Electronics"), .string("Clothing"), .string("Books"), .string("Home")])
+                ]
+            )
+            var category: String = ""
+            
+            @Field(
+                description: "Whether the product is in stock",
+                validation: [
+                    "type": .string("boolean")
+                ]
+            )
+            var inStock: Bool = false
+            
+            init() {}
+        }
+        
+        struct UserPreferences: JSONSchemaModel {
+            @Field(
+                description: "The UI theme preference",
+                validation: [
+                    "type": .string("string"),
+                    "enum": .array([.string("light"), .string("dark"), .string("auto")])
+                ]
+            )
+            var theme: String = ""
+            
+            @Field(
+                description: "Whether notifications are enabled",
+                validation: [
+                    "type": .string("boolean")
+                ]
+            )
+            var notifications: Bool = false
+            
+            init() {}
+        }
+        
+        struct User: JSONSchemaModel {
+            @Field(
+                description: "The user's unique identifier",
+                validation: [
+                    "type": .string("integer"),
+                    "minimum": .integer(1),
+                    "maximum": .integer(999999)
+                ]
+            )
+            var id: Int = 0
+            
+            @Field(
+                description: "The user's full name",
+                validation: [
+                    "type": .string("string"),
+                    "minLength": .integer(1),
+                    "maxLength": .integer(50)
+                ]
+            )
+            var name: String = ""
+            
+            @Field(
+                description: "The user's email address",
+                validation: [
+                    "type": .string("string"),
+                    "format": .string("email")
+                ]
+            )
+            var email: String = ""
+            
+            @Field(
+                description: "The user's preferences object",
+                validation: [
+                    "type": .string("object")
+                ]
+            )
+            var preferences: UserPreferences = UserPreferences()
+            
+            init() {}
+        }
+        
+        // Test 1: Product generation using JSON Schema
+        let productRequest = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .system(content: .text("Return valid JSON following the schema")),
+                .user(content: .text("Generate a laptop product with realistic data"))
+            ],
+            responseFormat: .jsonSchema(
+                name: "product",
+                description: "A product with name, price, category, and stock status",
+                schemaBuilder: Product.schema()
+                    .title("Product")
+                    .description("A product object with all required fields"),
+                strict: true
+            )
+        )
+        
+        // Use the generateObject method with JSON Schema
+        let product: Product = try await provider.generateObject(request: productRequest)
+        
+        print("✅ \(providerName) Product Object Generated:")
+        print("   📦 Name: \(product.name)")
+        print("   💰 Price: $\(product.price)")
+        print("   🏷️  Category: \(product.category)")
+        print("   📊 In Stock: \(product.inStock)")
+        
+        // Test 2: User generation using JSON Schema with nested object
+        let userRequest = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .system(content: .text("Return valid JSON following the schema")),
+                .user(content: .text("Generate a user profile for a software developer"))
+            ],
+            responseFormat: .jsonSchema(
+                name: "user",
+                description: "A user profile with preferences",
+                schemaBuilder: User.schema()
+                    .title("User Profile")
+                    .description("A complete user profile with nested preferences"),
+                strict: true
+            )
+        )
+        
+        // Use the generateObject method with complex nested schema
+        let user: User = try await provider.generateObject(request: userRequest)
+        
+        print("✅ \(providerName) User Object Generated:")
+        print("   🆔 ID: \(user.id)")
+        print("   👤 Name: \(user.name)")
+        print("   📧 Email: \(user.email)")
+        print("   🎨 Theme: \(user.preferences.theme)")
+        print("   🔔 Notifications: \(user.preferences.notifications)")
+        
+    } catch {
+        print("❌ \(providerName) Generate Object Error: \(error)")
+    }
+}
+
+// MARK: - Helper Functions
+
+func createTestImage() -> Data? {
+    #if canImport(UIKit)
+    // iOS/tvOS implementation
+    let size = CGSize(width: 100, height: 100)
+    let renderer = UIGraphicsImageRenderer(size: size)
+    
+    let image = renderer.image { context in
+        // Fill with blue background
+        UIColor.blue.setFill()
+        context.fill(CGRect(origin: .zero, size: size))
+        
+        // Add a red circle
+        UIColor.red.setFill()
+        let circleRect = CGRect(x: 25, y: 25, width: 50, height: 50)
+        context.fillEllipse(in: circleRect)
+    }
+    
+    return image.jpegData(compressionQuality: 0.8)
+    
+    #elseif canImport(AppKit)
+    // macOS implementation
+    let size = NSSize(width: 100, height: 100)
+    let image = NSImage(size: size)
+    
+    image.lockFocus()
+    defer { image.unlockFocus() }
+    
+    // Fill with blue background
+    NSColor.blue.setFill()
+    NSRect(origin: .zero, size: size).fill()
+    
+    // Add a red circle
+    NSColor.red.setFill()
+    let circleRect = NSRect(x: 25, y: 25, width: 50, height: 50)
+    NSBezierPath(ovalIn: circleRect).fill()
+    
+    // Convert to data
+    guard let tiffData = image.tiffRepresentation,
+          let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+        return nil
+    }
+    
+    return bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
+    
+    #else
+    // Fallback for other platforms - return nil to skip base64 test
+    print("   ⚠️  Image generation not supported on this platform")
+    return nil
+    #endif
+}
+
+// MARK: - Helper Extensions
+
+extension String {
+    static func *(left: String, right: Int) -> String {
+        return String(repeating: left, count: right)
+    }
+} 
