@@ -282,4 +282,47 @@ final class BasicChatTests: XCTestCase {
             wait(for: [expectation], timeout: 1.0)
         }
     }
+    
+    // MARK: - Integration Tests with Real OpenAI Provider
+    
+    func testOpenAIIntegration() async throws {
+        // Skip if no API key is available
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY environment variable is required for integration tests")
+        }
+        
+        // Get model from environment variable or use default
+        let model = ProcessInfo.processInfo.environment["TEST_MODEL"] ?? "gpt-4o"
+        
+        print("🧠 Testing OpenAI with model: \(model)")
+        
+        // Initialize real OpenAI provider
+        let provider = OpenAIProvider(apiKey: apiKey)
+        
+        // Create request
+        let request = ChatCompletionRequest(
+            model: model,
+            messages: [
+                .system(content: .text("You are a helpful assistant. Think through your response carefully.")),
+                .user(content: .text("What is the capital of France? Explain your reasoning."))
+            ],
+            maxTokens: 200
+        )
+        
+        // When
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        // Then
+        XCTAssertFalse(response.choices.isEmpty, "Response should have at least one choice")
+        XCTAssertNotNil(response.choices.first?.message.content, "Response should have content")
+        XCTAssertNotNil(response.usage, "Response should include usage information")
+        
+        let content = response.choices.first?.message.content ?? ""
+        XCTAssertTrue(content.contains("Paris"), "Response should mention Paris")
+        
+        print("✅ Response: \(content)")
+        print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        print("🏷️  Returned model: \(response.model)")
+    }
 } 

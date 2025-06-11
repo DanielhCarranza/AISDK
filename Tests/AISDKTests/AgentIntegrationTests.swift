@@ -7,6 +7,33 @@ final class AgentIntegrationTests: XCTestCase {
     
     // MARK: - Test Setup
     
+    // Helper function to get test model from environment variable
+    private func getTestModel() -> LLMModel {
+        let modelName = ProcessInfo.processInfo.environment["TEST_MODEL"] ?? "gpt-4o"
+        
+        switch modelName {
+        case "o4-mini":
+            return AgenticModels.o4mini
+        case "gpt-4o":
+            return AgenticModels.gpt4
+        case "gpt-4o-mini":
+            return LLMModel(
+                name: "gpt-4o-mini",
+                modalities: [.text, .vision],
+                apiKey: ConfigManager.shared["OPENAI_API_KEY"],
+                mode: .parallelTools
+            )
+        default:
+            // Custom model
+            return LLMModel(
+                name: modelName,
+                modalities: [.text, .vision],
+                apiKey: ConfigManager.shared["OPENAI_API_KEY"],
+                mode: .parallelTools
+            )
+        }
+    }
+    
     override func setUpWithError() throws {
         try super.setUpWithError()
         
@@ -23,13 +50,16 @@ final class AgentIntegrationTests: XCTestCase {
             TestFailingTool.self,
             TestCalculatorTool.self
         ])
+        
+        let testModel = getTestModel()
+        print("🧪 Running Agent tests with model: \(testModel.name)")
     }
     
     // MARK: - Basic Agent Tests
     
     func testAgentBasicSend() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [],
             instructions: "You are a helpful assistant. Keep responses brief."
         )
@@ -44,7 +74,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentBasicStreaming() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [],
             instructions: "You are a helpful assistant. Count from 1 to 5."
         )
@@ -69,7 +99,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentWithImageURL() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [],
             instructions: "You are a helpful assistant that can analyze images."
         )
@@ -107,7 +137,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentConversationFlow() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [],
             instructions: "You are a helpful assistant with good memory."
         )
@@ -130,7 +160,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentWithWeatherTool() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful weather assistant. Use the weather tool when asked about weather."
         )
@@ -155,7 +185,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentStreamingWithTool() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful weather assistant."
         )
@@ -187,7 +217,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentMultimodalWithTool() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful assistant that can analyze images and provide weather information."
         )
@@ -230,7 +260,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentToolErrorHandling() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestFailingTool.self],
             instructions: "Use the failing tool when asked to do something that would fail."
         )
@@ -271,7 +301,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentUnknownToolError() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [], // No tools registered
             instructions: "You are a helpful assistant."
         )
@@ -295,7 +325,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentRequiredToolChoice() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestWeatherTool.self, TestCalculatorTool.self],
             instructions: "You are a helpful assistant with access to weather and calculator tools."
         )
@@ -324,7 +354,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentBasicCallbacks() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful weather assistant."
         )
@@ -350,7 +380,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentCallbackCancellation() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [],
             instructions: "You are a helpful assistant."
         )
@@ -374,7 +404,7 @@ final class AgentIntegrationTests: XCTestCase {
     
     func testAgentMetadataTracking() async throws {
         let agent = try Agent(
-            model: AgenticModels.gpt4,
+            model: getTestModel(),
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful weather assistant."
         )

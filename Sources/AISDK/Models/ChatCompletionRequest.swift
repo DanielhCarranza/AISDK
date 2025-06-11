@@ -82,8 +82,8 @@ public struct ChatCompletionRequest: Encodable {
         self.topLogprobs = topLogprobs
         
         // Handle model-specific parameter adjustments
-        if model.lowercased() == "o3-mini" {
-            // For o3-mini, use maxCompletionTokens instead of maxTokens
+        if model.lowercased() == "o4-mini" {
+            // For o4-mini, use maxCompletionTokens instead of maxTokens
             self.maxTokens = nil
             self.maxCompletionTokens = maxTokens ?? maxCompletionTokens
             

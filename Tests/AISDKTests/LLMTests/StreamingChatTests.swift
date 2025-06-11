@@ -367,4 +367,71 @@ final class StreamingChatTests: XCTestCase {
         XCTAssertGreaterThan(stream2Chunks.count, 0)
         XCTAssertEqual(mockProvider.requestCount, 2)
     }
+    
+    // MARK: - Integration Tests with Real OpenAI Provider
+    
+    func testOpenAIIntegration() async throws {
+        // Skip if no API key is available
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY environment variable is required for integration tests")
+        }
+        
+        // Get model from environment variable or use default
+        let model = ProcessInfo.processInfo.environment["TEST_MODEL"] ?? "gpt-4o"
+        
+        print("🧠 Testing OpenAI streaming with model: \(model)")
+        
+        // Initialize real OpenAI provider
+        let provider = OpenAIProvider(apiKey: apiKey)
+        
+        // Create request
+        let request = ChatCompletionRequest(
+            model: model,
+            messages: [
+                .system(content: .text("You are a helpful assistant. Think step by step.")),
+                .user(content: .text("Count from 1 to 5 and explain each number."))
+            ],
+            maxTokens: 300,
+            stream: true
+        )
+        
+        var receivedChunks: [ChatCompletionChunk] = []
+        var fullContent = ""
+        var hasAssistantRole = false
+        var hasFinishReason = false
+        
+        // When
+        for try await chunk in try await provider.sendChatCompletionStream(request: request) {
+            receivedChunks.append(chunk)
+            
+            if let choice = chunk.choices.first {
+                if let content = choice.delta.content {
+                    fullContent += content
+                    print(content, terminator: "")
+                }
+                
+                if choice.delta.role == "assistant" {
+                    hasAssistantRole = true
+                }
+                
+                if choice.finishReason != nil {
+                    hasFinishReason = true
+                }
+            }
+        }
+        
+        print("\n") // New line after streaming
+        
+        // Then
+        XCTAssertGreaterThan(receivedChunks.count, 0, "Should receive at least one chunk")
+        XCTAssertFalse(fullContent.isEmpty, "Should receive content")
+        XCTAssertTrue(hasAssistantRole, "Should receive assistant role")
+        XCTAssertTrue(hasFinishReason, "Should receive finish reason")
+        
+        print("✅ Streaming completed")
+        print("📊 Received \(receivedChunks.count) chunks")
+        print("📝 Full content length: \(fullContent.count) characters")
+        print("🏷️  Returned model: \(receivedChunks.first?.model ?? "N/A")")
+    }
 } 

@@ -8,6 +8,12 @@
 import XCTest
 @testable import AISDK
 
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
 final class MultimodalTests: XCTestCase {
     
     var mockProvider: MockLLMProvider!
@@ -249,5 +255,184 @@ final class MultimodalTests: XCTestCase {
                 XCTAssertTrue(error is LLMError, "Error should be LLMError type for \(scenario)")
             }
         }
+    }
+    
+    // MARK: - Integration Tests with Real OpenAI Provider
+    
+    func testOpenAIImageURL() async throws {
+        // Skip if no API key is available
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY environment variable is required for integration tests")
+        }
+        
+        // Get model from environment variable or use default
+        let model = ProcessInfo.processInfo.environment["TEST_MODEL"] ?? "gpt-4o"
+        
+        print("🖼️ Testing OpenAI image URL analysis with model: \(model)")
+        
+        // Initialize real OpenAI provider
+        let provider = OpenAIProvider(apiKey: apiKey)
+        
+        // Use a simple nature image (same as main.swift)
+        let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+        
+        let request = ChatCompletionRequest(
+            model: model,
+            messages: [
+                .user(content: .parts([
+                    .text("Describe this nature scene briefly. What do you see?"),
+                    .imageURL(.url(URL(string: imageURL)!))
+                ]))
+            ],
+            maxTokens: 150
+        )
+        
+        // When
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        // Then
+        XCTAssertFalse(response.choices.isEmpty)
+        XCTAssertNotNil(response.choices.first?.message.content)
+        
+        let content = response.choices.first?.message.content ?? ""
+        XCTAssertFalse(content.isEmpty)
+        
+        // Should mention nature elements
+        let lowerContent = content.lowercased()
+        XCTAssertTrue(
+            lowerContent.contains("water") || 
+            lowerContent.contains("wood") || 
+            lowerContent.contains("boardwalk") ||
+            lowerContent.contains("path") ||
+            lowerContent.contains("nature") ||
+            lowerContent.contains("green"),
+            "Response should describe the boardwalk nature scene"
+        )
+        
+        print("✅ Image URL analysis: \(content)")
+        print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        print("🏷️  Returned model: \(response.model)")
+    }
+    
+    func testOpenAIImageBase64() async throws {
+        // Skip if no API key is available
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY environment variable is required for integration tests")
+        }
+        
+        // Get model from environment variable or use default
+        let model = ProcessInfo.processInfo.environment["TEST_MODEL"] ?? "gpt-4o"
+        
+        print("🖼️ Testing OpenAI base64 image analysis with model: \(model)")
+        
+        // Initialize real OpenAI provider
+        let provider = OpenAIProvider(apiKey: apiKey)
+        
+        // Load image from Tests/Assets/baltolo.webp
+        guard let testImageData = loadTestImage() else {
+            throw XCTSkip("Could not load test image from Tests/Assets/baltolo.webp")
+        }
+        
+        let request = ChatCompletionRequest(
+            model: model,
+            messages: [
+                .user(content: .parts([
+                    .text("Describe what you see in this image. What is the main subject?"),
+                    .imageURL(.base64(testImageData))
+                ]))
+            ],
+            maxTokens: 150
+        )
+        
+        // When
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        // Then
+        XCTAssertFalse(response.choices.isEmpty)
+        XCTAssertNotNil(response.choices.first?.message.content)
+        
+        let content = response.choices.first?.message.content ?? ""
+        XCTAssertFalse(content.isEmpty)
+        
+        print("✅ Base64 image analysis: \(content)")
+        print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        print("🏷️  Returned model: \(response.model)")
+    }
+    
+    func testOpenAIMultipleImages() async throws {
+        // Skip if no API key is available
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY environment variable is required for integration tests")
+        }
+        
+        // Get model from environment variable or use default
+        let model = ProcessInfo.processInfo.environment["TEST_MODEL"] ?? "gpt-4o"
+        
+        print("🖼️🖼️ Testing OpenAI multiple images with model: \(model)")
+        
+        // Initialize real OpenAI provider
+        let provider = OpenAIProvider(apiKey: apiKey)
+        
+        // Use the same image URLs as in main.swift
+        let imageURL1 = "https://www.wiggles.in/cdn/shop/articles/shutterstock_245621623.jpg?v=1706863987"
+        let imageURL2 = "https://media1.popsugar-assets.com/files/thumbor/gFMaLiceRbGWkZUWwl2Xhkft6eU=/0x159:2003x2162/fit-in/2011x2514/filters:format_auto():quality(85):upscale()/2019/08/07/875/n/24155406/9ffb00255d4b2e079b0b23.01360060_.jpg"
+        
+        let request = ChatCompletionRequest(
+            model: model,
+            messages: [
+                .user(content: .parts([
+                    .text("Compare these two images. What are the similarities and differences?"),
+                    .imageURL(.url(URL(string: imageURL1)!)),
+                    .imageURL(.url(URL(string: imageURL2)!))
+                ]))
+            ]
+        )
+        
+        // When
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        // Then
+        XCTAssertFalse(response.choices.isEmpty)
+        XCTAssertNotNil(response.choices.first?.message.content)
+        
+        let content = response.choices.first?.message.content ?? ""
+        XCTAssertFalse(content.isEmpty)
+        
+        // Should mention comparison aspects
+        let lowerContent = content.lowercased()
+        XCTAssertTrue(
+            lowerContent.contains("similar") || 
+            lowerContent.contains("different") || 
+            lowerContent.contains("both") ||
+            lowerContent.contains("compare") ||
+            lowerContent.contains("two"),
+            "Response should contain comparison language"
+        )
+        
+        print("✅ Multiple images analysis: \(content)")
+        print("📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        print("🏷️  Returned model: \(response.model)")
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func loadTestImage() -> Data? {
+        // Load image from Tests/Assets/baltolo.webp
+        let testBundle = Bundle(for: type(of: self))
+        
+        // Try to find the file in the test bundle
+        if let path = testBundle.path(forResource: "baltolo", ofType: "webp"),
+           let data = FileManager.default.contents(atPath: path) {
+            return data
+        }
+        
+        // Fallback: try relative path from test working directory
+        let currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let imageURL = currentDirectoryURL.appendingPathComponent("Tests/Assets/baltolo.webp")
+        
+        return try? Data(contentsOf: imageURL)
     }
 } 
