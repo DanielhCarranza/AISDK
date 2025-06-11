@@ -323,9 +323,20 @@ public protocol ParameterSettable {
 // Make Parameter conform to ParameterSettable
 extension Parameter: ParameterSettable {
     public func setValue(_ value: Any) throws {
+        // Check enum validation first if it exists
+        if let validation = validation,
+           let enumValues = validation["enum"] as? [String],
+           let stringValue = value as? String {
+            if !enumValues.contains(stringValue) {
+                throw ToolError.invalidParameters(
+                    "Invalid enum value '\(stringValue)'. Expected one of: \(enumValues.joined(separator: ", "))"
+                )
+            }
+        }
+        
         // Attempt to cast `value` to the property's actual type
         guard let typedValue = value as? Value else {
-            throw AgentError.invalidParameterType(
+            throw ToolError.invalidParameters(
                 "Expected type \(Value.self), got \(type(of: value))"
             )
         }

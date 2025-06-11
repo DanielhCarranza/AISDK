@@ -74,7 +74,12 @@ struct BasicChatDemo {
         await testStructuredOutput(provider: openAIProvider, providerName: "OpenAI")
         await testGenerateObjectMethod(provider: openAIProvider, providerName: "OpenAI")
         
-        // Test 5: Interactive Chat
+        // Test 5: Tool Calling Tests
+        await testDirectToolCalls()
+        await testToolWithLLM(provider: openAIProvider, providerName: "OpenAI")
+        await testAgentWithTools(provider: openAIProvider)
+        
+        // Test 6: Interactive Chat
         await interactiveChat(provider: openAIProvider)
         
         print("\n✅ Demo completed!")
@@ -290,8 +295,8 @@ func testMultipleImages(provider: LLM, providerName: String) async {
     print("\n🖼️🖼️ Testing Multiple Images with \(providerName)...")
     
     do {
-        let imageURL1 = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Cat_poster_1.jpg/1200px-Cat_poster_1.jpg"
-        let imageURL2 = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Golden_tabby_and_white_kitten_n01.jpg/1200px-Golden_tabby_and_white_kitten_n01.jpg"
+        let imageURL1 = "https://www.wiggles.in/cdn/shop/articles/shutterstock_245621623.jpg?v=1706863987"
+        let imageURL2 = "https://media1.popsugar-assets.com/files/thumbor/gFMaLiceRbGWkZUWwl2Xhkft6eU=/0x159:2003x2162/fit-in/2011x2514/filters:format_auto():quality(85):upscale()/2019/08/07/875/n/24155406/9ffb00255d4b2e079b0b23.01360060_.jpg"
         
         let request = ChatCompletionRequest(
             model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
@@ -576,6 +581,151 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
     } catch {
         print("❌ \(providerName) Generate Object Error: \(error)")
     }
+}
+
+// MARK: - Tool Testing Functions (Phase 3)
+
+// Demo tools for testing
+struct WeatherTool: Tool {
+    let name = "get_weather"
+    let description = "Get current weather for a city"
+    
+    @Parameter(description: "City name")
+    var city: String = ""
+    
+    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
+    var unit: String = "celsius"
+    
+    init() {}
+    
+    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        // Simulate API delay
+        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        // Generate realistic weather data
+        let temps = unit == "celsius" ? (15...25) : (59...77)
+        let temp = Int.random(in: temps)
+        let conditions = ["sunny", "partly cloudy", "cloudy", "light rain"]
+        let condition = conditions.randomElement()!
+        
+        return ("Weather in \(city): \(temp)°\(unit == "celsius" ? "C" : "F"), \(condition)", nil)
+    }
+}
+
+struct CalculatorTool: Tool {
+    let name = "calculate"
+    let description = "Perform basic arithmetic calculations"
+    
+    @Parameter(description: "First number")
+    var a: Double = 0.0
+    
+    @Parameter(description: "Second number")
+    var b: Double = 0.0
+    
+    @Parameter(description: "Operation", validation: ["enum": ["+", "-", "*", "/"]])
+    var operation: String = "+"
+    
+    init() {}
+    
+    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        let result: Double
+        switch operation {
+        case "+": result = a + b
+        case "-": result = a - b
+        case "*": result = a * b
+        case "/":
+            guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
+            result = a / b
+        default: throw ToolError.executionFailed("Invalid operation")
+        }
+        return ("Result: \(a) \(operation) \(b) = \(result)", nil)
+    }
+}
+
+func testDirectToolCalls() async {
+    print("\n🔧 Testing Direct Tool Calls...")
+    
+    // Register tools
+    ToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
+    
+    // Test Weather Tool
+    do {
+        print("   🌤️  Testing Weather Tool:")
+        var weatherTool = WeatherTool()
+        try weatherTool.setParameters(from: ["city": "San Francisco", "unit": "fahrenheit"])
+        let (result, _) = try await weatherTool.execute()
+        print("   ✅ \(result)")
+    } catch {
+        print("   ❌ Weather tool failed: \(error)")
+    }
+    
+    // Test Calculator Tool
+    do {
+        print("   🧮 Testing Calculator Tool:")
+        var calcTool = CalculatorTool()
+        try calcTool.setParameters(from: ["a": 15.5, "b": 4.2, "operation": "*"])
+        let (result, _) = try await calcTool.execute()
+        print("   ✅ \(result)")
+    } catch {
+        print("   ❌ Calculator tool failed: \(error)")
+    }
+    
+    // Test Schema Generation
+    print("   📋 Testing Schema Generation:")
+    let weatherSchema = WeatherTool.jsonSchema()
+    print("   ✅ Weather tool schema generated: \(weatherSchema.function?.name ?? "N/A")")
+    
+    let calcSchema = CalculatorTool.jsonSchema()
+    print("   ✅ Calculator tool schema generated: \(calcSchema.function?.name ?? "N/A")")
+}
+
+func testToolWithLLM(provider: LLM, providerName: String) async {
+    print("\n⚙️ Testing Tool Calling with \(providerName)...")
+    
+    do {
+        let tools = [WeatherTool.jsonSchema()]
+        
+        let request = ChatCompletionRequest(
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            messages: [
+                .user(content: .text("What's the weather in Boston? Use fahrenheit."))
+            ],
+            maxTokens: 500,
+            tools: tools,
+            toolChoice: .function(ToolChoice.FunctionChoice(name: "get_weather"))
+        )
+        
+        let response = try await provider.sendChatCompletion(request: request)
+        
+        if let toolCalls = response.choices.first?.message.toolCalls {
+            for toolCall in toolCalls {
+                if let function = toolCall.function {
+                    print("   🛠️  Tool Called: \(function.name)")
+                    print("   📝 Arguments: \(function.arguments)")
+                    
+                    // Actually execute the tool
+                    let jsonData = function.arguments.data(using: .utf8)!
+                    var tool = WeatherTool()
+                    tool = try tool.validateAndSetParameters(jsonData)
+                    let (result, _) = try await tool.execute()
+                    print("   ✅ Tool Result: \(result)")
+                }
+            }
+        } else if let content = response.choices.first?.message.content {
+            print("   📄 LLM Response: \(content)")
+        }
+        
+        print("   📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
+        
+    } catch {
+        print("   ❌ \(providerName) Tool Error: \(error)")
+    }
+}
+
+func testAgentWithTools(provider: LLM) async {
+    print("\n🤖 Testing Agent with Tools...")
+    print("   ℹ️  Agent functionality requires additional setup - skipping for now")
+    print("   📝 This would test agent integration with tools once Agent is properly exposed")
 }
 
 // MARK: - Helper Functions
