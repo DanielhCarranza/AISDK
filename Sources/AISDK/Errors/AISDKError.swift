@@ -47,7 +47,7 @@ public enum AISDKError: AIError {
     }
 }
 
-public enum LLMError: AIError {
+public enum LLMError: AIError, Equatable {
     case invalidRequest(String)
     case networkError(Int?, String)
     case parsingError(String)
@@ -58,6 +58,30 @@ public enum LLMError: AIError {
     case modelNotAvailable
     case contextLengthExceeded
     case underlying(Error)
+    
+    public static func == (lhs: LLMError, rhs: LLMError) -> Bool {
+        switch (lhs, rhs) {
+        case (.invalidRequest(let lMsg), .invalidRequest(let rMsg)):
+            return lMsg == rMsg
+        case (.networkError(let lCode, let lMsg), .networkError(let rCode, let rMsg)):
+            return lCode == rCode && lMsg == rMsg
+        case (.parsingError(let lMsg), .parsingError(let rMsg)):
+            return lMsg == rMsg
+        case (.streamError(let lMsg), .streamError(let rMsg)):
+            return lMsg == rMsg
+        case (.invalidResponse(let lMsg), .invalidResponse(let rMsg)):
+            return lMsg == rMsg
+        case (.rateLimitExceeded, .rateLimitExceeded),
+             (.authenticationError, .authenticationError),
+             (.modelNotAvailable, .modelNotAvailable),
+             (.contextLengthExceeded, .contextLengthExceeded):
+            return true
+        case (.underlying(let lError), .underlying(let rError)):
+            return lError.localizedDescription == rError.localizedDescription
+        default:
+            return false
+        }
+    }
     
     public var detailedDescription: String {
         switch self {

@@ -118,33 +118,8 @@ let chatManager = AIChatManager(
     storage: MemoryStorage()
 )
 
-// Use in SwiftUI
-ChatCompanionView(manager: chatManager)
 ```
 
-### Tool with UI Rendering
-```swift
-struct WeatherTool: RenderableTool {
-    let name = "get_weather"
-    let description = "Get weather with visual display"
-    
-    @Parameter(description: "City name")
-    var city: String = ""
-    
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        let weather = try await fetchWeather(for: city)
-        let jsonData = try JSONEncoder().encode(weather)
-        let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        
-        return ("Weather: \(weather.temp)°F", metadata)
-    }
-    
-    func render(from data: Data) -> AnyView {
-        let weather = try? JSONDecoder().decode(Weather.self, from: data)
-        return AnyView(WeatherWidget(weather: weather))
-    }
-}
-```
 
 ### Voice Interaction
 ```swift

@@ -12,9 +12,9 @@ public class OpenAIProvider: LLM {
         
     // MARK: - Properties
     
-    private let apiKey: String
-    private let baseUrl: String
-    private let session: Session
+    internal let apiKey: String
+    internal let baseUrl: String
+    internal let session: Session
     
     // MARK: - Init
     
@@ -89,16 +89,12 @@ public class OpenAIProvider: LLM {
         case .success(let response):
             return response
         case .failure(let afError):
-            // Optionally inspect AFError's underlying error / status code
-            // For instance:
-            print("Error: \(afError.localizedDescription)")
-            if let statusCode = afError.responseCode {
-                print("HTTP Error \(statusCode): \(afError.localizedDescription)")
-                throw AISDKError.httpError(statusCode, afError.localizedDescription)
-            } else {
-                print("Underlying Error: \(afError.localizedDescription)")
-                throw AISDKError.underlying(afError)
+            // Simple error logging
+            print("DEBUG: AFError occurred - \(afError.localizedDescription)")
+            if let responseCode = afError.responseCode {
+                print("DEBUG: HTTP Status Code: \(responseCode)")
             }
+            throw LLMError.from(afError)
         }
     }
     
@@ -299,9 +295,304 @@ public class OpenAIProvider: LLM {
         }
     }
     
+    // MARK: - 4) Responses API Methods
+    
+    /// Creates a response using OpenAI's Responses API
+    /// POST /v1/responses
+    public func createResponse(request: ResponseRequest) async throws -> ResponseObject {
+        let endpoint = "\(baseUrl)/v1/responses"
+        
+        guard let url = URL(string: endpoint) else {
+            throw LLMError.invalidRequest("Invalid URL configuration")
+        }
+        
+        // Debug logging to see what we're sending
+        if let requestData = try? JSONEncoder().encode(request),
+           let requestString = String(data: requestData, encoding: .utf8) {
+            print("DEBUG: Sending request to \(endpoint)")
+            print("DEBUG: Request body: \(requestString)")
+        }
+        
+        let dataTask = session.request(
+            url,
+            method: .post,
+            parameters: request,
+            encoder: JSONParameterEncoder.default,
+            headers: authorizationHeaders
+        )
+        .validate()
+        .serializingDecodable(ResponseObject.self)
+        
+        let result = await dataTask.result
+        
+        switch result {
+        case .success(let response):
+            return response
+        case .failure(let afError):
+            // Simple error logging
+            print("DEBUG: AFError occurred - \(afError.localizedDescription)")
+            if let responseCode = afError.responseCode {
+                print("DEBUG: HTTP Status Code: \(responseCode)")
+            }
+            throw LLMError.from(afError)
+        }
+    }
+    
+    /// Creates a streaming response using OpenAI's Responses API
+    /// POST /v1/responses with stream=true
+    public func createResponseStream(request: ResponseRequest) -> AsyncThrowingStream<ResponseChunk, Error> {
+        // Create a new request with streaming enabled
+        let streamingRequest = ResponseRequest(
+            model: request.model,
+            input: request.input,
+            instructions: request.instructions,
+            tools: request.tools,
+            toolChoice: request.toolChoice,
+            metadata: request.metadata,
+            temperature: request.temperature,
+            topP: request.topP,
+            maxOutputTokens: request.maxOutputTokens,
+            stream: true, // Force streaming
+            background: request.background,
+            previousResponseId: request.previousResponseId,
+            include: request.include,
+            store: request.store,
+            reasoning: request.reasoning,
+            parallelToolCalls: request.parallelToolCalls,
+            serviceTier: request.serviceTier,
+            user: request.user,
+            truncation: request.truncation,
+            text: request.text
+        )
+        
+        let endpoint = "\(baseUrl)/v1/responses"
+        
+        return AsyncThrowingStream<ResponseChunk, Error> { continuation in
+            guard let url = URL(string: endpoint) else {
+                continuation.finish(throwing: LLMError.invalidRequest("Invalid URL"))
+                return
+            }
+            
+            var buffer = ""
+            var accumulatedResponse: ResponseObject?
+            var lineCount = 0
+            var eventCount = 0
+            var chunkCount = 0
+            
+
+            
+            let streamRequest = session.streamRequest(
+                url,
+                method: .post,
+                parameters: streamingRequest,
+                encoder: JSONParameterEncoder.default,
+                headers: authorizationHeaders
+            )
+            .validate()
+            
+            streamRequest.responseStreamString { stream in
+                switch stream.event {
+                case let .stream(.success(stringChunk)):
+                    buffer += stringChunk
+                    
+                    // Process complete lines
+                    while let newlineRange = buffer.range(of: "\n") {
+                        let line = String(buffer[..<newlineRange.lowerBound])
+                        buffer.removeSubrange(buffer.startIndex..<newlineRange.upperBound)
+                        lineCount += 1
+                        
+                        let trimmed = line.trimmingCharacters(in: .whitespaces)
+                        
+                        // Skip empty lines
+                        if trimmed.isEmpty {
+                            continue
+                        }
+                        
+                        // Handle event: lines
+                        if trimmed.hasPrefix("event:") {
+                            continue
+                        }
+                        
+                        // Process data: lines
+                        if trimmed.hasPrefix("data:") {
+                            let jsonString = trimmed.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
+                            eventCount += 1
+                            
+                            // Check for stream end
+                            if jsonString == "[DONE]" {
+                                continuation.finish()
+                                return
+                            }
+                            
+                            // Parse the JSON data
+                            if let data = jsonString.data(using: .utf8) {
+                                do {
+                                    let streamEvent = try JSONDecoder().decode(ResponseStreamEvent.self, from: data)
+                                    
+                                    // Update accumulated response for response-level events
+                                    if let response = streamEvent.response {
+                                        accumulatedResponse = response
+                                    }
+                                    
+                                    // Convert stream event to ResponseChunk
+                                    if let chunk = ResponseChunk.from(event: streamEvent, accumulatedResponse: accumulatedResponse) {
+                                        chunkCount += 1
+                                        continuation.yield(chunk)
+                                    }
+                                    
+                                } catch {
+                                    // Try to decode as a complete response object (non-streaming format)
+                                    if let response = try? JSONDecoder().decode(ResponseObject.self, from: data) {
+                                        let chunk = ResponseChunk(
+                                            id: response.id,
+                                            object: "response.chunk",
+                                            createdAt: response.createdAt,
+                                            model: response.model,
+                                            status: response.status,
+                                            delta: ResponseDelta(output: nil, outputText: response.outputText, reasoning: nil, text: response.outputText),
+                                            usage: response.usage,
+                                            error: response.error
+                                        )
+                                        chunkCount += 1
+                                        continuation.yield(chunk)
+                                    } else {
+                                        continuation.finish(throwing: LLMError.parsingError("Failed to parse streaming event: \(error.localizedDescription)"))
+                                        return
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                case let .stream(.failure(error)):
+                    continuation.finish(throwing: LLMError.underlying(error))
+                    
+                case .complete(_):
+                    continuation.finish()
+                }
+            }
+            
+            continuation.onTermination = { @Sendable _ in
+                streamRequest.cancel()
+            }
+        }
+    }
+    
+    /// Convenience method for creating a response with web search
+    public func createResponseWithWebSearch(
+        model: String,
+        text: String,
+        instructions: String? = nil
+    ) async throws -> ResponseObject {
+        let request = ResponseBuilder
+            .webSearch(model: model, text)
+            .instructions(instructions ?? "")
+            .build()
+        
+        return try await createResponse(request: request)
+    }
+    
+    /// Convenience method for creating a response with code interpreter
+    public func createResponseWithCodeInterpreter(
+        model: String,
+        text: String,
+        instructions: String? = nil
+    ) async throws -> ResponseObject {
+        let request = ResponseBuilder
+            .codeInterpreter(model: model, text)
+            .instructions(instructions ?? "")
+            .build()
+        
+        return try await createResponse(request: request)
+    }
+    
+    /// Convenience method for creating a simple text response
+    public func createTextResponse(
+        model: String,
+        text: String,
+        maxOutputTokens: Int? = nil
+    ) async throws -> ResponseObject {
+        let builder = ResponseBuilder.text(model: model, text)
+        if let maxTokens = maxOutputTokens {
+            return try await createResponse(request: builder.maxOutputTokens(maxTokens).build())
+        } else {
+            return try await createResponse(request: builder.build())
+        }
+    }
+    
+    /// Convenience method for creating a streaming text response
+    public func createTextResponseStream(
+        model: String,
+        text: String,
+        maxOutputTokens: Int? = nil
+    ) -> AsyncThrowingStream<ResponseChunk, Error> {
+        let builder = ResponseBuilder.text(model: model, text).streaming(true)
+        let request = if let maxTokens = maxOutputTokens {
+            builder.maxOutputTokens(maxTokens).build()
+        } else {
+            builder.build()
+        }
+        
+        return createResponseStream(request: request)
+    }
+    
+    /// Retrieve a response by ID
+    /// GET /v1/responses/{response_id}
+    public func retrieveResponse(id: String) async throws -> ResponseObject {
+        let endpoint = "\(baseUrl)/v1/responses/\(id)"
+        
+        guard let url = URL(string: endpoint) else {
+            throw LLMError.invalidRequest("Invalid URL configuration")
+        }
+        
+        let dataTask = session.request(
+            url,
+            method: .get,
+            headers: authorizationHeaders
+        )
+        .validate()
+        .serializingDecodable(ResponseObject.self)
+        
+        let result = await dataTask.result
+        
+        switch result {
+        case .success(let response):
+            return response
+        case .failure(let afError):
+            throw LLMError.from(afError)
+        }
+    }
+    
+    /// Cancel a response by ID
+    /// POST /v1/responses/{response_id}/cancel
+    public func cancelResponse(id: String) async throws -> ResponseObject {
+        let endpoint = "\(baseUrl)/v1/responses/\(id)/cancel"
+        
+        guard let url = URL(string: endpoint) else {
+            throw LLMError.invalidRequest("Invalid URL configuration")
+        }
+        
+        let dataTask = session.request(
+            url,
+            method: .post,
+            headers: authorizationHeaders
+        )
+        .validate()
+        .serializingDecodable(ResponseObject.self)
+        
+        let result = await dataTask.result
+        
+        switch result {
+        case .success(let response):
+            return response
+        case .failure(let afError):
+            throw LLMError.from(afError)
+        }
+    }
+    
     // MARK: - Private Helpers
     
-    private var authorizationHeaders: HTTPHeaders {
+    internal var authorizationHeaders: HTTPHeaders {
         [
             "Authorization": "Bearer \(apiKey)",
             "Content-Type": "application/json"

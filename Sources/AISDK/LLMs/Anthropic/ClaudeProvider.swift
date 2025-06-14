@@ -9,7 +9,7 @@ import Foundation
 import Alamofire
 
 /**
- * CLAUDE COMPATIBILITY NOTES:
+ * CLAUDE OPENAI COMPATIBILITY NOTES:
  * 
  * The Claude provider supports OpenAI compatibility with these limitations:
  * - Fully supported: model, max_tokens, max_completion_tokens, stream, stream_options, 

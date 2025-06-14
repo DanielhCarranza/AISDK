@@ -277,11 +277,43 @@ public final class IndirectPropertyDefinition: Codable {
 }
 
 /// Describes how the model should call tools.
-public enum ToolChoice: Encodable {
+public enum ToolChoice: Codable, Equatable {
     case none
     case auto
     case required
     case function(FunctionChoice)
+    
+    public init(from decoder: Decoder) throws {
+        if let container = try? decoder.singleValueContainer() {
+            if let stringValue = try? container.decode(String.self) {
+                switch stringValue {
+                case "none":
+                    self = .none
+                case "auto":
+                    self = .auto
+                case "required":
+                    self = .required
+                default:
+                    throw DecodingError.dataCorrupted(
+                        DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Invalid tool choice: \(stringValue)")
+                    )
+                }
+                return
+            }
+        }
+        
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        
+        if type == "function" {
+            let functionChoice = try container.decode(FunctionChoice.self, forKey: .function)
+            self = .function(functionChoice)
+        } else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Invalid tool choice type: \(type)")
+            )
+        }
+    }
     
     public func encode(to encoder: Encoder) throws {
         switch self {
@@ -306,7 +338,7 @@ public enum ToolChoice: Encodable {
         case function
     }
     
-    public struct FunctionChoice: Encodable {
+    public struct FunctionChoice: Codable, Equatable {
         public let name: String
         
         public init(name: String) {

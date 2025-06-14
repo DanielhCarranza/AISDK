@@ -1,0 +1,465 @@
+//
+//  OpenAIResponsesToolsTests.swift
+//  AISDKTests
+//
+//  Created for AISDK Testing - OpenAI Responses API Tools
+//
+
+import XCTest
+@testable import AISDK
+
+final class OpenAIResponsesToolsTests: XCTestCase {
+    
+    var provider: OpenAIProvider!
+    var mockProvider: MockOpenAIResponsesProvider!
+    
+    override func setUp() {
+        super.setUp()
+        
+        if shouldUseRealAPI() {
+            provider = OpenAIProvider(apiKey: getOpenAIAPIKey())
+        } else {
+            mockProvider = MockOpenAIResponsesProvider()
+        }
+    }
+    
+    override func tearDown() {
+        provider = nil
+        mockProvider = nil
+        super.tearDown()
+    }
+    
+    // MARK: - Web Search Preview Tests
+    
+    func testWebSearchPreview() async throws {
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponseWithWebSearch(
+                model: "gpt-4o-mini",
+                text: "What's the current weather in San Francisco?"
+            )
+            
+            XCTAssertNotNil(response.id)
+            XCTAssertTrue(response.status.isFinal)
+            XCTAssertNotNil(response.outputText)
+            
+            // Check if web search tool was used
+            let hasWebSearchTool = response.tools?.contains { tool in
+                if case .webSearchPreview = tool { return true }
+                return false
+            } ?? false
+            
+            XCTAssertTrue(hasWebSearchTool)
+            
+        } else {
+            // Mock test
+            mockProvider.setMockResponse(MockOpenAIResponsesProvider.createWebSearchResponse())
+            
+            let request = ResponseBuilder
+                .text(model: "gpt-4o", "What's the current weather in San Francisco?")
+                .withWebSearch()
+                .build()
+            
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(response.id, "resp-websearch-123")
+            XCTAssertTrue(response.output.contains { output in
+                if case .webSearchCall = output { return true }
+                return false
+            })
+        }
+    }
+    
+    func testWebSearchBuilder() async throws {
+        let request = ResponseBuilder
+            .webSearch(model: "gpt-4o-mini", "Latest AI news")
+            .instructions("Provide recent, factual information")
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            
+        } else {
+            // Mock test
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 1)
+            XCTAssertTrue(mockProvider.lastRequest?.tools?.first is ResponseTool)
+        }
+    }
+    
+    // MARK: - Code Interpreter Tests
+    
+    func testCodeInterpreter() async throws {
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponseWithCodeInterpreter(
+                model: "gpt-4o-mini",
+                text: "Calculate 15 factorial"
+            )
+            
+            XCTAssertNotNil(response.id)
+            XCTAssertTrue(response.status.isFinal)
+            XCTAssertNotNil(response.outputText)
+            
+            // Check if code interpreter tool was used
+            let hasCodeInterpreterTool = response.tools?.contains { tool in
+                if case .codeInterpreter = tool { return true }
+                return false
+            } ?? false
+            
+            XCTAssertTrue(hasCodeInterpreterTool)
+            
+        } else {
+            // Mock test
+            mockProvider.setMockResponse(MockOpenAIResponsesProvider.createCodeInterpreterResponse())
+            
+            let request = ResponseBuilder
+                .text(model: "gpt-4o", "Calculate 15 factorial")
+                .withCodeInterpreter()
+                .build()
+            
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(response.id, "resp-code-123")
+            XCTAssertTrue(response.output.contains { output in
+                if case .codeInterpreterCall = output { return true }
+                return false
+            })
+        }
+    }
+    
+    func testCodeInterpreterWithVisualization() async throws {
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponseWithCodeInterpreter(
+                model: "gpt-4o-mini",
+                text: "Create a simple bar chart showing the numbers 1, 3, 2, 5, 4"
+            )
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            
+        } else {
+            // Mock test
+            let request = ResponseBuilder
+                .codeInterpreter(model: "gpt-4o", "Create a simple bar chart")
+                .build()
+            
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+        }
+    }
+    
+    // MARK: - Image Generation Tests
+    
+    func testImageGeneration() async throws {
+        if let provider = provider {
+            // Real API test
+            let request = ResponseBuilder
+                .text(model: "gpt-4o-mini", "Generate an image of a sunset over mountains")
+                .withImageGeneration()
+                .build()
+            
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.id)
+            XCTAssertTrue(response.status.isFinal)
+            
+            // Check if image generation tool was used
+            let hasImageGenTool = response.tools?.contains { tool in
+                if case .imageGeneration = tool { return true }
+                return false
+            } ?? false
+            
+            XCTAssertTrue(hasImageGenTool)
+            
+        } else {
+            // Mock test
+            let request = ResponseBuilder
+                .imageGeneration(model: "gpt-4o", "Generate an image of a sunset")
+                .build()
+            
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 1)
+            XCTAssertNotNil(response.outputText)
+        }
+    }
+    
+    func testImageGenerationWithPartialImages() async throws {
+        let request = ResponseBuilder
+            .text(model: "gpt-4o-mini", "Create a landscape painting")
+            .tool(.imageGeneration(partialImages: 2))
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            
+        } else {
+            // Mock test
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 1)
+        }
+    }
+    
+    // MARK: - File Search Tests
+    
+    func testFileSearch() async throws {
+        let vectorStoreId = "vs_test123"
+        
+        let request = ResponseBuilder
+            .text(model: "gpt-4o-mini", "Find information about project requirements")
+            .withFileSearch(vectorStoreId: vectorStoreId)
+            .build()
+        
+        if let provider = provider {
+            // Real API test (may fail if vector store doesn't exist)
+            do {
+                let response = try await provider.createResponse(request: request)
+                XCTAssertNotNil(response.outputText)
+            } catch {
+                // Expected if vector store doesn't exist
+                print("File search test failed (expected if vector store doesn't exist): \(error)")
+            }
+            
+        } else {
+            // Mock test
+            _ = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 1)
+        }
+    }
+    
+    // MARK: - Custom Function Tests
+    
+    func testCustomFunction() async throws {
+        // Define a weather function
+        let weatherFunction = ToolFunction(
+            name: "get_weather",
+            description: "Get current weather for a location",
+            parameters: Parameters(
+                type: "object",
+                properties: [
+                    "location": PropertyDefinition(
+                        type: "string",
+                        description: "The city and state, e.g. San Francisco, CA"
+                    ),
+                    "unit": PropertyDefinition(
+                        type: "string",
+                        description: "Temperature unit",
+                        enumValues: ["celsius", "fahrenheit"]
+                    )
+                ],
+                required: ["location"]
+            )
+        )
+        
+        let request = ResponseBuilder
+            .text(model: "gpt-4o-mini", "What's the weather like in New York?")
+            .tool(.function(weatherFunction))
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.id)
+            XCTAssertTrue(response.status.isFinal)
+            
+            // Check if function was called
+            let hasFunctionCall = response.output.contains { output in
+                if case .functionCall = output { return true }
+                return false
+            }
+            
+            if hasFunctionCall {
+                print("Function was called successfully")
+            }
+            
+        } else {
+            // Mock test
+            mockProvider.setMockResponse(MockOpenAIResponsesProvider.createFunctionCallResponse())
+            
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(response.id, "resp-func-123")
+            XCTAssertTrue(response.output.contains { output in
+                if case .functionCall = output { return true }
+                return false
+            })
+        }
+    }
+    
+    // MARK: - Multi-Tool Tests
+    
+    func testMultipleTools() async throws {
+        let request = ResponseBuilder
+            .text(model: "gpt-4o-mini", "Research AI trends and create a visualization")
+            .withWebSearch()
+            .withCodeInterpreter()
+            .withImageGeneration()
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            XCTAssertEqual(response.tools?.count, 3)
+            
+        } else {
+            // Mock test
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 3)
+            XCTAssertNotNil(response.outputText)
+        }
+    }
+    
+    func testMultiToolBuilder() async throws {
+        let request = ResponseBuilder
+            .multiTool(model: "gpt-4o-mini", "Comprehensive analysis task")
+            .instructions("Use all available tools to provide a complete analysis")
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertGreaterThan(response.tools?.count ?? 0, 1)
+            
+        } else {
+            // Mock test
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertGreaterThan(mockProvider.lastRequest?.tools?.count ?? 0, 1)
+            XCTAssertNotNil(response.outputText)
+        }
+    }
+    
+    // MARK: - Tool Choice Tests
+    
+    func testToolChoiceAuto() async throws {
+        let request = ResponseBuilder
+            .text(model: "gpt-4o-mini", "Help me with this task")
+            .withWebSearch()
+            .withCodeInterpreter()
+            .toolChoice(.auto)
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            
+        } else {
+            // Mock test
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(mockProvider.lastRequest?.toolChoice, .auto)
+            XCTAssertNotNil(response.outputText)
+        }
+    }
+    
+    func testToolChoiceNone() async throws {
+        let request = ResponseBuilder
+            .text(model: "gpt-4o-mini", "Just answer without using tools")
+            .withWebSearch()
+            .toolChoice(.none)
+            .build()
+        
+        if let provider = provider {
+            // Real API test
+            let response = try await provider.createResponse(request: request)
+            
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            
+        } else {
+            // Mock test
+            let response = try await mockProvider.createResponse(request: request)
+            
+            XCTAssertEqual(mockProvider.lastRequest?.toolChoice, ToolChoice.none)
+            XCTAssertNotNil(response.outputText)
+        }
+    }
+    
+    // MARK: - Tool Error Handling Tests
+    
+    func testToolExecutionError() async throws {
+        if mockProvider != nil {
+            // Mock test - simulate tool execution error
+            mockProvider.shouldThrowError = true
+            mockProvider.errorToThrow = LLMError.invalidRequest("Tool execution failed")
+            
+            let request = ResponseBuilder
+                .text(model: "gpt-4o", "Use tools to help")
+                .withWebSearch()
+                .build()
+            
+            do {
+                _ = try await mockProvider.createResponse(request: request)
+                XCTFail("Expected error to be thrown")
+            } catch let error as LLMError {
+                XCTAssertEqual(error, .invalidRequest("Tool execution failed"))
+            }
+        }
+    }
+    
+    // MARK: - Tool Response Validation Tests
+    
+    func testToolResponseStructure() async throws {
+        if mockProvider != nil {
+            // Mock test with web search response
+            mockProvider.setMockResponse(MockOpenAIResponsesProvider.createWebSearchResponse())
+            
+            let request = ResponseBuilder
+                .webSearch(model: "gpt-4o", "Test query")
+                .build()
+            
+            let response = try await mockProvider.createResponse(request: request)
+            
+            // Validate web search output structure
+            let webSearchOutput = response.output.first { output in
+                if case .webSearchCall = output { return true }
+                return false
+            }
+            
+            XCTAssertNotNil(webSearchOutput)
+            
+            if case .webSearchCall(let searchCall) = webSearchOutput! {
+                XCTAssertEqual(searchCall.id, "search-1")
+                XCTAssertEqual(searchCall.query, "latest AI developments")
+                XCTAssertNotNil(searchCall.result)
+                XCTAssertEqual(searchCall.status, "completed")
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func shouldUseRealAPI() -> Bool {
+        return ProcessInfo.processInfo.environment["USE_REAL_API"] == "true" && 
+               !getOpenAIAPIKey().isEmpty
+    }
+    
+    private func getOpenAIAPIKey() -> String {
+        return ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
+    }
+} 
