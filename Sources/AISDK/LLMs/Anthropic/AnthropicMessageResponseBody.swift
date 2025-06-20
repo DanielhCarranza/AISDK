@@ -44,7 +44,7 @@ public struct AnthropicMessageResponseBody: Decodable {
 
 public enum AnthropicMessageResponseContent: Decodable {
     case text(String)
-    case toolUse(id: String, name: String, input: [String: AIProxyJSONValue])
+    case toolUse(AnthropicToolUseBlock)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -67,11 +67,78 @@ public enum AnthropicMessageResponseContent: Decodable {
             let value = try container.decode(String.self, forKey: .text)
             self = .text(value)
         case .toolUse:
-            let id = try container.decode(String.self, forKey: .id)
-            let name = try container.decode(String.self, forKey: .name)
-            let input = try container.decode([String: AIProxyJSONValue].self, forKey: .input)
-            self = .toolUse(id: id, name: name, input: input)
+            let toolUseBlock = try AnthropicToolUseBlock(from: decoder)
+            self = .toolUse(toolUseBlock)
         }
+    }
+}
+
+// MARK: - Enhanced Tool Use Block
+
+/// Clean, type-safe tool use block for Anthropic responses
+public struct AnthropicToolUseBlock: Decodable {
+    /// Unique identifier for this tool use
+    public let id: String
+    
+    /// Name of the tool to execute
+    public let name: String
+    
+    /// Raw input parameters as received from Claude
+    public let input: [String: Any]
+    
+    /// Decoded input parameters as a typed dictionary
+    public var typedInput: [String: Any] {
+        // Input is already converted to regular Swift types
+        return input
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case input
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        
+        // Decode input as AIProxyJSONValue dictionary then convert
+        let rawInput = try container.decode([String: AIProxyJSONValue].self, forKey: .input)
+        self.input = rawInput.mapValues { $0.anyValue }
+    }
+    
+    /// Execute this tool use block with the provided tool registry
+    public func execute<T: Tool>(with toolType: T.Type) async throws -> String {
+        // Create tool instance
+        var tool = T()
+        
+        // Set parameters from input
+        try tool.setParameters(from: typedInput)
+        
+        // Execute tool
+        return try await tool.execute()
+    }
+    
+    /// Create a tool result content block for success
+    public func createSuccessResult(_ result: String) -> AnthropicInputContent {
+        return .toolResult(toolUseId: id, content: result, isError: false)
+    }
+    
+    /// Create a tool result content block for error
+    public func createErrorResult(_ error: String) -> AnthropicInputContent {
+        return .toolResult(toolUseId: id, content: error, isError: true)
+    }
+    
+    /// Create a tool result content block from a thrown error
+    public func createErrorResult(from error: Error) -> AnthropicInputContent {
+        let errorMessage: String
+        if let toolError = error as? ToolError {
+            errorMessage = "Tool execution failed: \(toolError.localizedDescription)"
+        } else {
+            errorMessage = "Tool execution failed: \(error.localizedDescription)"
+        }
+        return .toolResult(toolUseId: id, content: errorMessage, isError: true)
     }
 }
 

@@ -1,5 +1,3 @@
-#!/usr/bin/env swift
-
 import Foundation
 import AISDK
 
@@ -97,7 +95,7 @@ struct FileSearchTool: Tool {
     let description = "Search for files in current directory"
     
     @Parameter(description: "File extension to search for")
-    var extension: String = ""
+    var fileExtension: String = ""
     
     @Parameter(description: "Maximum number of results", validation: ["minimum": 1, "maximum": 20])
     var maxResults: Int = 10
@@ -105,7 +103,7 @@ struct FileSearchTool: Tool {
     init() {}
     
     func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        print("🔍 Searching for .\(extension) files...")
+        print("🔍 Searching for .\(fileExtension) files...")
         
         let fileManager = FileManager.default
         let currentPath = fileManager.currentDirectoryPath
@@ -113,14 +111,14 @@ struct FileSearchTool: Tool {
         do {
             let contents = try fileManager.contentsOfDirectory(atPath: currentPath)
             let filteredFiles = contents
-                .filter { $0.hasSuffix(".\(extension)") }
+                .filter { $0.hasSuffix(".\(fileExtension)") }
                 .prefix(maxResults)
             
             if filteredFiles.isEmpty {
-                return ("No .\(extension) files found in current directory", nil)
+                return ("No .\(fileExtension) files found in current directory", nil)
             } else {
                 let fileList = filteredFiles.joined(separator: "\n• ")
-                return ("Found \(filteredFiles.count) .\(extension) files:\n• \(fileList)", nil)
+                return ("Found \(filteredFiles.count) .\(fileExtension) files:\n• \(fileList)", nil)
             }
         } catch {
             throw ToolError.executionFailed("Failed to read directory: \(error.localizedDescription)")
@@ -237,7 +235,8 @@ func testToolErrorHandling() async {
     do {
         print("\n3️⃣ Testing Invalid JSON:")
         let invalidJSON = "{ invalid json }"
-        let tool = try WeatherTool().validateAndSetParameters(invalidJSON.data(using: .utf8)!)
+        var tool = WeatherTool()
+        let _ = try tool.validateAndSetParameters(invalidJSON.data(using: .utf8)!)
         print("❌ Should have failed JSON parsing: \(tool)")
     } catch {
         print("✅ Correctly caught JSON error: \(error)")
@@ -308,22 +307,26 @@ func executeInteractiveTool(name: String, jsonString: String) async {
     do {
         switch name.lowercased() {
         case "weather":
-            let tool = try WeatherTool().validateAndSetParameters(jsonData)
+            var tool = WeatherTool()
+            let _ = try tool.validateAndSetParameters(jsonData)
             let (result, _) = try await tool.execute()
             print("✅ \(result)")
             
         case "calculate":
-            let tool = try CalculatorTool().validateAndSetParameters(jsonData)
+            var tool = CalculatorTool()
+            let _ = try tool.validateAndSetParameters(jsonData)
             let (result, _) = try await tool.execute()
             print("✅ \(result)")
             
         case "timezone":
-            let tool = try TimezoneTool().validateAndSetParameters(jsonData)
+            var tool = TimezoneTool()
+            let _ = try tool.validateAndSetParameters(jsonData)
             let (result, _) = try await tool.execute()
             print("✅ \(result)")
             
         case "search":
-            let tool = try FileSearchTool().validateAndSetParameters(jsonData)
+            var tool = FileSearchTool()
+            let _ = try tool.validateAndSetParameters(jsonData)
             let (result, _) = try await tool.execute()
             print("✅ \(result)")
             
@@ -338,6 +341,154 @@ func executeInteractiveTool(name: String, jsonString: String) async {
 
 // MARK: - Main Entry Point
 
+// MARK: - Anthropic Tools Demo
+
+/// Simple weather tool for Anthropic demo - clean and simple
+struct AnthropicWeatherTool: Tool {
+    let name = "get_weather"
+    let description = "Get current weather for a location"
+    
+    @Parameter(description: "City and state, e.g. San Francisco, CA")
+    var location: String = ""
+    
+    @Parameter(description: "Temperature unit", 
+               validation: ["enum": ["celsius", "fahrenheit"]])
+    var unit: String = "celsius"
+    
+    init() {}
+    
+    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        let result = "Weather in \(location): 72°\(unit == "celsius" ? "C" : "F"), sunny"
+        return (result, nil)
+    }
+}
+
+func runAnthropicToolsDemo() async {
+    print("\n🔧 Anthropic Clean Tools Demo")
+    print("============================")
+    
+    // Example 1: Clean tool creation
+    print("\n📝 Example 1: Clean Tool Creation")
+    print("----------------------------------")
+    
+    // ✅ NEW: Clean, type-safe tool creation
+    let weatherTool = AnthropicTool(from: AnthropicWeatherTool.self)
+    
+    print("✅ Created Anthropic tool:")
+    print("  - \(weatherTool.name): \(weatherTool.description)")
+    print("  - Parameters: \(weatherTool.inputSchema.properties.count)")
+    print("  - Required: \(weatherTool.inputSchema.required)")
+    
+    // Example 2: Tool execution flow
+    print("\n🚀 Example 2: Tool Execution Flow")
+    print("----------------------------------")
+    
+    // Simulate Claude's tool use response
+    let mockToolUseBlock = createMockToolUseBlock()
+    
+    do {
+        // ✅ NEW: Clean tool execution
+        var tool = AnthropicWeatherTool()
+        try tool.setParameters(from: mockToolUseBlock.typedInput)
+        let (result, _) = try await tool.execute()
+        
+        print("✅ Tool executed successfully")
+        print("   Result: \(result)")
+        print("   Tool use ID: \(mockToolUseBlock.id)")
+        print("   Tool name: \(mockToolUseBlock.name)")
+    } catch {
+        // ✅ NEW: Enhanced error handling
+        print("❌ Tool execution failed: \(error)")
+        print("   Would create error result with isError: true flag")
+    }
+    
+    // Example 3: Server-side tools
+    print("\n🌐 Example 3: Server-Side Tools")
+    print("-------------------------------")
+    
+    // ✅ NEW: Server-side tool definitions (documentation only)
+    let webSearchTool = AnthropicTool(
+        name: "web_search_20250305",
+        description: "Search the web for current information",
+        inputSchema: AnthropicToolSchema(
+            properties: [
+                "query": AnthropicPropertySchema(
+                    type: "string",
+                    description: "The search query"
+                )
+            ],
+            required: ["query"]
+        )
+    )
+    
+    print("✅ Web search tool created:")
+    print("   Name: \(webSearchTool.name)")
+    print("   Note: This executes on Anthropic's servers")
+    
+    // Example 4: Beta features
+    print("\n🧪 Example 4: Beta Features")
+    print("---------------------------")
+    
+    // ✅ NEW: Request with beta features  
+    print("✅ Creating request with beta features")
+    print("   Model: claude-3-7-sonnet-20250219")
+    print("   Tools: Weather tool")
+    
+    // ✅ NEW: Beta features configuration
+    print("✅ Beta features available:")
+    print("   Token-efficient tools: Saves 14% tokens on average")
+    print("   Parallel tool use: Tools can run simultaneously")  
+    print("   Chain of thought: Better reasoning with <thinking> tags")
+    
+    // ✅ NEW: Enhanced tool choice options
+    print("✅ Tool choice options:")
+    print("   .auto - Let Claude decide whether to use tools")
+    print("   .any - Force Claude to use any available tool")
+    print("   .none - Disable tools completely for this request")
+    print("   .tool(name: \"specific_tool\") - Force specific tool")
+    
+    print("✅ Request would be configured with beta features when used with AnthropicProvider")
+    
+    // ✅ NEW: Chain of thought prompts (example constants)
+    print("\n🧠 Chain of Thought Prompts:")
+    print("   Basic: Think step by step before using tools...")
+    print("   Multi-tool: Consider which tools to use and in what order...")
+    print("   Error handling: If a tool fails, analyze and determine next steps...")
+    
+    // Example 5: JSON Schema output
+    print("\n📋 Example 5: JSON Schema Output")
+    print("---------------------------------")
+    
+    do {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(weatherTool)
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "Failed to encode"
+        
+        print("✅ Weather tool JSON schema:")
+        print(jsonString)
+    } catch {
+        print("❌ Failed to encode tool: \(error)")
+    }
+}
+
+// Helper function to create a mock tool use block
+func createMockToolUseBlock() -> AnthropicToolUseBlock {
+    // Create a mock tool use block (this would be parsed from response)
+    let jsonData = """
+    {
+        "id": "toolu_01234567890",
+        "name": "get_weather",
+        "input": {
+            "location": "San Francisco, CA",
+            "unit": "celsius"
+        }
+    }
+    """.data(using: .utf8)!
+    
+    return try! JSONDecoder().decode(AnthropicToolUseBlock.self, from: jsonData)
+}
+
 @main
 struct ToolDemo {
     static func main() async {
@@ -345,8 +496,13 @@ struct ToolDemo {
         
         if args.contains("--interactive") {
             await runInteractiveMode()
+        } else if args.contains("--anthropic") {
+            await runAnthropicToolsDemo()
         } else {
             await runToolDemo()
+            
+            // Also run Anthropic demo
+            await runAnthropicToolsDemo()
         }
     }
 }

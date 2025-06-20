@@ -42,14 +42,14 @@ struct BasicChatDemo {
         // Initialize providers
         let openAIProvider = OpenAIProvider(apiKey: openAIKey)
         
-        // Check for Claude key (optional)
-        let claudeProvider: ClaudeProvider?
-        if let claudeKey = ProcessInfo.processInfo.environment["CLAUDE_API_KEY"],
-           !claudeKey.isEmpty {
-            claudeProvider = ClaudeProvider(apiKey: claudeKey)
+        // Check for Anthropic key (optional)
+        let anthropicProvider: AnthropicProvider?
+        if let anthropicKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"],
+           !anthropicKey.isEmpty {
+            anthropicProvider = AnthropicProvider(apiKey: anthropicKey)
         } else {
-            claudeProvider = nil
-            print("ℹ️  Claude API key not found - only OpenAI tests will run")
+            anthropicProvider = nil
+            print("ℹ️  Anthropic API key not found - only OpenAI tests will run")
         }
         
         print("\n🧪 Starting Tests...")
@@ -57,8 +57,8 @@ struct BasicChatDemo {
         // Test 1: Basic Chat Completion
         await testBasicChat(provider: openAIProvider, providerName: "OpenAI")
         
-        if let claude = claudeProvider {
-            await testBasicChat(provider: claude, providerName: "Claude")
+        if let anthropic = anthropicProvider {
+            await testBasicChat(provider: anthropic, providerName: "Anthropic")
         }
         
         // Test 2: Streaming Chat

@@ -43,6 +43,10 @@ let package = Package(
         .executable(
             name: "BasicChatDemo",
             targets: ["BasicChatDemo"]
+        ),
+        .executable(
+            name: "ToolDemo",
+            targets: ["ToolDemo"]
         )
     ],
     dependencies: [
@@ -155,6 +159,11 @@ let package = Package(
             name: "BasicChatDemo",
             dependencies: ["AISDK"],
             path: "Examples/BasicChatDemo"
+        ),
+        .executableTarget(
+            name: "ToolDemo",
+            dependencies: ["AISDK"],
+            path: "Examples/ToolDemo"
         )
     ]
 )

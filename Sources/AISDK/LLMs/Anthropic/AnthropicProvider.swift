@@ -22,7 +22,7 @@ import Alamofire
  * - The 'strict' parameter for function calling is ignored
  */
 
-public class ClaudeProvider: LLM {
+public class AnthropicProvider: LLM {
         
     // MARK: - Properties
     
