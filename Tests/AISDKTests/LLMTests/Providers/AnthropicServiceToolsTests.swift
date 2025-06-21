@@ -13,7 +13,10 @@ final class AnthropicServiceToolsTests: XCTestCase {
         super.setUp()
         
         if shouldUseRealAPI() {
-            service = AnthropicService(apiKey: getAnthropicAPIKey())
+            service = AnthropicService(
+                apiKey: getAnthropicAPIKey(),
+                betaConfiguration: .none
+            )
         }
         
         mockService = MockAnthropicService()
@@ -509,6 +512,11 @@ final class AnthropicServiceToolsTests: XCTestCase {
             case .toolUse(let toolUse):
                 toolsUsed.append(toolUse.name)
                 print("Tool used: \(toolUse.name) with \(toolUse.input)")
+            case .mcpToolUse(let mcpToolUse):
+                toolsUsed.append(mcpToolUse.name)
+                print("MCP Tool used: \(mcpToolUse.name) from \(mcpToolUse.serverName)")
+            case .mcpToolResult(let mcpToolResult):
+                print("MCP Tool result: \(mcpToolResult.allTextContent)")
             }
         }
         

@@ -126,28 +126,6 @@ public class AnthropicService {
         )
     }
     
-    /// Initialize with all beta features enabled
-    public convenience init(
-        apiKey: String,
-        withAllBetaFeatures: Bool = false
-    ) {
-        self.init(
-            apiKey: apiKey,
-            betaConfiguration: withAllBetaFeatures ? .all : .none
-        )
-    }
-    
-    /// Initialize with MCP support enabled
-    public convenience init(
-        apiKey: String,
-        withMCPSupport: Bool = true
-    ) {
-        self.init(
-            apiKey: apiKey,
-            betaConfiguration: BetaConfiguration(mcpClient: withMCPSupport)
-        )
-    }
-    
     // MARK: - Headers Management
     
     private var authorizationHeaders: HTTPHeaders {

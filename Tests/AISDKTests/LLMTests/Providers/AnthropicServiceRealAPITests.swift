@@ -17,7 +17,10 @@ final class AnthropicServiceRealAPITests: XCTestCase {
             return
         }
         
-        service = AnthropicService(apiKey: getAnthropicAPIKey())
+        service = AnthropicService(
+            apiKey: getAnthropicAPIKey(),
+            betaConfiguration: .none
+        )
     }
     
     override func tearDown() {
@@ -46,7 +49,10 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         let apiKey = getAnthropicAPIKey()
         XCTAssertFalse(apiKey.isEmpty, "API key is required for real API tests")
         
-        let testService = AnthropicService(apiKey: apiKey)
+        let testService = AnthropicService(
+            apiKey: apiKey,
+            betaConfiguration: .none
+        )
         
         let request = AnthropicMessageRequestBody(
             maxTokens: 50,
@@ -73,7 +79,10 @@ final class AnthropicServiceRealAPITests: XCTestCase {
     func testRealAPIInvalidKey() async throws {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
         
-        let invalidService = AnthropicService(apiKey: "invalid-key-12345")
+        let invalidService = AnthropicService(
+            apiKey: "invalid-key-12345",
+            betaConfiguration: .none
+        )
         
         let request = AnthropicMessageRequestBody(
             maxTokens: 50,
