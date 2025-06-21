@@ -45,6 +45,8 @@ public struct AnthropicMessageResponseBody: Decodable {
 public enum AnthropicMessageResponseContent: Decodable {
     case text(String)
     case toolUse(AnthropicToolUseBlock)
+    case mcpToolUse(AnthropicMCPToolUseBlock)
+    case mcpToolResult(AnthropicMCPToolResultBlock)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -52,11 +54,17 @@ public enum AnthropicMessageResponseContent: Decodable {
         case id
         case name
         case input
+        case serverName = "server_name"
+        case toolUseId = "tool_use_id"
+        case isError = "is_error"
+        case content
     }
 
     private enum ContentType: String, Decodable {
         case text
         case toolUse = "tool_use"
+        case mcpToolUse = "mcp_tool_use"
+        case mcpToolResult = "mcp_tool_result"
     }
 
     public init(from decoder: Decoder) throws {
@@ -69,6 +77,12 @@ public enum AnthropicMessageResponseContent: Decodable {
         case .toolUse:
             let toolUseBlock = try AnthropicToolUseBlock(from: decoder)
             self = .toolUse(toolUseBlock)
+        case .mcpToolUse:
+            let mcpToolUseBlock = try AnthropicMCPToolUseBlock(from: decoder)
+            self = .mcpToolUse(mcpToolUseBlock)
+        case .mcpToolResult:
+            let mcpToolResultBlock = try AnthropicMCPToolResultBlock(from: decoder)
+            self = .mcpToolResult(mcpToolResultBlock)
         }
     }
 }

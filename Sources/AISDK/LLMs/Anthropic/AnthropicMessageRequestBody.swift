@@ -196,6 +196,11 @@ public struct AnthropicMessageRequestBody: Encodable {
     /// When enabled, Claude will use internal reasoning before providing responses
     /// Supported by Claude Opus 4, Claude Sonnet 4, and Claude Sonnet 3.7
     public let thinking: AnthropicThinkingConfig?
+    
+    /// MCP (Model Context Protocol) servers to connect to
+    /// Enables connecting to remote MCP servers that provide tools and context
+    /// Requires the "mcp-client-2025-04-04" beta header
+    public let mcpServers: [AnthropicMCPServer]?
 
     // MARK: - Beta Features
     
@@ -241,6 +246,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         case topK = "top_k"
         case topP = "top_p"
         case thinking
+        case mcpServers = "mcp_servers"
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -260,6 +266,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         try container.encodeIfPresent(topK, forKey: .topK)
         try container.encodeIfPresent(topP, forKey: .topP)
         try container.encodeIfPresent(thinking, forKey: .thinking)
+        try container.encodeIfPresent(mcpServers, forKey: .mcpServers)
         
         // Handle tool choice with conditional encoding based on beta features
         if let toolChoice = toolChoice {
@@ -291,7 +298,8 @@ public struct AnthropicMessageRequestBody: Encodable {
         tools: [AnthropicTool]? = nil,
         topK: Int? = nil,
         topP: Double? = nil,
-        thinking: AnthropicThinkingConfig? = nil
+        thinking: AnthropicThinkingConfig? = nil,
+        mcpServers: [AnthropicMCPServer]? = nil
     ) {
         self.maxTokens = maxTokens
         self.messages = messages
@@ -306,6 +314,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         self.topK = topK
         self.topP = topP
         self.thinking = thinking
+        self.mcpServers = mcpServers
     }
 }
 

@@ -1,0 +1,40 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:AISDK}",
+            "name": "Debug BasicChatDemo",
+            "program": "${workspaceFolder:AISDK}/.build/debug/BasicChatDemo",
+            "preLaunchTask": "swift: Build Debug BasicChatDemo"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:AISDK}",
+            "name": "Release BasicChatDemo",
+            "program": "${workspaceFolder:AISDK}/.build/release/BasicChatDemo",
+            "preLaunchTask": "swift: Build Release BasicChatDemo"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:AISDK}",
+            "name": "Debug ToolDemo",
+            "program": "${workspaceFolder:AISDK}/.build/debug/ToolDemo",
+            "preLaunchTask": "swift: Build Debug ToolDemo"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:AISDK}",
+            "name": "Release ToolDemo",
+            "program": "${workspaceFolder:AISDK}/.build/release/ToolDemo",
+            "preLaunchTask": "swift: Build Release ToolDemo"
+        }
+    ]
+}

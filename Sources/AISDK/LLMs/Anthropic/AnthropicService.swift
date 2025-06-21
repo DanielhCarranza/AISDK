@@ -55,22 +55,26 @@ public class AnthropicService {
         public let tokenEfficientTools: Bool
         public let extendedThinking: Bool
         public let interleavedThinking: Bool
+        public let mcpClient: Bool
         
         public init(
             tokenEfficientTools: Bool = false,
             extendedThinking: Bool = false,
-            interleavedThinking: Bool = false
+            interleavedThinking: Bool = false,
+            mcpClient: Bool = false
         ) {
             self.tokenEfficientTools = tokenEfficientTools
             self.extendedThinking = extendedThinking
             self.interleavedThinking = interleavedThinking
+            self.mcpClient = mcpClient
         }
         
         public static let none = BetaConfiguration()
         public static let all = BetaConfiguration(
             tokenEfficientTools: true,
             extendedThinking: true,
-            interleavedThinking: true
+            interleavedThinking: true,
+            mcpClient: true
         )
     }
     
@@ -133,6 +137,17 @@ public class AnthropicService {
         )
     }
     
+    /// Initialize with MCP support enabled
+    public convenience init(
+        apiKey: String,
+        withMCPSupport: Bool = true
+    ) {
+        self.init(
+            apiKey: apiKey,
+            betaConfiguration: BetaConfiguration(mcpClient: withMCPSupport)
+        )
+    }
+    
     // MARK: - Headers Management
     
     private var authorizationHeaders: HTTPHeaders {
@@ -145,8 +160,6 @@ public class AnthropicService {
         // Add beta feature headers
         var betaHeaders: [String] = []
         
-
-        
         if betaConfiguration.tokenEfficientTools {
             betaHeaders.append("token-efficient-tools-2025-02-19")
         }
@@ -158,6 +171,10 @@ public class AnthropicService {
         
         if betaConfiguration.interleavedThinking {
             betaHeaders.append("interleaved-thinking-2025-05-14")
+        }
+        
+        if betaConfiguration.mcpClient {
+            betaHeaders.append("mcp-client-2025-04-04")
         }
         
         if !betaHeaders.isEmpty {
@@ -243,7 +260,8 @@ public class AnthropicService {
                 tools: enhancedRequest.tools,
                 topK: enhancedRequest.topK,
                 topP: enhancedRequest.topP,
-                thinking: AnthropicThinkingConfig(budgetTokens: thinkingBudget)
+                thinking: AnthropicThinkingConfig(budgetTokens: thinkingBudget),
+                mcpServers: enhancedRequest.mcpServers
             )
             enhancedRequest.enableTokenEfficientTools = betaConfiguration.tokenEfficientTools
         }
@@ -351,7 +369,8 @@ public class AnthropicService {
                 tools: enhancedRequest.tools,
                 topK: enhancedRequest.topK,
                 topP: enhancedRequest.topP,
-                thinking: AnthropicThinkingConfig(budgetTokens: thinkingBudget)
+                thinking: AnthropicThinkingConfig(budgetTokens: thinkingBudget),
+                mcpServers: enhancedRequest.mcpServers
             )
             enhancedRequest.enableTokenEfficientTools = betaConfiguration.tokenEfficientTools
         }
@@ -419,12 +438,14 @@ public class AnthropicService {
     public func withBetaFeatures(
         tokenEfficientTools: Bool = false,
         extendedThinking: Bool = false,
-        interleavedThinking: Bool = false
+        interleavedThinking: Bool = false,
+        mcpClient: Bool = false
     ) -> AnthropicService {
         let configuration = BetaConfiguration(
             tokenEfficientTools: tokenEfficientTools,
             extendedThinking: extendedThinking,
-            interleavedThinking: interleavedThinking
+            interleavedThinking: interleavedThinking,
+            mcpClient: mcpClient
         )
         return withBetaConfiguration(configuration)
     }
@@ -435,6 +456,7 @@ public class AnthropicService {
         if betaConfiguration.tokenEfficientTools { features.append("token-efficient-tools") }
         if betaConfiguration.extendedThinking { features.append("extended-thinking") }
         if betaConfiguration.interleavedThinking { features.append("interleaved-thinking") }
+        if betaConfiguration.mcpClient { features.append("mcp-client") }
         
         return """
         AnthropicService Configuration:
@@ -443,6 +465,85 @@ public class AnthropicService {
         - Max Retries: \(maxRetries)
         - Retry Delay: \(retryDelay)s
         """
+    }
+    
+    // MARK: - MCP Utilities
+    
+    /// Check if MCP client is enabled
+    public var isMCPEnabled: Bool {
+        return betaConfiguration.mcpClient
+    }
+    
+    /// Extract MCP tool use blocks from a response
+    /// 
+    /// - Parameter response: The response to process
+    /// - Returns: Array of MCP tool use blocks found in the response
+    public func extractMCPToolUses(from response: AnthropicMessageResponseBody) -> [AnthropicMCPToolUseBlock] {
+        return response.content.compactMap { content in
+            if case .mcpToolUse(let mcpToolUse) = content {
+                return mcpToolUse
+            }
+            return nil
+        }
+    }
+    
+    /// Extract MCP tool result blocks from a response
+    /// 
+    /// - Parameter response: The response to process
+    /// - Returns: Array of MCP tool result blocks found in the response
+    public func extractMCPToolResults(from response: AnthropicMessageResponseBody) -> [AnthropicMCPToolResultBlock] {
+        return response.content.compactMap { content in
+            if case .mcpToolResult(let mcpToolResult) = content {
+                return mcpToolResult
+            }
+            return nil
+        }
+    }
+    
+    /// Create a follow-up request with MCP tool results
+    /// 
+    /// - Parameters:
+    ///   - originalRequest: The original request
+    ///   - toolResults: The MCP tool results to include
+    /// - Returns: A new request body with the tool results added
+    public func createFollowUpRequest(
+        from originalRequest: AnthropicMessageRequestBody,
+        withMCPToolResults toolResults: [AnthropicMCPToolResultBlock]
+    ) -> AnthropicMessageRequestBody {
+        // Convert MCP tool results to input content
+        let resultContents: [AnthropicInputContent] = toolResults.map { result in
+            // For now, create a simple text representation
+            // In a full implementation, this would properly format the MCP result
+            let resultText = result.allTextContent
+            return .text("MCP tool result for \(result.toolUseId): \(resultText)")
+        }
+        
+        // Create a new assistant message with the tool results
+        let assistantMessage = AnthropicInputMessage(
+            content: resultContents,
+            role: .assistant
+        )
+        
+        // Add to the conversation
+        var updatedMessages = originalRequest.messages
+        updatedMessages.append(assistantMessage)
+        
+        return AnthropicMessageRequestBody(
+            maxTokens: originalRequest.maxTokens,
+            messages: updatedMessages,
+            model: originalRequest.model,
+            metadata: originalRequest.metadata,
+            stopSequences: originalRequest.stopSequences,
+            stream: originalRequest.stream,
+            system: originalRequest.system,
+            temperature: originalRequest.temperature,
+            toolChoice: originalRequest.toolChoice,
+            tools: originalRequest.tools,
+            topK: originalRequest.topK,
+            topP: originalRequest.topP,
+            thinking: originalRequest.thinking,
+            mcpServers: originalRequest.mcpServers
+        )
     }
 }
 
