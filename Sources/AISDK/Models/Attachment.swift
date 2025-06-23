@@ -8,7 +8,7 @@ public enum AttachmentType: String, Codable {
     case json
     case other
     
-    var icon: String {
+    public var icon: String {
         switch self {
         case .image: return "photo"
         case .pdf: return "doc.text"
@@ -19,7 +19,7 @@ public enum AttachmentType: String, Codable {
         }
     }
     
-    var mimeType: String {
+    public var mimeType: String {
         switch self {
         case .image: return "image/jpeg"
         case .pdf: return "application/pdf"
@@ -30,7 +30,7 @@ public enum AttachmentType: String, Codable {
         }
     }
     
-    static func from(fileExtension: String) -> AttachmentType {
+    public static func from(fileExtension: String) -> AttachmentType {
         switch fileExtension.lowercased() {
         case "jpg", "jpeg", "png", "gif", "heic": return .image
         case "pdf": return .pdf
