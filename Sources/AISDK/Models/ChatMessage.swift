@@ -7,21 +7,21 @@
 
 import Foundation
 
-class ChatMessage: Identifiable, Codable {
-    let id: UUID
-    let timestamp: Date
-    var message: Message
-    var metadata: ToolMetadata?
-    var attachments: [Attachment] = []
+public class ChatMessage: Identifiable, Codable {
+    public let id: UUID
+    public let timestamp: Date
+    public var message: Message
+    public var metadata: ToolMetadata?
+    public var attachments: [Attachment] = []
 
     /// Add this property to track partial/streaming state
     /// We do *not* want it persisted in Firestore.
-    var isPending: Bool = false
+    public var isPending: Bool = false
     
     /// Whether this message should be hidden in the UI
-    var hidden: Bool = false
+    public var hidden: Bool = false
     
-    init(message: Message, metadata: ToolMetadata? = nil, hidden: Bool = false) {
+    public init(message: Message, metadata: ToolMetadata? = nil, hidden: Bool = false) {
         self.id = UUID()
         self.timestamp = Date()
         self.message = message
@@ -34,7 +34,7 @@ class ChatMessage: Identifiable, Codable {
         case id, timestamp, message, metadata, attachments, hidden
     }
     
-    required init(from decoder: Decoder) throws {
+    public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         timestamp = try container.decode(Date.self, forKey: .timestamp)
@@ -44,7 +44,7 @@ class ChatMessage: Identifiable, Codable {
         hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(timestamp, forKey: .timestamp)
@@ -63,7 +63,7 @@ class ChatMessage: Identifiable, Codable {
     // MARK: - Display Content
     
     /// Returns displayable content for the message
-    var displayContent: String {
+    public var displayContent: String {
         switch message {
         case .user(let content, _):
             switch content {
@@ -102,7 +102,7 @@ class ChatMessage: Identifiable, Codable {
     // MARK: - Media Content
     
     /// Returns any images associated with the message
-    var images: [ImageSource] {
+    public var images: [ImageSource] {
         switch message {
         case .user(let content, _):
             switch content {
@@ -118,7 +118,7 @@ class ChatMessage: Identifiable, Codable {
     }
     
     /// Creates a pending message for the given role
-    static func pending(role: Message) -> ChatMessage {
+    public static func pending(role: Message) -> ChatMessage {
         let message = ChatMessage(message: role)
         message.isPending = true
         return message
@@ -126,7 +126,7 @@ class ChatMessage: Identifiable, Codable {
 }
 
 extension ChatMessage: Equatable {
-    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+    public static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
         // Compare the unique identifiers
         lhs.id == rhs.id
     }

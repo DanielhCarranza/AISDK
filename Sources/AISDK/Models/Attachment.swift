@@ -1,6 +1,6 @@
 import Foundation
 
-enum AttachmentType: String, Codable {
+public enum AttachmentType: String, Codable {
     case image
     case pdf
     case audio
@@ -42,16 +42,16 @@ enum AttachmentType: String, Codable {
     }
 }
 
-struct Attachment: Identifiable, Codable {
-    let id: UUID
-    let url: URL
-    let name: String
-    let type: AttachmentType
-    let size: Int64?
-    let createdAt: Date
-    let content: String?
+public struct Attachment: Identifiable, Codable {
+    public let id: UUID
+    public let url: URL
+    public let name: String
+    public let type: AttachmentType
+    public let size: Int64?
+    public let createdAt: Date
+    public let content: String?
     
-    init(url: URL, name: String, type: AttachmentType? = nil, size: Int64? = nil, content: String? = nil) {
+    public init(url: URL, name: String, type: AttachmentType? = nil, size: Int64? = nil, content: String? = nil) {
         self.id = UUID()
         self.url = url
         self.name = name
@@ -61,7 +61,7 @@ struct Attachment: Identifiable, Codable {
         self.content = content
     }
     
-    init() {
+    public init() {
         self.id = UUID()
         self.url = URL(string: "attachment://\(id)")!
         self.name = "Attachment"
