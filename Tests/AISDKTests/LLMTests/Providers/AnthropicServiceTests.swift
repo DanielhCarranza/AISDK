@@ -47,7 +47,7 @@ final class AnthropicServiceTests: XCTestCase {
         XCTAssertNotNil(envService)
         
         // Test with all beta features
-        let betaService = AnthropicService(apiKey: "test-key", withAllBetaFeatures: true)
+        let betaService = AnthropicService(apiKey: "test-key", betaConfiguration: .all)
         XCTAssertNotNil(betaService)
         
         // Test convenience initializer
@@ -575,6 +575,100 @@ final class AnthropicServiceTests: XCTestCase {
         } catch {
             XCTFail("Real API test failed: \(error)")
         }
+    }
+    
+    // MARK: - Structured Output Tests
+    
+    func testGenerateObjectWithJSONMode() async throws {
+        // Define a test structure
+        struct TestResponse: Codable {
+            let message: String
+            let count: Int
+        }
+        
+        // Create a request with JSON response format
+        let request = AnthropicMessageRequestBody(
+            maxTokens: 1000,
+            messages: [
+                AnthropicInputMessage(
+                    content: [.text("Return a JSON object with 'message' and 'count' fields")],
+                    role: .user
+                )
+            ],
+            model: "claude-3-7-sonnet-20250219",
+            responseFormat: .jsonObject
+        )
+        
+        // Mock the response to return valid JSON
+        let mockJSON = """
+        {
+            "message": "Hello from Claude",
+            "count": 42
+        }
+        """
+        
+        let mockResponse = AnthropicMessageResponseBody(
+            content: [.text(mockJSON)],
+            id: "test-id",
+            model: "claude-3-7-sonnet-20250219",
+            role: "assistant",
+            stopReason: "end_turn",
+            stopSequence: nil,
+            type: "message",
+            usage: AnthropicMessageUsage(inputTokens: 10, outputTokens: 20)
+        )
+        
+        // Create a mock service that returns our test response
+        let mockService = MockAnthropicService(mockResponse: mockResponse)
+        
+        // Test the generateObject method
+        let result: TestResponse = try await mockService.generateObject(request: request)
+        
+        // Verify the result
+        XCTAssertEqual(result.message, "Hello from Claude")
+        XCTAssertEqual(result.count, 42)
+    }
+    
+    func testGenerateObjectSystemPromptModification() async throws {
+        // Test that the system prompt is correctly modified for JSON output
+        let originalSystem = "You are a helpful assistant."
+        
+        let request = AnthropicMessageRequestBody(
+            maxTokens: 1000,
+            messages: [
+                AnthropicInputMessage(
+                    content: [.text("Hello")],
+                    role: .user
+                )
+            ],
+            model: "claude-3-7-sonnet-20250219",
+            system: originalSystem,
+            responseFormat: .jsonObject
+        )
+        
+        let mockResponse = AnthropicMessageResponseBody(
+            content: [.text("{\"response\": \"hello\"}")],
+            id: "test-id",
+            model: "claude-3-7-sonnet-20250219",
+            role: "assistant",
+            stopReason: "end_turn",
+            stopSequence: nil,
+            type: "message",
+            usage: AnthropicMessageUsage(inputTokens: 10, outputTokens: 20)
+        )
+        
+        let mockService = MockAnthropicService(mockResponse: mockResponse)
+        
+        struct SimpleResponse: Codable {
+            let response: String
+        }
+        
+        let result: SimpleResponse = try await mockService.generateObject(request: request)
+        XCTAssertEqual(result.response, "hello")
+        
+        // Verify that the system prompt was enhanced
+        XCTAssertTrue(mockService.lastRequestBody?.system?.contains("JSON") ?? false)
+        XCTAssertTrue(mockService.lastRequestBody?.system?.contains(originalSystem) ?? false)
     }
 }
 

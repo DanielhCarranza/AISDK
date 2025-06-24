@@ -445,6 +445,125 @@ public class AnthropicService {
         """
     }
     
+    // MARK: - Structured Output Methods
+    
+    /// Generate a structured object from Anthropic using JSON mode and type-safe decoding
+    ///
+    /// This method provides OpenAI-compatible structured output functionality for Anthropic models.
+    /// It automatically handles system prompt modification to ensure JSON responses and provides
+    /// type-safe decoding of the structured data.
+    ///
+    /// Examples:
+    /// ```swift
+    /// // For raw responses:
+    /// let request = AnthropicMessageRequestBody(
+    ///     maxTokens: 1000,
+    ///     messages: [
+    ///         AnthropicInputMessage(content: [.text("Hello")], role: .user)
+    ///     ],
+    ///     model: "claude-3-7-sonnet-20250219"
+    /// )
+    /// let response: AnthropicMessageResponseBody = try await service.generateObject(request: request)
+    ///
+    /// // For JSON object responses:
+    /// let jsonRequest = AnthropicMessageRequestBody(
+    ///     maxTokens: 1000,
+    ///     messages: [...],
+    ///     model: "claude-3-7-sonnet-20250219",
+    ///     responseFormat: .jsonObject
+    /// )
+    /// let book: Book = try await service.generateObject(request: jsonRequest)
+    ///
+    /// // For schema-validated objects:
+    /// let schemaRequest = AnthropicMessageRequestBody(
+    ///     maxTokens: 1000,
+    ///     messages: [...],
+    ///     model: "claude-3-7-sonnet-20250219",
+    ///     responseFormat: .jsonSchema(
+    ///         name: "book_recommendation",
+    ///         description: "A book recommendation with details",
+    ///         schemaBuilder: Book.schema(),
+    ///         strict: true
+    ///     )
+    /// )
+    /// let book: Book = try await service.generateObject(request: schemaRequest)
+    /// ```
+    public func generateObject<T: Decodable>(
+        request: AnthropicMessageRequestBody
+    ) async throws -> T {
+        // Create an enhanced request with modified system prompt for structured output
+        var enhancedRequest = request
+        
+        // Handle response format by modifying the system prompt
+        if let responseFormat = request.responseFormat {
+            let originalSystem = request.system ?? ""
+            
+            if let systemAddition = responseFormat.systemPromptAddition {
+                let enhancedSystem = originalSystem.isEmpty 
+                    ? systemAddition
+                    : "\(originalSystem)\n\n\(systemAddition)"
+                
+                enhancedRequest = AnthropicMessageRequestBody(
+                    maxTokens: request.maxTokens,
+                    messages: request.messages,
+                    model: request.model,
+                    metadata: request.metadata,
+                    stopSequences: request.stopSequences,
+                    stream: request.stream,
+                    system: enhancedSystem,
+                    temperature: request.temperature,
+                    toolChoice: request.toolChoice,
+                    tools: request.tools,
+                    topK: request.topK,
+                    topP: request.topP,
+                    thinking: request.thinking,
+                    mcpServers: request.mcpServers,
+                    responseFormat: nil // Remove from actual request since Anthropic doesn't support it
+                )
+            }
+        }
+        
+        // Make the request using the existing messageRequest method
+        let response = try await messageRequest(body: enhancedRequest)
+        
+        // If T is AnthropicMessageResponseBody, return it directly
+        if T.self is AnthropicMessageResponseBody.Type {
+            return response as! T
+        }
+        
+        // Otherwise, extract content and parse as JSON
+        guard let firstContent = response.content.first else {
+            throw LLMError.parsingError("No content in Anthropic response")
+        }
+        
+        // Extract text content from the response
+        let contentText: String
+        switch firstContent {
+        case .text(let text):
+            contentText = text
+        case .toolUse(_):
+            throw LLMError.parsingError("Received tool use response when expecting structured data")
+        case .mcpToolUse(_):
+            throw LLMError.parsingError("Received MCP tool use response when expecting structured data")
+        case .mcpToolResult(_):
+            throw LLMError.parsingError("Received MCP tool result response when expecting structured data")
+        }
+        
+        // Convert response content to JSON data
+        guard let jsonData = contentText.data(using: .utf8) else {
+            throw LLMError.parsingError("Failed to convert Anthropic response to UTF-8 data")
+        }
+        
+        // Attempt to decode the content into the target type
+        do {
+            let decoder = JSONDecoder()
+            let result = try decoder.decode(T.self, from: jsonData)
+            return result
+        } catch {
+            throw LLMError.parsingError("Failed to decode Anthropic response to \(T.self): \(error.localizedDescription). Response content: \(contentText)")
+        }
+    }
+
     // MARK: - MCP Utilities
     
     /// Check if MCP client is enabled

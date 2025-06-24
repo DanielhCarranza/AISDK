@@ -74,6 +74,11 @@ struct BasicChatDemo {
         await testStructuredOutput(provider: openAIProvider, providerName: "OpenAI")
         await testGenerateObjectMethod(provider: openAIProvider, providerName: "OpenAI")
         
+        // Test Anthropic generateObject method
+        if let anthropicProvider = anthropicProvider {
+            await testAnthropicGenerateObject(provider: anthropicProvider)
+        }
+        
         // Test 5: Tool Calling Tests
         await testDirectToolCalls()
         await testToolWithLLM(provider: openAIProvider, providerName: "OpenAI")
@@ -786,5 +791,171 @@ func createTestImage() -> Data? {
 extension String {
     static func *(left: String, right: Int) -> String {
         return String(repeating: left, count: right)
+    }
+}
+
+func testAnthropicGenerateObject(provider: AnthropicProvider) async {
+    print("\n🏗️ Testing Anthropic Generate Object Method...")
+    
+    do {
+        // Define schema models using JSONSchemaModel and @Field (like the fruit example)
+        struct Product: JSONSchemaModel {
+            @Field(
+                description: "The name of the product",
+                validation: [
+                    "type": .string("string"),
+                    "minLength": .integer(1),
+                    "maxLength": .integer(100)
+                ]
+            )
+            var name: String = ""
+            
+            @Field(
+                description: "The price of the product in USD",
+                validation: [
+                    "type": .string("number"),
+                    "minimum": .number(0.01),
+                    "maximum": .number(10000.0)
+                ]
+            )
+            var price: Double = 0.0
+            
+            @Field(
+                description: "The category of the product",
+                validation: [
+                    "type": .string("string"),
+                    "enum": .array([.string("Electronics"), .string("Clothing"), .string("Books"), .string("Home")])
+                ]
+            )
+            var category: String = ""
+            
+            @Field(
+                description: "Whether the product is in stock",
+                validation: [
+                    "type": .string("boolean")
+                ]
+            )
+            var inStock: Bool = false
+            
+            init() {}
+        }
+        
+        struct UserPreferences: JSONSchemaModel {
+            @Field(
+                description: "The UI theme preference",
+                validation: [
+                    "type": .string("string"),
+                    "enum": .array([.string("light"), .string("dark"), .string("auto")])
+                ]
+            )
+            var theme: String = ""
+            
+            @Field(
+                description: "Whether notifications are enabled",
+                validation: [
+                    "type": .string("boolean")
+                ]
+            )
+            var notifications: Bool = false
+            
+            init() {}
+        }
+        
+        struct User: JSONSchemaModel {
+            @Field(
+                description: "The user's unique identifier",
+                validation: [
+                    "type": .string("integer"),
+                    "minimum": .integer(1),
+                    "maximum": .integer(999999)
+                ]
+            )
+            var id: Int = 0
+            
+            @Field(
+                description: "The user's full name",
+                validation: [
+                    "type": .string("string"),
+                    "minLength": .integer(1),
+                    "maxLength": .integer(50)
+                ]
+            )
+            var name: String = ""
+            
+            @Field(
+                description: "The user's email address",
+                validation: [
+                    "type": .string("string"),
+                    "format": .string("email")
+                ]
+            )
+            var email: String = ""
+            
+            @Field(
+                description: "The user's preferences object",
+                validation: [
+                    "type": .string("object")
+                ]
+            )
+            var preferences: UserPreferences = UserPreferences()
+            
+            init() {}
+        }
+        
+        // Test 1: Product generation using JSON Schema
+        let productRequest = ChatCompletionRequest(
+            model: "claude-3-7-sonnet-20250219",
+            messages: [
+                .system(content: .text("Return valid JSON following the schema")),
+                .user(content: .text("Generate a laptop product with realistic data"))
+            ],
+            responseFormat: .jsonSchema(
+                name: "product",
+                description: "A product with name, price, category, and stock status",
+                schemaBuilder: Product.schema()
+                    .title("Product")
+                    .description("A product object with all required fields"),
+                strict: true
+            )
+        )
+        
+        // Use the generateObject method with JSON Schema
+        let product: Product = try await provider.generateObject(request: productRequest)
+        
+        print("✅ Anthropic Product Object Generated:")
+        print("   📦 Name: \(product.name)")
+        print("   💰 Price: $\(product.price)")
+        print("   🏷️  Category: \(product.category)")
+        print("   📊 In Stock: \(product.inStock)")
+        
+        // Test 2: User generation using JSON Schema with nested object
+        let userRequest = ChatCompletionRequest(
+            model: "claude-3-7-sonnet-20250219",
+            messages: [
+                .system(content: .text("Return valid JSON following the schema")),
+                .user(content: .text("Generate a user profile for a software developer"))
+            ],
+            responseFormat: .jsonSchema(
+                name: "user",
+                description: "A user profile with preferences",
+                schemaBuilder: User.schema()
+                    .title("User Profile")
+                    .description("A complete user profile with nested preferences"),
+                strict: true
+            )
+        )
+        
+        // Use the generateObject method with complex nested schema
+        let user: User = try await provider.generateObject(request: userRequest)
+        
+        print("✅ Anthropic User Object Generated:")
+        print("   🆔 ID: \(user.id)")
+        print("   👤 Name: \(user.name)")
+        print("   📧 Email: \(user.email)")
+        print("   🎨 Theme: \(user.preferences.theme)")
+        print("   🔔 Notifications: \(user.preferences.notifications)")
+        
+    } catch {
+        print("❌ Anthropic Generate Object Error: \(error)")
     }
 } 

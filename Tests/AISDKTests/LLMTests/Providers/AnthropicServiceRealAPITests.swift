@@ -603,6 +603,213 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         print("Completed \(requestCount) concurrent requests in \(String(format: "%.2f", duration)) seconds")
     }
     
+    // MARK: - Structured Output Tests
+    
+    func testRealAPIGenerateObjectBasic() async throws {
+        try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
+        
+        // Simple schema model with only the fields we explicitly request
+        struct SimpleProduct: Codable {
+            let name: String
+            let price: Double
+            let category: String
+            let stockStatus: String
+        }
+        
+        let request = AnthropicMessageRequestBody(
+            maxTokens: 200,
+            messages: [
+                AnthropicInputMessage(
+                    content: [.text("Generate a simple laptop product with ONLY these fields: name (string), price (number), category (string), stockStatus (string). Keep it simple and don't add extra fields.")],
+                    role: .user
+                )
+            ],
+            model: "claude-3-7-sonnet-20250219",
+            system: "You are a helpful assistant. Generate ONLY a simple JSON object with exactly these 4 fields: name, price, category, stockStatus. Do not add any other fields.",
+            temperature: 0.1,
+            responseFormat: .jsonObject
+        )
+        
+        let product: SimpleProduct = try await service.generateObject(request: request)
+        
+        // Validate the generated product
+        XCTAssertFalse(product.name.isEmpty, "Product name should not be empty")
+        XCTAssertGreaterThan(product.price, 0, "Product price should be positive")
+        XCTAssertFalse(product.category.isEmpty, "Product category should not be empty")
+        
+        print("✅ Real API Generate Object Basic Test Passed")
+        print("Generated Product:")
+        print("  📦 Name: \(product.name)")
+        print("  💰 Price: $\(product.price)")
+        print("  🏷️  Category: \(product.category)")
+        print("  📊 Stock Status: \(product.stockStatus)")
+    }
+    
+    func testRealAPIGenerateObjectWithSchema() async throws {
+        try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
+        
+        // Test with a simple structured model
+        struct UserProfile: Codable {
+            let id: Int
+            let name: String
+            let email: String
+            let age: Int
+        }
+        
+        let request = AnthropicMessageRequestBody(
+            maxTokens: 300,
+            messages: [
+                AnthropicInputMessage(
+                    content: [.text("Create a user profile for a software developer in their 30s")],
+                    role: .user
+                )
+            ],
+            model: "claude-3-7-sonnet-20250219",
+            system: "Generate realistic user profile data with id, name, email, and age fields in JSON format.",
+            temperature: 0.2,
+            responseFormat: .jsonObject
+        )
+        
+        let userProfile: UserProfile = try await service.generateObject(request: request)
+        
+        // Validate the generated user profile
+        XCTAssertGreaterThan(userProfile.id, 0, "User ID should be positive")
+        XCTAssertFalse(userProfile.name.isEmpty, "User name should not be empty")
+        XCTAssertTrue(userProfile.email.contains("@"), "Email should contain @ symbol")
+        XCTAssertGreaterThanOrEqual(userProfile.age, 18, "Age should be at least 18")
+        XCTAssertLessThanOrEqual(userProfile.age, 120, "Age should be reasonable")
+        
+        print("✅ Real API Generate Object with Schema Test Passed")
+        print("Generated User Profile:")
+        print("  🆔 ID: \(userProfile.id)")
+        print("  👤 Name: \(userProfile.name)")
+        print("  📧 Email: \(userProfile.email)")
+        print("  🎂 Age: \(userProfile.age)")
+    }
+    
+    func testRealAPIGenerateObjectComplexStructure() async throws {
+        try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
+        
+        // Test with nested structures
+        struct Address: Codable {
+            let street: String
+            let city: String
+            let country: String
+            let zipCode: String
+        }
+        
+        struct CompanyWrapper: Codable {
+            let company: Company?
+            let name: String?
+            let industry: String?
+            let employees: Int?
+            let founded: Int?
+            let headquarters: Address?
+            
+            // Extract the actual company data regardless of structure
+            var actualCompany: Company {
+                if let company = company {
+                    return company
+                } else {
+                    return Company(
+                        name: name ?? "Unknown",
+                        industry: industry ?? "Unknown",
+                        employees: employees ?? 0,
+                        founded: founded ?? 2000,
+                        headquarters: headquarters ?? Address(street: "", city: "", country: "", zipCode: "")
+                    )
+                }
+            }
+        }
+        
+        struct Company: Codable {
+            let name: String
+            let industry: String
+            let employees: Int
+            let founded: Int
+            let headquarters: Address
+        }
+        
+        let request = AnthropicMessageRequestBody(
+            maxTokens: 400,
+            messages: [
+                AnthropicInputMessage(
+                    content: [.text("Create a technology company profile with headquarters address. Make it realistic and detailed.")],
+                    role: .user
+                )
+            ],
+            model: "claude-3-7-sonnet-20250219",
+            system: "Generate realistic company data with nested address information in JSON format.",
+            temperature: 0.3,
+            responseFormat: .jsonObject
+        )
+        
+        let companyWrapper: CompanyWrapper = try await service.generateObject(request: request)
+        let company = companyWrapper.actualCompany
+        
+        // Validate the generated company
+        XCTAssertFalse(company.name.isEmpty, "Company name should not be empty")
+        XCTAssertFalse(company.industry.isEmpty, "Industry should not be empty")
+        XCTAssertGreaterThan(company.employees, 0, "Employee count should be positive")
+        XCTAssertGreaterThan(company.founded, 1800, "Founded year should be reasonable")
+        
+        // Validate nested address
+        XCTAssertFalse(company.headquarters.street.isEmpty, "Street should not be empty")
+        XCTAssertFalse(company.headquarters.city.isEmpty, "City should not be empty")
+        XCTAssertFalse(company.headquarters.country.isEmpty, "Country should not be empty")
+        XCTAssertFalse(company.headquarters.zipCode.isEmpty, "Zip code should not be empty")
+        
+        print("✅ Real API Generate Object Complex Structure Test Passed")
+        print("Generated Company:")
+        print("  🏢 Name: \(company.name)")
+        print("  🏭 Industry: \(company.industry)")
+        print("  👥 Employees: \(company.employees)")
+        print("  📅 Founded: \(company.founded)")
+        print("  📍 HQ: \(company.headquarters.street), \(company.headquarters.city), \(company.headquarters.country)")
+    }
+    
+    func testRealAPIGenerateObjectErrorHandling() async throws {
+        try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
+        
+        // Test with intentionally difficult parsing scenario
+        struct StrictSchema: Codable {
+            let requiredField: String
+            let numericField: Int
+        }
+        
+        let request = AnthropicMessageRequestBody(
+            maxTokens: 100,
+            messages: [
+                AnthropicInputMessage(
+                    content: [.text("Respond with completely invalid JSON that cannot be parsed")],
+                    role: .user
+                )
+            ],
+            model: "claude-3-7-sonnet-20250219",
+            system: "You must respond with valid JSON only.",
+            temperature: 0.1,
+            responseFormat: .jsonObject
+        )
+        
+        do {
+            let _: StrictSchema = try await service.generateObject(request: request)
+            // If we get here, Claude managed to produce valid JSON despite the conflicting instruction
+            print("✅ Claude produced valid JSON despite conflicting instructions")
+        } catch let error as LLMError {
+            // Expected to fail with parsing error
+            switch error {
+            case .parsingError(let message):
+                XCTAssertTrue(message.contains("decode") || message.contains("JSON"))
+                print("✅ Real API Generate Object Error Handling Test Passed")
+                print("Got expected parsing error: \(message)")
+            default:
+                XCTFail("Expected parsing error, got \(error)")
+            }
+        } catch {
+            XCTFail("Expected LLMError, got \(error)")
+        }
+    }
+    
     // MARK: - Integration Tests
     
     func testRealAPIFullWorkflow() async throws {

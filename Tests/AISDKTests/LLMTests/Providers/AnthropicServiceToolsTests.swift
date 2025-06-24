@@ -632,6 +632,7 @@ public class MockAnthropicService {
     // MARK: - Tracking
     
     public private(set) var lastRequest: AnthropicMessageRequestBody?
+    public private(set) var lastRequestBody: AnthropicMessageRequestBody?
     public private(set) var requestCount = 0
     
     // MARK: - Initialization
@@ -640,10 +641,16 @@ public class MockAnthropicService {
         setupDefaultResponses()
     }
     
+    public init(mockResponse: AnthropicMessageResponseBody) {
+        self.mockResponse = mockResponse
+        // Don't call setupDefaultResponses() here since it would reset mockResponse
+    }
+    
     // MARK: - Mock Methods
     
     public func messageRequest(body: AnthropicMessageRequestBody) async throws -> AnthropicMessageResponseBody {
         lastRequest = body
+        lastRequestBody = body
         requestCount += 1
         
         if shouldThrowError {
@@ -679,6 +686,76 @@ public class MockAnthropicService {
         }
     }
     
+    public func generateObject<T: Decodable>(request: AnthropicMessageRequestBody) async throws -> T {
+        // Simulate the system prompt modification logic from the real AnthropicService
+        var enhancedRequest = request
+        
+        // Handle response format by modifying the system prompt
+        if let responseFormat = request.responseFormat {
+            let originalSystem = request.system ?? ""
+            
+            if let systemAddition = responseFormat.systemPromptAddition {
+                let enhancedSystem = originalSystem.isEmpty 
+                    ? systemAddition
+                    : "\(originalSystem)\n\n\(systemAddition)"
+                
+                enhancedRequest = AnthropicMessageRequestBody(
+                    maxTokens: request.maxTokens,
+                    messages: request.messages,
+                    model: request.model,
+                    metadata: request.metadata,
+                    stopSequences: request.stopSequences,
+                    stream: request.stream,
+                    system: enhancedSystem,
+                    temperature: request.temperature,
+                    toolChoice: request.toolChoice,
+                    tools: request.tools,
+                    topK: request.topK,
+                    topP: request.topP,
+                    thinking: request.thinking,
+                    mcpServers: request.mcpServers,
+                    responseFormat: nil // Remove from actual request since Anthropic doesn't support it
+                )
+            }
+        }
+        
+        let response = try await messageRequest(body: enhancedRequest)
+        
+        // If T is AnthropicMessageResponseBody, return it directly
+        if T.self is AnthropicMessageResponseBody.Type {
+            return response as! T
+        }
+        
+        // Otherwise, extract content and parse as JSON
+        guard let firstContent = response.content.first else {
+            throw LLMError.parsingError("No content in mock response")
+        }
+        
+        let contentText: String
+        switch firstContent {
+        case .text(let text):
+            contentText = text
+        case .toolUse(_):
+            throw LLMError.parsingError("Received tool use response when expecting structured data")
+        case .mcpToolUse(_):
+            throw LLMError.parsingError("Received MCP tool use response when expecting structured data")
+        case .mcpToolResult(_):
+            throw LLMError.parsingError("Received MCP tool result response when expecting structured data")
+        }
+        
+        guard let jsonData = contentText.data(using: .utf8) else {
+            throw LLMError.parsingError("Failed to convert mock response to UTF-8 data")
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            let result = try decoder.decode(T.self, from: jsonData)
+            return result
+        } catch {
+            throw LLMError.parsingError("Failed to decode mock response to \(T.self): \(error.localizedDescription). Response content: \(contentText)")
+        }
+    }
+    
     // MARK: - Helper Methods
     
     public func reset() {
@@ -699,7 +776,10 @@ public class MockAnthropicService {
     // MARK: - Private Methods
     
     private func setupDefaultResponses() {
-        mockResponse = nil
+        // Only reset if not already set
+        if mockResponse == nil {
+            mockResponse = nil
+        }
         mockStreamChunks = []
     }
     

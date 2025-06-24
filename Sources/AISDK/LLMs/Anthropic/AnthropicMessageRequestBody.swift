@@ -196,11 +196,16 @@ public struct AnthropicMessageRequestBody: Encodable {
     /// When enabled, Claude will use internal reasoning before providing responses
     /// Supported by Claude Opus 4, Claude Sonnet 4, and Claude Sonnet 3.7
     public let thinking: AnthropicThinkingConfig?
-    
+
     /// MCP (Model Context Protocol) servers to connect to
     /// Enables connecting to remote MCP servers that provide tools and context
     /// Requires the "mcp-client-2025-04-04" beta header
     public let mcpServers: [AnthropicMCPServer]?
+
+    /// Response format for structured outputs
+    /// When specified, Claude will format its response according to the given structure
+    /// Supports JSON object mode and JSON schema validation
+    public let responseFormat: AnthropicResponseFormat?
 
     // MARK: - Beta Features
     
@@ -247,6 +252,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         case topP = "top_p"
         case thinking
         case mcpServers = "mcp_servers"
+        case responseFormat = "response_format"
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -267,6 +273,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         try container.encodeIfPresent(topP, forKey: .topP)
         try container.encodeIfPresent(thinking, forKey: .thinking)
         try container.encodeIfPresent(mcpServers, forKey: .mcpServers)
+        try container.encodeIfPresent(responseFormat, forKey: .responseFormat)
         
         // Handle tool choice with conditional encoding based on beta features
         if let toolChoice = toolChoice {
@@ -299,7 +306,8 @@ public struct AnthropicMessageRequestBody: Encodable {
         topK: Int? = nil,
         topP: Double? = nil,
         thinking: AnthropicThinkingConfig? = nil,
-        mcpServers: [AnthropicMCPServer]? = nil
+        mcpServers: [AnthropicMCPServer]? = nil,
+        responseFormat: AnthropicResponseFormat? = nil
     ) {
         self.maxTokens = maxTokens
         self.messages = messages
@@ -315,9 +323,64 @@ public struct AnthropicMessageRequestBody: Encodable {
         self.topP = topP
         self.thinking = thinking
         self.mcpServers = mcpServers
+        self.responseFormat = responseFormat
     }
 }
 
+/// Response format options for Anthropic structured outputs
+/// 
+/// Anthropic doesn't natively support response_format in their API like OpenAI,
+/// but we can simulate structured outputs by modifying the system prompt to
+/// instruct Claude to respond in specific formats.
+public enum AnthropicResponseFormat: Encodable {
+    case text
+    case jsonObject
+    case jsonSchema(
+        name: String,
+        description: String? = nil,
+        schemaBuilder: any SchemaBuilding,
+        strict: Bool? = nil
+    )
+    
+    /// Get the system prompt modification needed for this response format
+    public var systemPromptAddition: String? {
+        switch self {
+        case .text:
+            return nil
+        case .jsonObject:
+            return "You must respond with valid JSON only. Do not include any explanatory text outside the JSON structure."
+        case .jsonSchema(let name, let description, let schemaBuilder, _):
+            let schema = schemaBuilder.build()
+            let schemaDescription = description ?? "structured data"
+            
+            // Convert JSONSchema to a readable format for the prompt
+            var prompt = "You must respond with valid JSON that matches this exact schema for \(schemaDescription):\n\n"
+            
+            // Add schema information to the prompt
+            if let schemaData = try? JSONSerialization.data(withJSONObject: schema.rawValue, options: .prettyPrinted),
+               let schemaString = String(data: schemaData, encoding: .utf8) {
+                prompt += "Schema:\n\(schemaString)\n\n"
+            }
+            
+            prompt += "Respond ONLY with valid JSON that conforms to this schema. Do not include any explanatory text."
+            return prompt
+        }
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        // For Anthropic, we don't actually send this in the request body
+        // Instead, we use it to modify the system prompt
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text:
+            try container.encode("text")
+        case .jsonObject:
+            try container.encode("json_object")
+        case .jsonSchema(let name, _, _, _):
+            try container.encode("json_schema:\(name)")
+        }
+    }
+}
 
 public enum AnthropicImageMediaType: String {
     case jpeg = "image/jpeg"
