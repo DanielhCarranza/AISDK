@@ -5,11 +5,13 @@ import PackageDescription
 
 let package = Package(
     name: "AISDK",
+    // Version: 1.0.0 - Comprehensive AI SDK for Swift
+    // Release Date: January 24, 2025
     platforms: [
-        .iOS(.v16),
-        .macOS(.v13),
-        .watchOS(.v9),
-        .tvOS(.v16)
+        .iOS(.v17),
+        .macOS(.v14),
+        .watchOS(.v10),
+        .tvOS(.v17)
     ],
     products: [
         // Core library - Required

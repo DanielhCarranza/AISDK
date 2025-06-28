@@ -11,14 +11,7 @@ import Combine
 import OpenAI
 
 
-class AIChatManager: Observable {
-    // MARK: - Dependencies
-    private var healthProfile = HealthProfile()
-    
-    // MARK: - Configuration
-    private let triggerEvent: TriggerEvent?
-    private let dynamicMessage: DynamicMessage?
-    
+class AIChatManager: Observable {    
     // MARK: - Session State
     
     /// List of all chat sessions
@@ -66,7 +59,6 @@ class AIChatManager: Observable {
     private var isSetupComplete = false
     private var agent: Agent!
     
-    private let aiClient = OpenAIService()
     private let metadataTracker = MetadataTracker()
     private let documentManager = DocumentManager()
     
@@ -78,13 +70,7 @@ class AIChatManager: Observable {
     
     // MARK: - Initialization
     
-    init(
-        triggerEvent: TriggerEvent? = nil,
-        dynamicMessage: DynamicMessage? = nil,
-        healthProfile: String? = nil
-    ) {
-        self.triggerEvent = triggerEvent
-        self.dynamicMessage = dynamicMessage
+    init( ) {
         
         // We'll perform immediate setup but only once
         self.setup()
@@ -95,12 +81,7 @@ class AIChatManager: Observable {
         // Skip if already setup
         guard !isSetupComplete else { return }
         
-        // Get appropriate system prompt based on trigger
-        let systemPrompt = if let trigger = triggerEvent {
-            String(localized: "SYSTEM_OBSERVER_MODE") + "\n\nContext: \(trigger.context)"
-        } else {
-            String(localized: "SYSTEM_PROMPT_AI_COMPANION")
-        }
+        let systemPrompt = String(localized: "SYSTEM_PROMPT_AI_COMPANION")
 
         // Initialize agent with selected prompt and our new health tools
         do {
@@ -155,16 +136,6 @@ class AIChatManager: Observable {
         isLoading = true
         isLoadingSession = true  // Explicitly set to ensure state consistency
         
-        // If we have a dynamic message or trigger event, always create a new session first
-        if dynamicMessage != nil || triggerEvent != nil {
-            Task {
-                await createNewSession(
-                    triggerEvent: triggerEvent,
-                    dynamicMessage: dynamicMessage
-                )
-            }
-            return
-        }
         
         // Fast path: First try to load the most recent session
         if let lastSessionId = defaults.string(forKey: lastSessionKey) {
@@ -357,10 +328,7 @@ class AIChatManager: Observable {
     ///
     /// The session will only be *saved* once the first user message arrives,
     /// preventing "empty" sessions in the DB.
-    func createNewSession(
-        triggerEvent: TriggerEvent? = nil,
-        dynamicMessage: DynamicMessage? = nil
-    ) async {
+    func createNewSession() async {
         stopStreaming()
         
         // Reset metadata tracker for new session
@@ -369,11 +337,7 @@ class AIChatManager: Observable {
         var newSession = ChatSession(title: "New Chat")
         
         // First system message - AI instructions
-        let systemPrompt = if let trigger = triggerEvent {
-            String(localized: "SYSTEM_OBSERVER_MODE") + "\n\nContext: \(trigger.context)"
-        } else {
-            String(localized: "SYSTEM_PROMPT_AI_COMPANION")
-        }
+        let systemPrompt = String(localized: "SYSTEM_PROMPT_AI_COMPANION")
         
         let systemMsg = ChatMessage(message: .system(content: .text(systemPrompt)))
         newSession.messages.append(systemMsg)
@@ -613,19 +577,17 @@ class AIChatManager: Observable {
         Created based on the last message inquiry of the user.
         """
         
-        // Create the message parameter correctly
-        let message = ChatQuery.ChatCompletionMessageParam(
-            role: .user,
-            content: prompt
+        // Create the request using ChatCompletionRequest (same as generateSuggestedQuestions)
+        let request = ChatCompletionRequest(
+            model: "gpt-4o-mini",
+            messages: [
+                .user(content: .text(prompt))
+            ]
         )
         
-        let query = ChatQuery(
-            messages: [message].compactMap { $0 },
-            model: "gpt-4o-mini"
-        )
-        
-        let result = try await aiClient.chats(query: query)
-        return result.choices.first?.message.content?.string ?? "New Chat"
+        // Use the agent's LLM provider
+        let response = try await agent.llm.sendChatCompletion(request: request)
+        return response.choices.first?.message.content ?? "New Chat"
     }
     
     // MARK: - Upsert (Create or Update)
