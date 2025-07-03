@@ -10,7 +10,6 @@ import Foundation
 /// Example usage patterns for the OpenAI Responses API
 /// 
 /// Note: These examples show the recommended approach using direct ResponseRequest construction.
-/// ResponseBuilder is deprecated and should not be used in new code.
 public struct ResponseExamples {
     
     // MARK: - Basic Examples
@@ -159,11 +158,12 @@ public struct ResponseExamples {
     public static func backgroundProcessingExample() async throws {
         let provider = OpenAIProvider(apiKey: "your-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Analyze this large dataset and provide insights")
-            .background(true)
-            .withCodeInterpreter()
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Analyze this large dataset and provide insights"),
+            tools: [.codeInterpreter],
+            background: true
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -195,11 +195,12 @@ public struct ResponseExamples {
         print("First part: \(firstResponse.outputText ?? "No response")")
         
         // Continue the conversation
-        let continuationRequest = ResponseBuilder
-            .text(model: "gpt-4o", "Continue the story with more action")
-            .previousResponse(firstResponse.id)
-            .instructions("Build on the previous story")
-            .build()
+        let continuationRequest = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Continue the story with more action"),
+            instructions: "Build on the previous story",
+            previousResponseId: firstResponse.id
+        )
         
         let continuation = try await provider.createResponse(request: continuationRequest)
         print("Continuation: \(continuation.outputText ?? "No continuation")")
@@ -229,10 +230,11 @@ public struct ResponseExamples {
             )
         )
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "What's the weather like in New York?")
-            .tool(.function(weatherFunction))
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("What's the weather like in New York?"),
+            tools: [.function(weatherFunction)]
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -300,10 +302,11 @@ public struct ResponseExamples {
     public static func cancellationExample() async throws {
         let provider = OpenAIProvider(apiKey: "your-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Write a very long essay about AI")
-            .background(true)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Write a very long essay about AI"),
+            background: true
+        )
         
         let response = try await provider.createResponse(request: request)
         

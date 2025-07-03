@@ -69,12 +69,13 @@ final class OpenAIResponsesAPITests: XCTestCase {
     func testResponseCreationWithBuilder() async throws {
         if let provider = provider {
             // Real API test
-            let request = ResponseBuilder
-                .text(model: "gpt-4o-mini", "What is 2+2?")
-                .instructions("Answer with just the number")
-                .temperature(0.1)
-                .maxOutputTokens(5)
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o-mini",
+                input: .string("What is 2+2?"),
+                instructions: "Answer with just the number",
+                temperature: 0.1,
+                maxOutputTokens: 5
+            )
             
             let response = try await provider.createResponse(request: request)
             
@@ -84,12 +85,13 @@ final class OpenAIResponsesAPITests: XCTestCase {
             
         } else {
             // Mock test
-            let request = ResponseBuilder
-                .text(model: "gpt-4o", "What is 2+2?")
-                .instructions("Answer with just the number")
-                .temperature(0.1)
-                .maxOutputTokens(5)
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("What is 2+2?"),
+                instructions: "Answer with just the number",
+                temperature: 0.1,
+                maxOutputTokens: 5
+            )
             
             _ = try await mockProvider.createResponse(request: request)
             
@@ -165,10 +167,11 @@ final class OpenAIResponsesAPITests: XCTestCase {
     func testResponseCancellation() async throws {
         if let provider = provider {
             // Real API test - create a background response that we can cancel
-            let request = ResponseBuilder
-                .text(model: "gpt-4o-mini", "Write a very long essay about AI")
-                .background(true)
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o-mini",
+                input: .string("Write a very long essay about AI"),
+                background: true
+            )
             
             let createResponse = try await provider.createResponse(request: request)
             
@@ -438,13 +441,13 @@ final class OpenAIResponsesAPITests: XCTestCase {
             input: .string("Hello")
         )
         
-        // Test 2: Direct text request (equivalent to ResponseBuilder.text())
+        // Test 2: Direct text request (modern approach)
         let builderRequest = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Hello")
         )
         
-        // Test 3: Direct web search request (equivalent to ResponseBuilder.webSearch())
+        // Test 3: Direct web search request
         let webSearchRequest = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Hello"),
@@ -465,7 +468,7 @@ final class OpenAIResponsesAPITests: XCTestCase {
         // Show equivalent text request JSON  
         let builderJsonData = try encoder.encode(builderRequest)
         let builderJsonString = String(data: builderJsonData, encoding: .utf8)!
-        print("\n📄 Direct Text Request JSON (equivalent to old ResponseBuilder.text()):")
+        print("\n📄 Direct Text Request JSON (modern approach):")
         print(builderJsonString)
         
         // Show web search request JSON

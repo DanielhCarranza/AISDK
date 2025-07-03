@@ -151,7 +151,7 @@ internal class SessionContent {
         self.conversation = conversation
     }
     
-    /// Build ResponseRequest directly (avoiding deprecated ResponseBuilder)
+
     func buildResponseRequest(streaming: Bool = false) -> ResponseRequest {
         // Convert content to ResponseInput
         let input: ResponseInput

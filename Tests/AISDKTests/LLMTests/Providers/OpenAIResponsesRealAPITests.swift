@@ -214,12 +214,13 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
     func testRealAPIBuilderPattern() async throws {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Explain photosynthesis in one sentence")
-            .instructions("Be concise and scientific")
-            .temperature(0.3)
-            .maxOutputTokens(50)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Explain photosynthesis in one sentence"),
+            instructions: "Be concise and scientific",
+            temperature: 0.3,
+            maxOutputTokens: 50
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -241,11 +242,12 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
         
         // First create a response with explicit store parameter
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Say 'test response'")
-            .maxOutputTokens(50)
-            .store(true)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Say 'test response'"),
+            maxOutputTokens: 50,
+            store: true
+        )
         
         let createResponse = try await provider.createResponse(request: request)
         
@@ -288,10 +290,11 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
     func testRealAPIBackgroundProcessing() async throws {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Write a short haiku about technology")
-            .maxOutputTokens(50)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Write a short haiku about technology"),
+            maxOutputTokens: 50
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -418,12 +421,13 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
         XCTAssertNotNil(firstResponse.outputText)
         
         // Continue the conversation
-        let continuationRequest = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Continue the story with one more sentence")
-            .previousResponse(firstResponse.id)
-            .maxOutputTokens(50)
-            .store(true)
-            .build()
+        let continuationRequest = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Continue the story with one more sentence"),
+            maxOutputTokens: 50,
+            previousResponseId: firstResponse.id,
+            store: true
+        )
         
         print("DEBUG: First response ID: \(firstResponse.id)")
         print("DEBUG: Continuation request: \(continuationRequest)")
@@ -499,12 +503,13 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
             ))
         ]
         
-        let request = ResponseBuilder
-            .items(model: "gpt-4o-mini", inputItems)
-            .instructions("Be concise in your analysis")
-            .maxOutputTokens(150)
-            .temperature(0.3)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .items(inputItems),
+            instructions: "Be concise in your analysis",
+            temperature: 0.3,
+            maxOutputTokens: 150
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -536,10 +541,11 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
             ))
         ]
         
-        let request = ResponseBuilder
-            .items(model: "gpt-4o-mini", inputItems)
-            .maxOutputTokens(200)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .items(inputItems),
+            maxOutputTokens: 200
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -572,12 +578,13 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
             ))
         ]
         
-        let request = ResponseBuilder
-            .items(model: "gpt-4o-mini", inputItems)
-            .withWebSearch()
-            .instructions("First identify the logo, then search for recent information about this programming language")
-            .maxOutputTokens(400)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .items(inputItems),
+            instructions: "First identify the logo, then search for recent information about this programming language",
+            tools: [.webSearchPreview],
+            maxOutputTokens: 400
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -617,11 +624,12 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
             ))
         ]
         
-        let request = ResponseBuilder
-            .items(model: "gpt-4o-mini", inputItems)
-            .streaming(true)
-            .maxOutputTokens(300)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .items(inputItems),
+            maxOutputTokens: 300,
+            stream: true
+        )
         
         var chunks: [ResponseChunk] = []
         var accumulatedText = ""
@@ -669,10 +677,11 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
             ))
         ]
         
-        let request = ResponseBuilder
-            .items(model: "gpt-4o-mini", inputItems)
-            .maxOutputTokens(100)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .items(inputItems),
+            maxOutputTokens: 100
+        )
         
         do {
             let response = try await provider.createResponse(request: request)

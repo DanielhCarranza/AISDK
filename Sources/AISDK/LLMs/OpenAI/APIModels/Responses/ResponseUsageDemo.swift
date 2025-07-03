@@ -65,20 +65,20 @@ public struct ResponseUsageDemo {
         print("\n") // New line after streaming
     }
     
-    // MARK: - Builder Pattern Examples
+    // MARK: - Direct Request Examples
     
-    /// 🏗️ Using the builder pattern for complex requests
-    public static func builderPattern() async throws {
+    /// 🏗️ Using direct request construction for complex requests
+    public static func directRequestPattern() async throws {
         let provider = OpenAIProvider(apiKey: "your-openai-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Analyze the current state of renewable energy")
-            .instructions("Provide a comprehensive analysis with recent data")
-            .withWebSearch()
-            .withCodeInterpreter()
-            .temperature(0.3)
-            .maxOutputTokens(1000)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Analyze the current state of renewable energy"),
+            instructions: "Provide a comprehensive analysis with recent data",
+            tools: [.webSearchPreview, .codeInterpreter],
+            temperature: 0.3,
+            maxOutputTokens: 1000
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Analysis: \(response.outputText ?? "No analysis")")
@@ -88,13 +88,12 @@ public struct ResponseUsageDemo {
     public static func multiToolRequest() async throws {
         let provider = OpenAIProvider(apiKey: "your-openai-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Create a data visualization about climate change")
-            .withWebSearch()           // Get latest data
-            .withCodeInterpreter()     // Process data
-            .withImageGeneration()     // Create visualization
-            .instructions("First research current climate data, then create a compelling visualization")
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Create a data visualization about climate change"),
+            instructions: "First research current climate data, then create a compelling visualization",
+            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Multi-tool result: \(response.outputText ?? "No result")")
@@ -115,11 +114,12 @@ public struct ResponseUsageDemo {
         print("Chapter 1: \(firstResponse.outputText ?? "No story")")
         
         // Continue the story
-        let continuation = ResponseBuilder
-            .text(model: "gpt-4o", "Continue the story with more character development")
-            .previousResponse(firstResponse.id)
-            .instructions("Build on the previous story, adding depth to the robot character")
-            .build()
+        let continuation = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Continue the story with more character development"),
+            instructions: "Build on the previous story, adding depth to the robot character",
+            previousResponseId: firstResponse.id
+        )
         
         let secondResponse = try await provider.createResponse(request: continuation)
         print("Chapter 2: \(secondResponse.outputText ?? "No continuation")")
@@ -129,11 +129,12 @@ public struct ResponseUsageDemo {
     public static func backgroundProcessing() async throws {
         let provider = OpenAIProvider(apiKey: "your-openai-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Perform a comprehensive analysis of this large dataset")
-            .background(true)
-            .withCodeInterpreter()
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Perform a comprehensive analysis of this large dataset"),
+            tools: [.codeInterpreter],
+            background: true
+        )
         
         let response = try await provider.createResponse(request: request)
         
@@ -189,19 +190,19 @@ public struct ResponseUsageDemo {
     public static func dataAnalysisWorkflow() async throws {
         let provider = OpenAIProvider(apiKey: "your-openai-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", """
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("""
                 I have sales data for Q4 2024. Please:
                 1. Research current market trends
                 2. Analyze the data patterns
                 3. Create visualizations
                 4. Provide actionable insights
-                """)
-            .withWebSearch()
-            .withCodeInterpreter()
-            .instructions("Be thorough and provide specific recommendations")
-            .temperature(0.2) // Lower temperature for analytical tasks
-            .build()
+                """),
+            instructions: "Be thorough and provide specific recommendations",
+            tools: [.webSearchPreview, .codeInterpreter],
+            temperature: 0.2 // Lower temperature for analytical tasks
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Analysis Complete: \(response.outputText ?? "No analysis")")
@@ -211,13 +212,13 @@ public struct ResponseUsageDemo {
     public static func educationalContent() async throws {
         let provider = OpenAIProvider(apiKey: "your-openai-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Create an interactive lesson about quantum computing for beginners")
-            .withWebSearch()           // Get latest information
-            .withImageGeneration()     // Create diagrams
-            .instructions("Make it engaging with examples and visual aids")
-            .temperature(0.7)          // Higher temperature for creative content
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Create an interactive lesson about quantum computing for beginners"),
+            instructions: "Make it engaging with examples and visual aids",
+            tools: [.webSearchPreview, .imageGeneration()],  // Get latest information and create diagrams
+            temperature: 0.7  // Higher temperature for creative content
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Lesson Created: \(response.outputText ?? "No lesson")")
@@ -227,18 +228,19 @@ public struct ResponseUsageDemo {
     public static func researchAssistant() async throws {
         let provider = OpenAIProvider(apiKey: "your-openai-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Research the latest developments in sustainable energy storage")
-            .withWebSearch()
-            .instructions("""
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Research the latest developments in sustainable energy storage"),
+            instructions: """
                 Provide a comprehensive research summary including:
                 - Latest technological breakthroughs
                 - Key companies and researchers
                 - Market implications
                 - Future outlook
-                """)
-            .maxOutputTokens(2000)
-            .build()
+                """,
+            tools: [.webSearchPreview],
+            maxOutputTokens: 2000
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Research Summary: \(response.outputText ?? "No research")")

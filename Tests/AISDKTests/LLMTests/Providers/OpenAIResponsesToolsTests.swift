@@ -55,10 +55,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             // Mock test
             mockProvider.setMockResponse(MockOpenAIResponsesProvider.createWebSearchResponse())
             
-            let request = ResponseBuilder
-                .text(model: "gpt-4o", "What's the current weather in San Francisco?")
-                .withWebSearch()
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("What's the current weather in San Francisco?"),
+                tools: [.webSearchPreview]
+            )
             
             let response = try await mockProvider.createResponse(request: request)
             
@@ -71,10 +72,12 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     }
     
     func testWebSearchBuilder() async throws {
-        let request = ResponseBuilder
-            .webSearch(model: "gpt-4o-mini", "Latest AI news")
-            .instructions("Provide recent, factual information")
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Latest AI news"),
+            instructions: "Provide recent, factual information",
+            tools: [.webSearchPreview]
+        )
         
         if let provider = provider {
             // Real API test
@@ -118,10 +121,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             // Mock test
             mockProvider.setMockResponse(MockOpenAIResponsesProvider.createCodeInterpreterResponse())
             
-            let request = ResponseBuilder
-                .text(model: "gpt-4o", "Calculate 15 factorial")
-                .withCodeInterpreter()
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("Calculate 15 factorial"),
+                tools: [.codeInterpreter]
+            )
             
             let response = try await mockProvider.createResponse(request: request)
             
@@ -146,9 +150,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             
         } else {
             // Mock test
-            let request = ResponseBuilder
-                .codeInterpreter(model: "gpt-4o", "Create a simple bar chart")
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("Create a simple bar chart"),
+                tools: [.codeInterpreter]
+            )
             
             let response = try await mockProvider.createResponse(request: request)
             
@@ -161,10 +167,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     func testImageGeneration() async throws {
         if let provider = provider {
             // Real API test
-            let request = ResponseBuilder
-                .text(model: "gpt-4o-mini", "Generate an image of a sunset over mountains")
-                .withImageGeneration()
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o-mini",
+                input: .string("Generate an image of a sunset over mountains"),
+                tools: [.imageGeneration()]
+            )
             
             let response = try await provider.createResponse(request: request)
             
@@ -181,9 +188,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             
         } else {
             // Mock test
-            let request = ResponseBuilder
-                .imageGeneration(model: "gpt-4o", "Generate an image of a sunset")
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("Generate an image of a sunset"),
+                tools: [.imageGeneration()]
+            )
             
             let response = try await mockProvider.createResponse(request: request)
             
@@ -193,10 +202,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     }
     
     func testImageGenerationWithPartialImages() async throws {
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Create a landscape painting")
-            .tool(.imageGeneration(partialImages: 2))
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Create a landscape painting"),
+            tools: [.imageGeneration(partialImages: 2)]
+        )
         
         if let provider = provider {
             // Real API test
@@ -219,10 +229,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     func testFileSearch() async throws {
         let vectorStoreId = "vs_test123"
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Find information about project requirements")
-            .withFileSearch(vectorStoreId: vectorStoreId)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Find information about project requirements"),
+            tools: [.fileSearch(vectorStoreId: vectorStoreId)]
+        )
         
         if let provider = provider {
             // Real API test (may fail if vector store doesn't exist)
@@ -266,10 +277,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             )
         )
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "What's the weather like in New York?")
-            .tool(.function(weatherFunction))
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("What's the weather like in New York?"),
+            tools: [.function(weatherFunction)]
+        )
         
         if let provider = provider {
             // Real API test
@@ -305,12 +317,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     // MARK: - Multi-Tool Tests
     
     func testMultipleTools() async throws {
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Research AI trends and create a visualization")
-            .withWebSearch()
-            .withCodeInterpreter()
-            .withImageGeneration()
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Research AI trends and create a visualization"),
+            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+        )
         
         if let provider = provider {
             // Real API test
@@ -330,10 +341,12 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     }
     
     func testMultiToolBuilder() async throws {
-        let request = ResponseBuilder
-            .multiTool(model: "gpt-4o-mini", "Comprehensive analysis task")
-            .instructions("Use all available tools to provide a complete analysis")
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Comprehensive analysis task"),
+            instructions: "Use all available tools to provide a complete analysis",
+            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+        )
         
         if let provider = provider {
             // Real API test
@@ -354,12 +367,12 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     // MARK: - Tool Choice Tests
     
     func testToolChoiceAuto() async throws {
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Help me with this task")
-            .withWebSearch()
-            .withCodeInterpreter()
-            .toolChoice(.auto)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Help me with this task"),
+            tools: [.webSearchPreview, .codeInterpreter],
+            toolChoice: .auto
+        )
         
         if let provider = provider {
             // Real API test
@@ -378,11 +391,12 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     }
     
     func testToolChoiceNone() async throws {
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Just answer without using tools")
-            .withWebSearch()
-            .toolChoice(.none)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Just answer without using tools"),
+            tools: [.webSearchPreview],
+            toolChoice: .none
+        )
         
         if let provider = provider {
             // Real API test
@@ -408,10 +422,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             mockProvider.shouldThrowError = true
             mockProvider.errorToThrow = LLMError.invalidRequest("Tool execution failed")
             
-            let request = ResponseBuilder
-                .text(model: "gpt-4o", "Use tools to help")
-                .withWebSearch()
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("Use tools to help"),
+                tools: [.webSearchPreview]
+            )
             
             do {
                 _ = try await mockProvider.createResponse(request: request)
@@ -429,9 +444,11 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             // Mock test with web search response
             mockProvider.setMockResponse(MockOpenAIResponsesProvider.createWebSearchResponse())
             
-            let request = ResponseBuilder
-                .webSearch(model: "gpt-4o", "Test query")
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o",
+                input: .string("Test query"),
+                tools: [.webSearchPreview]
+            )
             
             let response = try await mockProvider.createResponse(request: request)
             

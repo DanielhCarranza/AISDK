@@ -83,12 +83,13 @@ final class OpenAIResponsesStreamingTests: XCTestCase {
     }
     
     func testStreamingWithBuilder() async throws {
-        let request = ResponseBuilder
-            .text(model: "gpt-4o-mini", "Write a haiku")
-            .streaming(true)
-            .temperature(0.8)
-            .maxOutputTokens(50)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Write a haiku"),
+            temperature: 0.8,
+            maxOutputTokens: 50,
+            stream: true
+        )
         
         if let provider = provider {
             // Real API test
@@ -249,11 +250,12 @@ final class OpenAIResponsesStreamingTests: XCTestCase {
     func testStreamCancellation() async throws {
         if let provider = provider {
             // Real API test - start a stream and cancel it
-            let request = ResponseBuilder
-                .text(model: "gpt-4o-mini", "Write a very long story")
-                .streaming(true)
-                .maxOutputTokens(200)
-                .build()
+            let request = ResponseRequest(
+                model: "gpt-4o-mini",
+                input: .string("Write a very long story"),
+                maxOutputTokens: 200,
+                stream: true
+            )
             
             var chunkCount = 0
             let maxChunks = 3 // Cancel after a few chunks
