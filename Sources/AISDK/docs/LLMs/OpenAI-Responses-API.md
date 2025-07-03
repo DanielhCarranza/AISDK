@@ -2,6 +2,8 @@
 
 This guide covers how to use OpenAI's advanced Responses API in AISDK. The Responses API is a stateful, next-generation API that combines the best capabilities from chat completions and assistants APIs in one unified experience.
 
+> **📋 Note:** This guide has been updated to show the modern approach using direct `ResponseRequest` construction. The `ResponseBuilder` pattern is deprecated and should not be used in new code.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -10,7 +12,7 @@ This guide covers how to use OpenAI's advanced Responses API in AISDK. The Respo
 - [Built-in Tools](#built-in-tools)
 - [Streaming](#streaming)
 - [Advanced Features](#advanced-features)
-- [Builder Pattern](#builder-pattern)
+- [Direct Request Construction](#direct-request-construction)
 - [Error Handling](#error-handling)
 - [Best Practices](#best-practices)
 - [Migration from Chat Completions](#migration-from-chat-completions)
@@ -131,12 +133,14 @@ let response = try await provider.createResponseWithWebSearch(
     text: "What's the current stock price of Apple?"
 )
 
-// With additional parameters
-let request = ResponseBuilder
-    .webSearch(model: "gpt-4o", "Latest AI research papers")
-    .instructions("Provide recent, peer-reviewed sources")
-    .maxOutputTokens(500)
-    .build()
+// With additional parameters using direct construction
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Latest AI research papers"),
+    instructions: "Provide recent, peer-reviewed sources",
+    tools: [.webSearchPreview],
+    maxOutputTokens: 500
+)
 
 let response = try await provider.createResponse(request: request)
 ```
@@ -173,10 +177,11 @@ for output in response.output {
 Create images directly within conversations:
 
 ```swift
-let request = ResponseBuilder
-    .text(model: "gpt-4o", "Create a beautiful sunset landscape")
-    .withImageGeneration()
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Create a beautiful sunset landscape"),
+    tools: [.imageGeneration()]
+)
 
 let response = try await provider.createResponse(request: request)
 
@@ -195,10 +200,11 @@ for output in response.output {
 Search through vector stores for relevant information:
 
 ```swift
-let request = ResponseBuilder
-    .text(model: "gpt-4o", "Find information about our product requirements")
-    .withFileSearch(vectorStoreId: "vs_abc123")
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Find information about our product requirements"),
+    tools: [.fileSearch(vectorStoreId: "vs_abc123")]
+)
 
 let response = try await provider.createResponse(request: request)
 ```
@@ -208,11 +214,11 @@ let response = try await provider.createResponse(request: request)
 Combine multiple tools for complex tasks:
 
 ```swift
-let request = ResponseBuilder
-    .text(model: "gpt-4o", "Research current AI trends and create a visualization")
-    .withWebSearch()
-    .withCodeInterpreter()
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Research current AI trends and create a visualization"),
+    tools: [.webSearchPreview, .codeInterpreter]
+)
 
 let response = try await provider.createResponse(request: request)
 ```
@@ -250,10 +256,12 @@ for try await chunk in provider.createTextResponseStream(
 ### Streaming with Tools
 
 ```swift
-let request = ResponseBuilder
-    .webSearch(model: "gpt-4o", "What's happening in tech today?")
-    .streaming(true)
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("What's happening in tech today?"),
+    tools: [.webSearchPreview],
+    stream: true
+)
 
 for try await chunk in provider.createResponseStream(request: request) {
     // Handle different event types
@@ -288,11 +296,12 @@ for try await chunk in provider.createResponseStream(request: request) {
 For long-running tasks that exceed typical response times:
 
 ```swift
-let request = ResponseBuilder
-    .text(model: "gpt-4o", "Analyze this large dataset")
-    .background(true)
-    .withCodeInterpreter()
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Analyze this large dataset"),
+    tools: [.codeInterpreter],
+    background: true
+)
 
 let response = try await provider.createResponse(request: request)
 
@@ -326,11 +335,12 @@ let firstResponse = try await provider.createTextResponse(
 print("First part: \(firstResponse.outputText ?? "")")
 
 // Continue the conversation
-let continuationRequest = ResponseBuilder
-    .text(model: "gpt-4o", "Continue the story with more action")
-    .previousResponse(firstResponse.id)
-    .instructions("Build on the previous story and add excitement")
-    .build()
+let continuationRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Continue the story with more action"),
+    instructions: "Build on the previous story and add excitement",
+    previousResponseId: firstResponse.id
+)
 
 let continuation = try await provider.createResponse(request: continuationRequest)
 print("Continuation: \(continuation.outputText ?? "")")
@@ -423,11 +433,12 @@ let inputItems: [ResponseInputItem] = [
     ))
 ]
 
-let request = ResponseBuilder
-    .items(model: "gpt-4o", inputItems)
-    .withWebSearch()
-    .instructions("First identify the landmark, then search for interesting facts about it")
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .items(inputItems),
+    instructions: "First identify the landmark, then search for interesting facts about it",
+    tools: [.webSearchPreview]
+)
 
 let response = try await provider.createResponse(request: request)
 ```
@@ -446,10 +457,11 @@ let inputItems: [ResponseInputItem] = [
     ))
 ]
 
-let request = ResponseBuilder
-    .items(model: "gpt-4o", inputItems)
-    .streaming(true)
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .items(inputItems),
+    stream: true
+)
 
 print("Streaming image analysis:")
 for try await chunk in provider.createResponseStream(request: request) {
@@ -465,21 +477,26 @@ Integrate your own functions alongside built-in tools:
 
 ```swift
 // Define a custom function
-let weatherFunction = Function(
+let weatherFunction = ToolFunction(
     name: "get_weather",
     description: "Get current weather for a city",
-    parameters: .object([
-        "city": .init(type: .string, description: "The city name")
-    ])
+    parameters: Parameters(
+        type: "object",
+        properties: [
+            "city": PropertyDefinition(type: "string", description: "The city name")
+        ],
+        required: ["city"]
+    )
 )
 
-let request = ResponseBuilder
-    .text(model: "gpt-4o", "What's the weather in San Francisco?")
-    .tools([
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("What's the weather in San Francisco?"),
+    tools: [
         .function(weatherFunction),
-        .webSearch
-    ])
-    .build()
+        .webSearchPreview
+    ]
+)
 
 let response = try await provider.createResponse(request: request)
 
@@ -491,15 +508,16 @@ for output in response.output {
             let weatherResult = getWeather(city: funcCall.arguments["city"] as? String ?? "")
             
             // You can continue the conversation with the result
-            let followUpRequest = ResponseBuilder
-                .items(model: "gpt-4o", [
+            let followUpRequest = ResponseRequest(
+                model: "gpt-4o",
+                input: .items([
                     .functionCallOutput(
                         callId: funcCall.id,
                         output: weatherResult
                     )
-                ])
-                .previousResponse(response.id)
-                .build()
+                ]),
+                previousResponseId: response.id
+            )
             
             let finalResponse = try await provider.createResponse(request: followUpRequest)
         }
@@ -507,72 +525,89 @@ for output in response.output {
 }
 ```
 
-## Builder Pattern
+## Direct Request Construction
 
-The `ResponseBuilder` provides a fluent interface for constructing complex requests:
+The modern approach uses direct `ResponseRequest` construction for clean, explicit configuration:
 
-### Factory Methods
-
-```swift
-// Text-based requests
-let textRequest = ResponseBuilder
-    .text(model: "gpt-4o", "Your message here")
-    .build()
-
-// Web search requests
-let searchRequest = ResponseBuilder
-    .webSearch(model: "gpt-4o", "Your search query")
-    .build()
-
-// Code interpreter requests
-let codeRequest = ResponseBuilder
-    .codeInterpreter(model: "gpt-4o", "Your analysis request")
-    .build()
-
-// Multi-tool requests
-let multiRequest = ResponseBuilder
-    .multiTool(model: "gpt-4o", "Complex task requiring multiple tools")
-    .build()
-```
-
-### Chaining Methods
+### Basic Request Types
 
 ```swift
-let complexRequest = ResponseBuilder
-    .text(model: "gpt-4o", "Research and analyze AI trends")
-    .instructions("Provide detailed analysis with current data")
-    .withWebSearch()
-    .withCodeInterpreter()
-    .temperature(0.7)
-    .maxOutputTokens(2000)
-    .metadata(["task": "research", "priority": "high"])
-    .build()
+// Simple text request
+let textRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Your message here")
+)
+
+// Web search request
+let searchRequest = ResponseRequest(
+    model: "gpt-4o", 
+    input: .string("Your search query"),
+    tools: [.webSearchPreview]
+)
+
+// Code interpreter request
+let codeRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Your analysis request"),
+    tools: [.codeInterpreter]
+)
+
+// Multi-tool request
+let multiRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Complex task requiring multiple tools"),
+    tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+)
 ```
 
-### All Available Methods
+### Complex Configuration
 
 ```swift
-let fullRequest = ResponseBuilder
-    .text(model: "gpt-4o", "Your input")
-    .instructions("System instructions")
-    .withWebSearch()
-    .withCodeInterpreter()
-    .withImageGeneration(partialImages: 3)
-    .withFileSearch(vectorStoreId: "vs_123")
-    .temperature(0.8)
-    .topP(0.9)
-    .maxOutputTokens(1500)
-    .streaming(true)
-    .background(false)
-    .previousResponse("previous-response-id")
-    .toolChoice(.auto)
-    .metadata(["key": "value"])
-    .include(["reasoning"])
-    .parallelToolCalls(true)
-    .serviceTier("scale")
-    .user("user-123")
-    .build()
+let complexRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Research and analyze AI trends"),
+    instructions: "Provide detailed analysis with current data",
+    tools: [.webSearchPreview, .codeInterpreter],
+    temperature: 0.7,
+    maxOutputTokens: 2000,
+    metadata: ["task": "research", "priority": "high"]
+)
 ```
+
+### All Available Parameters
+
+```swift
+let fullRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Your input"),
+    instructions: "System instructions",
+    tools: [.webSearchPreview, .codeInterpreter, .imageGeneration(partialImages: 3), .fileSearch(vectorStoreId: "vs_123")],
+    toolChoice: .auto,
+    metadata: ["key": "value"],
+    temperature: 0.8,
+    topP: 0.9,
+    maxOutputTokens: 1500,
+    stream: true,
+    background: false,
+    previousResponseId: "previous-response-id",
+    include: ["reasoning"],
+    store: true,
+    reasoning: nil,
+    parallelToolCalls: true,
+    serviceTier: "scale",
+    user: "user-123",
+    truncation: nil,
+    text: nil
+)
+```
+
+### Benefits of Direct Construction
+
+- **🔍 Explicit**: All parameters are clearly visible
+- **🚀 Performance**: No intermediate builder objects
+- **💡 IntelliSense**: Better IDE autocompletion 
+- **📋 Maintainable**: Easier to read and modify
+- **⚡ Future-proof**: Ready for new parameters without API changes
 
 ## Error Handling
 
@@ -642,14 +677,25 @@ default:
 
 ```swift
 // For current information or real-time data
-let newsRequest = ResponseBuilder.webSearch(model: "gpt-4o", "Latest AI news")
+let newsRequest = ResponseRequest(
+    model: "gpt-4o", 
+    input: .string("Latest AI news"),
+    tools: [.webSearchPreview]
+)
 
 // For calculations or data analysis
-let analysisRequest = ResponseBuilder.codeInterpreter(model: "gpt-4o", "Analyze sales data")
+let analysisRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Analyze sales data"),
+    tools: [.codeInterpreter]
+)
 
 // For creative content
-let creativeRequest = ResponseBuilder.text(model: "gpt-4o", "Write a story")
-    .temperature(0.8)
+let creativeRequest = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Write a story"),
+    temperature: 0.8
+)
 ```
 
 ### 2. Use Streaming for Better UX
@@ -671,21 +717,23 @@ for try await chunk in provider.createTextResponseStream(
 // Only use background processing for truly long-running tasks
 let isLongRunningTask = estimatedTokens > 10000
 
-let request = ResponseBuilder
-    .text(model: "gpt-4o", userInput)
-    .background(isLongRunningTask)
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string(userInput),
+    background: isLongRunningTask
+)
 ```
 
 ### 4. Optimize Token Usage
 
 ```swift
 // Set appropriate limits
-let request = ResponseBuilder
-    .text(model: "gpt-4o", userInput)
-    .maxOutputTokens(500) // Reasonable limit
-    .temperature(0.3) // Lower temperature for focused responses
-    .build()
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string(userInput),
+    maxOutputTokens: 500, // Reasonable limit
+    temperature: 0.3 // Lower temperature for focused responses
+)
 ```
 
 ### 5. Use Conversation Continuation Wisely
@@ -696,13 +744,12 @@ class ConversationManager {
     private var lastResponseId: String?
     
     func sendMessage(_ text: String) async throws -> ResponseObject {
-        let builder = ResponseBuilder.text(model: "gpt-4o", text)
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string(text),
+            previousResponseId: lastResponseId
+        )
         
-        if let previousId = lastResponseId {
-            builder.previousResponse(previousId)
-        }
-        
-        let request = builder.build()
         let response = try await provider.createResponse(request: request)
         
         // Update for next message
@@ -779,4 +826,48 @@ Key benefits:
 - ✅ **Stateful**: Automatic conversation management
 - ✅ **Flexible**: Builder pattern for complex requests
 
-Start with simple text responses and gradually adopt advanced features as needed! 
+Start with simple text responses and gradually adopt advanced features as needed!
+
+---
+
+## Migration from ResponseBuilder (Deprecated)
+
+**⚠️ Important:** `ResponseBuilder` is now deprecated. If you're upgrading from code that uses `ResponseBuilder`, here's how to migrate:
+
+### Before (Deprecated)
+```swift
+// Old ResponseBuilder pattern
+let request = ResponseBuilder
+    .webSearch(model: "gpt-4o", "Search query")
+    .instructions("Be thorough")
+    .temperature(0.7)
+    .build()
+```
+
+### After (Recommended)
+```swift
+// New direct construction
+let request = ResponseRequest(
+    model: "gpt-4o",
+    input: .string("Search query"),
+    instructions: "Be thorough",
+    tools: [.webSearchPreview],
+    temperature: 0.7
+)
+```
+
+### Key Migration Points
+
+- **Replace `.build()`** → Use `ResponseRequest()` constructor
+- **Replace `.text(model, input)`** → Use `input: .string(input)`
+- **Replace `.withWebSearch()`** → Use `tools: [.webSearchPreview]`
+- **Replace `.withCodeInterpreter()`** → Use `tools: [.codeInterpreter]`
+- **Replace `.previousResponse(id)`** → Use `previousResponseId: id`
+- **Replace `.streaming(true)`** → Use `stream: true`
+
+### Migration Benefits
+
+- ✅ **Better Performance**: No intermediate builder objects
+- ✅ **Clearer Code**: All parameters visible at construction
+- ✅ **IDE Support**: Better autocompletion and error checking
+- ✅ **Future-Proof**: Ready for new OpenAI API features 

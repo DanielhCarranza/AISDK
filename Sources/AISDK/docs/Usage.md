@@ -1406,9 +1406,9 @@ for try await chunk in agent.sendStream(message) {
 }
 
 // Use @MainActor for your view model
-@MainActor
-class ChatViewModel: ObservableObject {
-    @Published var messages: [ChatMessage] = []
+@Observable
+class ChatViewModel {
+    var messages: [ChatMessage] = []
     
     func sendMessage(_ text: String) async {
         // This automatically runs on main thread

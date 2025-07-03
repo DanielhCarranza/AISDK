@@ -8,6 +8,9 @@
 import Foundation
 
 /// Example usage patterns for the OpenAI Responses API
+/// 
+/// Note: These examples show the recommended approach using direct ResponseRequest construction.
+/// ResponseBuilder is deprecated and should not be used in new code.
 public struct ResponseExamples {
     
     // MARK: - Basic Examples
@@ -25,16 +28,17 @@ public struct ResponseExamples {
         print("Response: \(response.outputText ?? "No response")")
     }
     
-    /// Example: Using the builder pattern
-    public static func builderPatternExample() async throws {
+    /// Example: Using direct ResponseRequest construction (recommended)
+    public static func directRequestExample() async throws {
         let provider = OpenAIProvider(apiKey: "your-api-key")
         
-        let request = ResponseBuilder
-            .text(model: "gpt-4o", "Write a short story about AI")
-            .instructions("Make it engaging and under 200 words")
-            .temperature(0.8)
-            .maxOutputTokens(300)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Write a short story about AI"),
+            instructions: "Make it engaging and under 200 words",
+            temperature: 0.8,
+            maxOutputTokens: 300
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Story: \(response.outputText ?? "No story generated")")
@@ -54,11 +58,13 @@ public struct ResponseExamples {
         
         print("Research: \(response.outputText ?? "No research found")")
         
-        // Method 2: Using builder
-        let request = ResponseBuilder
-            .webSearch(model: "gpt-4o", "Current AI trends in 2025")
-            .instructions("Provide recent, factual information with sources")
-            .build()
+        // Method 2: Using direct ResponseRequest with tools
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Current AI trends in 2025"),
+            instructions: "Provide recent, factual information with sources",
+            tools: [.webSearchPreview]
+        )
         
         let response2 = try await provider.createResponse(request: request)
         print("Trends: \(response2.outputText ?? "No trends found")")
@@ -88,11 +94,13 @@ public struct ResponseExamples {
     public static func multiToolExample() async throws {
         let provider = OpenAIProvider(apiKey: "your-api-key")
         
-        let request = ResponseBuilder
-            .multiTool(model: "gpt-4o", "Research the latest AI models and create a comparison chart")
-            .instructions("Use web search for current info, then create a visual comparison")
-            .temperature(0.3)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("Research the latest AI models and create a comparison chart"),
+            instructions: "Use web search for current info, then create a visual comparison",
+            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()],
+            temperature: 0.3
+        )
         
         let response = try await provider.createResponse(request: request)
         print("Multi-tool result: \(response.outputText ?? "No result")")
@@ -127,10 +135,12 @@ public struct ResponseExamples {
     public static func streamingWebSearchExample() async throws {
         let provider = OpenAIProvider(apiKey: "your-api-key")
         
-        let request = ResponseBuilder
-            .webSearch(model: "gpt-4o", "What's happening in tech today?")
-            .streaming(true)
-            .build()
+        let request = ResponseRequest(
+            model: "gpt-4o",
+            input: .string("What's happening in tech today?"),
+            tools: [.webSearchPreview],
+            stream: true
+        )
         
         print("Streaming web search response:")
         

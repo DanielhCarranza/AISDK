@@ -4,6 +4,102 @@ All notable changes to AISDK will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-01-28
+
+### Added
+
+#### 🚀 Universal Message System
+- **Cross-Provider Message Format**: Implemented `AIInputMessage` system that provides consistent API across all LLM providers
+- **Unified Content Types**: Universal content types supporting text, images, audio, files, and video with automatic provider-specific conversion
+- **Provider Conversion Extensions**: Automatic conversion to provider-specific formats:
+  - `AIMessage+ChatConversions.swift`: OpenAI Chat Completions API conversion
+  - `AIMessage+ResponseConversions.swift`: OpenAI Response API conversion  
+  - `AIMessage+AnthropicConversions.swift`: Anthropic Claude API conversion
+  - `AIMessage+GeminiConversions.swift`: Google Gemini API conversion
+- **Order-Aware Multimodal**: Preserves content order across all providers (text + image + text sequences)
+- **Type-Safe Tool Calls**: Universal `AIToolCall` system with provider-specific conversion
+- **Comprehensive Testing**: 316 lines of unit tests covering all functionality, edge cases, and provider conversions
+
+#### 📱 SwiftUI Modernization  
+- **iOS 17+ Observation**: Migrated from `@ObservableObject/@Published` to modern `@Observable` pattern
+- **Improved Performance**: Better state management with automatic dependency tracking
+- **Cleaner API**: Simplified view model implementation without explicit `@Published` declarations
+
+#### 🔧 Enhanced Response API Integration
+- **Universal Message Support**: Response API now works seamlessly with universal message system
+- **Simplified Conversions**: Automatic conversion from universal format to Response API structures
+- **Background Processing**: Enhanced support for long-running Deep Research tasks
+- **Rich Citation Support**: Improved citation and annotation handling
+
+#### 📚 Documentation & Examples
+- **Deep Research API Guide**: Comprehensive documentation for OpenAI's Deep Research API (`OpenAI-DeepResearch-API.md`)
+- **Universal Message Usage**: Updated usage examples showing cross-provider compatibility
+- **Implementation Plans**: Detailed technical documentation for universal message system and Response API improvements
+
+### Technical Implementation
+
+#### Universal Message Architecture
+```swift
+// Beautiful cross-provider syntax
+let message = AIInputMessage.user([
+    .text("Compare these medical scans:"),
+    .image(scan1Data, detail: .high),
+    .text("vs"),
+    .image(scan2Data, detail: .high),
+    .text("What are the key differences?")
+])
+
+// Works identically across all providers
+let openaiResponse = try await openaiProvider.sendMessage(message)
+let claudeResponse = try await anthropicProvider.sendMessage(message)  
+let geminiResponse = try await geminiProvider.sendMessage(message)
+```
+
+#### Content Type System
+- **AIContentPart**: Unified enum supporting all modalities
+- **AIImageContent**: Images with data/URL support and quality settings
+- **AIAudioContent**: Audio with format detection and optional transcripts
+- **AIFileContent**: Files with type detection and MIME type handling
+- **AIVideoContent**: Video support (future-ready extension)
+
+#### Provider Compatibility Matrix
+- **OpenAI**: ✅ Chat Completions & Response API full support
+- **Anthropic**: ✅ Claude API with vision and tool support  
+- **Gemini**: ✅ Full multimodal and tool support
+- **Graceful Fallbacks**: Providers handle unsupported content elegantly
+
+### Breaking Changes
+- **SwiftUI Views**: Updated to use `@Observable` instead of `@ObservableObject` (iOS 17+ requirement)
+- **View Models**: Removed `@Published` property wrappers in favor of automatic observation
+
+### Migration Guide
+```swift
+// Before (iOS 16 compatible)
+@MainActor  
+class ChatViewModel: ObservableObject {
+    @Published var messages: [ChatMessage] = []
+}
+
+// After (iOS 17+ optimized)
+@Observable
+class ChatViewModel {
+    var messages: [ChatMessage] = []
+}
+```
+
+### Performance Improvements
+- **Automatic Observation**: Better performance with selective view updates
+- **Memory Efficiency**: Reduced overhead from explicit property observation
+- **Conversion Caching**: Optimized provider-specific message conversions
+
+### Developer Experience
+- **Consistent API**: Same message format works across all providers
+- **Type Safety**: Full compile-time checking for all content types
+- **Error Handling**: Comprehensive error handling with detailed error types
+- **Testing Support**: Extensive test coverage for reliability
+
+---
+
 ## [1.0.0] - 2025-06-28
 
 ### Added

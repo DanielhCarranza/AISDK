@@ -438,11 +438,18 @@ final class OpenAIResponsesAPITests: XCTestCase {
             input: .string("Hello")
         )
         
-        // Test 2: ResponseBuilder.text() (failing in other tests)
-        let builderRequest = ResponseBuilder.text(model: "gpt-4o-mini", "Hello").build()
+        // Test 2: Direct text request (equivalent to ResponseBuilder.text())
+        let builderRequest = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Hello")
+        )
         
-        // Test 3: ResponseBuilder.webSearch() (working in other tests)
-        let webSearchRequest = ResponseBuilder.webSearch(model: "gpt-4o-mini", "Hello").build()
+        // Test 3: Direct web search request (equivalent to ResponseBuilder.webSearch())
+        let webSearchRequest = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Hello"),
+            tools: [.webSearchPreview]
+        )
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
@@ -455,10 +462,10 @@ final class OpenAIResponsesAPITests: XCTestCase {
         print("\n📄 Direct Request JSON (working):")
         print(directJsonString)
         
-        // Show builder request JSON  
+        // Show equivalent text request JSON  
         let builderJsonData = try encoder.encode(builderRequest)
         let builderJsonString = String(data: builderJsonData, encoding: .utf8)!
-        print("\n📄 Builder Text Request JSON (failing in other tests):")
+        print("\n📄 Direct Text Request JSON (equivalent to old ResponseBuilder.text()):")
         print(builderJsonString)
         
         // Show web search request JSON
@@ -477,13 +484,13 @@ final class OpenAIResponsesAPITests: XCTestCase {
             print("❌ ERROR: Direct request failed: \(error)")
         }
         
-        print("\n🧪 Testing builder text request...")
+        print("\n🧪 Testing direct text request...")
         do {
             let builderResponse = try await provider.createResponse(request: builderRequest)
-            print("✅ SUCCESS: Builder text request worked!")
+            print("✅ SUCCESS: Direct text request worked!")
             print("Response: \(builderResponse.outputText ?? "No output")")
         } catch {
-            print("❌ ERROR: Builder text request failed: \(error)")
+            print("❌ ERROR: Direct text request failed: \(error)")
         }
         
         print("\n🧪 Testing web search request...")
@@ -507,9 +514,11 @@ final class OpenAIResponsesAPITests: XCTestCase {
         print("🔍 DEBUG: Testing exact createTextResponse call that fails...")
         
         // First, let's see what request is actually being created
-        let builder = ResponseBuilder.text(model: "gpt-4o-mini", "Say hello in exactly 5 words")
-            .maxOutputTokens(10)
-        let request = builder.build()
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Say hello in exactly 5 words"),
+            maxOutputTokens: 10
+        )
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted

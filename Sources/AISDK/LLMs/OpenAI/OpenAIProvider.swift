@@ -484,10 +484,12 @@ public class OpenAIProvider: LLM {
         text: String,
         instructions: String? = nil
     ) async throws -> ResponseObject {
-        let request = ResponseBuilder
-            .webSearch(model: model, text)
-            .instructions(instructions ?? "")
-            .build()
+        let request = ResponseRequest(
+            model: model,
+            input: .string(text),
+            instructions: instructions,
+            tools: [.webSearchPreview]
+        )
         
         return try await createResponse(request: request)
     }
@@ -498,10 +500,12 @@ public class OpenAIProvider: LLM {
         text: String,
         instructions: String? = nil
     ) async throws -> ResponseObject {
-        let request = ResponseBuilder
-            .codeInterpreter(model: model, text)
-            .instructions(instructions ?? "")
-            .build()
+        let request = ResponseRequest(
+            model: model,
+            input: .string(text),
+            instructions: instructions,
+            tools: [.codeInterpreter]
+        )
         
         return try await createResponse(request: request)
     }
@@ -512,12 +516,13 @@ public class OpenAIProvider: LLM {
         text: String,
         maxOutputTokens: Int? = nil
     ) async throws -> ResponseObject {
-        let builder = ResponseBuilder.text(model: model, text)
-        if let maxTokens = maxOutputTokens {
-            return try await createResponse(request: builder.maxOutputTokens(maxTokens).build())
-        } else {
-            return try await createResponse(request: builder.build())
-        }
+        let request = ResponseRequest(
+            model: model,
+            input: .string(text),
+            maxOutputTokens: maxOutputTokens
+        )
+        
+        return try await createResponse(request: request)
     }
     
     /// Convenience method for creating a streaming text response
@@ -526,12 +531,12 @@ public class OpenAIProvider: LLM {
         text: String,
         maxOutputTokens: Int? = nil
     ) -> AsyncThrowingStream<ResponseChunk, Error> {
-        let builder = ResponseBuilder.text(model: model, text).streaming(true)
-        let request = if let maxTokens = maxOutputTokens {
-            builder.maxOutputTokens(maxTokens).build()
-        } else {
-            builder.build()
-        }
+        let request = ResponseRequest(
+            model: model,
+            input: .string(text),
+            maxOutputTokens: maxOutputTokens,
+            stream: true
+        )
         
         return createResponseStream(request: request)
     }
