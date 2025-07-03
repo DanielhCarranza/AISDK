@@ -16,15 +16,42 @@ public class OpenAIProvider: LLM {
     internal let baseUrl: String
     internal let session: Session
     
+    /// The selected model for this provider instance
+    public let model: LLMModelProtocol
+    
     // MARK: - Init
     
+    /// Model-aware initializer with smart default
     /// - Parameters:
-    ///   - apiKey: Your OpenAI (or similar) API key.
-    ///   - baseUrl: Base URL for your API (defaults to OpenAI).
-    ///   - session: An optional custom Alamofire `Session`.
+    ///   - model: The OpenAI model to use (defaults to GPT-4o)
+    ///   - apiKey: Your OpenAI API key (falls back to environment variable)
+    ///   - baseUrl: Base URL for your API (defaults to OpenAI)
+    ///   - session: An optional custom Alamofire Session
+    public init(model: LLMModelProtocol? = nil,
+                apiKey: String? = nil,
+                baseUrl: String = "https://api.openai.com",
+                session: Session = .default) {
+        // Use provided model or default to OpenAI's best general-purpose model
+        self.model = model ?? OpenAIModels.gpt4o
+        
+        // API key resolution: parameter → environment → empty (will throw later)
+        self.apiKey = apiKey 
+            ?? ProcessInfo.processInfo.environment["OPENAI_API_KEY"] 
+            ?? ""
+        
+        self.baseUrl = baseUrl
+        self.session = session
+    }
+    
+    /// Legacy initializer - maintained for backward compatibility
+    /// - Parameters:
+    ///   - apiKey: Your OpenAI (or similar) API key
+    ///   - baseUrl: Base URL for your API (defaults to OpenAI)
+    ///   - session: An optional custom Alamofire Session
     public init(apiKey: String,
                 baseUrl: String = "https://api.openai.com",
                 session: Session = .default) {
+        self.model = OpenAIModels.gpt4o // Default model for legacy usage
         self.apiKey = apiKey
         self.baseUrl = baseUrl
         self.session = session
@@ -594,6 +621,8 @@ public class OpenAIProvider: LLM {
             throw LLMError.from(afError)
         }
     }
+    
+
     
     // MARK: - Private Helpers
     

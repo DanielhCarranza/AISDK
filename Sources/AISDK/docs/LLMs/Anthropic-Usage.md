@@ -15,12 +15,13 @@ This document provides comprehensive guidance on using the Anthropic native API 
 - ✅ **Beta headers updated**: Current valid headers as of 2025-06-19
 - ✅ **Comprehensive testing**: 58+ tests covering all features and edge cases
 - ✅ **NEW: Structured data generation**: `generateObject` method for type-safe JSON output
+- ✅ **NEW: Search Results (Beta)**: RAG applications with natural citations and source attribution
 
 ## API Comparison
 
 ### Native API (`/v1/messages`)
 - **Endpoint**: `https://api.anthropic.com/v1/messages`
-- **Features**: Full Claude feature set (vision, tools, documents, extended thinking, structured output)
+- **Features**: Full Claude feature set (vision, tools, documents, extended thinking, structured output, search results)
 - **Performance**: Optimized for Claude models
 - **Authentication**: ✅ **FIXED** - `x-api-key` header with `anthropic-version`
 
@@ -119,6 +120,7 @@ public enum AnthropicInputContent: Encodable {
     case pdf(data: String)
     case toolUse(id: String, name: String, input: [String: AIProxyJSONValue])
     case toolResult(toolUseId: String, content: String)
+    case searchResult(source: String, title: String, content: [AnthropicSearchResultTextBlock], citations: AnthropicSearchResultCitations?, cacheControl: AnthropicCacheControl?)
 }
 ```
 
@@ -802,6 +804,368 @@ let computerUseTool = AnthropicTool(
 )
 
 // ⚠️ Note: Computer use requires special setup and permissions
+```
+
+## 🔍 Search Results (Beta) - **NEW**
+
+**Enable natural citations for RAG applications with proper source attribution**
+
+Search result content blocks bring web search-quality citations to your custom applications. This feature is particularly powerful for RAG (Retrieval-Augmented Generation) applications where you need Claude to cite sources accurately.
+
+### Key Benefits
+
+* **Natural citations** - Achieve the same citation quality as web search for any content
+* **Flexible integration** - Use in tool returns for dynamic RAG or as top-level content for pre-fetched data
+* **Proper source attribution** - Each result includes source and title information for clear attribution
+* **No document workarounds needed** - Eliminates the need for document-based workarounds
+* **Consistent citation format** - Matches the citation quality and format of Claude's web search functionality
+
+### Enable Search Results
+
+```swift
+// Enable search results beta feature
+let searchResultsService = service.withBetaFeatures(searchResults: true)
+
+// Or enable with other beta features
+let allFeaturesService = service.withBetaFeatures(
+    tokenEfficientTools: true,
+    searchResults: true,
+    interleavedThinking: true
+)
+```
+
+### Method 1: Top-Level Search Results
+
+Provide search results directly in user messages for pre-fetched or cached content:
+
+```swift
+// Create search result content blocks
+let searchResult1 = AnthropicInputContent.searchResult(
+    source: "https://docs.company.com/api-reference",
+    title: "API Reference - Authentication",
+    content: [
+        AnthropicSearchResultTextBlock(
+            text: "All API requests must include an API key in the Authorization header. Keys can be generated from the dashboard. Rate limits: 1000 requests per hour for standard tier, 10000 for premium."
+        )
+    ],
+    citations: AnthropicSearchResultCitations(enabled: true),
+    cacheControl: nil
+)
+
+let searchResult2 = AnthropicInputContent.searchResult(
+    source: "https://docs.company.com/quickstart",
+    title: "Getting Started Guide",
+    content: [
+        AnthropicSearchResultTextBlock(
+            text: "To get started: 1) Sign up for an account, 2) Generate an API key from the dashboard, 3) Install our SDK, 4) Initialize the client with your API key."
+        )
+    ],
+    citations: AnthropicSearchResultCitations(enabled: true),
+    cacheControl: AnthropicCacheControl(type: "ephemeral")
+)
+
+// Include search results in the message
+let request = AnthropicMessageRequestBody(
+    maxTokens: 1024,
+    messages: [
+        AnthropicInputMessage(
+            content: [
+                searchResult1,
+                searchResult2,
+                .text("Based on these search results, how do I authenticate API requests and what are the rate limits?")
+            ],
+            role: .user
+        )
+    ],
+    model: "claude-3-7-sonnet-20250219"
+)
+
+let response = try await searchResultsService.messageRequest(body: request)
+```
+
+### Method 2: Tool-Based Search Results
+
+Return search results from your custom tools for dynamic RAG applications:
+
+```swift
+// Define a knowledge base search tool
+struct KnowledgeBaseTool: Tool {
+    let name = "search_knowledge_base"
+    let description = "Search the company knowledge base for information"
+    
+    @Parameter(description: "The search query")
+    var query: String = ""
+    
+    init() {}
+    
+    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        // Your search logic here
+        let results = try await searchKnowledgeBase(query: query)
+        
+        // Format results as search result content blocks
+        let searchResults = results.map { result in
+            AnthropicInputContent.searchResult(
+                source: result.source,
+                title: result.title,
+                content: [AnthropicSearchResultTextBlock(text: result.content)],
+                citations: AnthropicSearchResultCitations(enabled: true),
+                cacheControl: nil
+            )
+        }
+        
+        return ("Found \(results.count) relevant documents", nil)
+    }
+}
+
+// Use the tool in a request
+let request = AnthropicMessageRequestBody(
+    maxTokens: 1024,
+    messages: [
+        AnthropicInputMessage(
+            content: [.text("How do I configure the timeout settings?")],
+            role: .user
+        )
+    ],
+    model: "claude-3-7-sonnet-20250219",
+    tools: [AnthropicTool(from: KnowledgeBaseTool.self)]
+)
+
+// Handle tool execution and return search results
+func handleToolExecution(_ toolUseBlock: AnthropicToolUseBlock) async -> [AnthropicInputContent] {
+    if toolUseBlock.name == "search_knowledge_base" {
+        let query = toolUseBlock.input["query"] as? String ?? ""
+        let results = try await searchKnowledgeBase(query: query)
+        
+        var content: [AnthropicInputContent] = []
+        
+        // Add tool result
+        content.append(.toolResult(
+            toolUseId: toolUseBlock.id,
+            content: "Found \(results.count) relevant documents",
+            isError: false
+        ))
+        
+        // Add search results
+        for result in results {
+            content.append(.searchResult(
+                source: result.source,
+                title: result.title,
+                content: [AnthropicSearchResultTextBlock(text: result.content)],
+                citations: AnthropicSearchResultCitations(enabled: true),
+                cacheControl: nil
+            ))
+        }
+        
+        return content
+    }
+    
+    return []
+}
+```
+
+### Citations in Responses
+
+When search results are provided with citations enabled, Claude automatically includes citations in its responses:
+
+```swift
+// Example response with citations
+let response = try await searchResultsService.messageRequest(body: request)
+
+for contentBlock in response.content {
+    switch contentBlock {
+    case .text(let text, let citations):
+        print("Response: \(text)")
+        
+        if let citations = citations {
+            print("Citations:")
+            for citation in citations {
+                print("  - Source: \(citation.source)")
+                print("  - Title: \(citation.title ?? "N/A")")
+                print("  - Cited text: \(citation.citedText)")
+                print("  - Search result index: \(citation.searchResultIndex)")
+            }
+        }
+    
+    case .toolUse(let toolUse):
+        // Handle tool use as normal
+        break
+    }
+}
+```
+
+### Citation Structure
+
+Each citation includes detailed information about the source:
+
+```swift
+public struct AnthropicSearchResultCitation {
+    public let type: String                 // Always "search_result_location"
+    public let source: String              // The source URL or identifier
+    public let title: String?              // The title from the original search result
+    public let citedText: String           // The exact text being cited
+    public let searchResultIndex: Int      // Index of the search result (0-based)
+    public let startBlockIndex: Int        // Starting position in the content array
+    public let endBlockIndex: Int          // Ending position in the content array
+}
+```
+
+### Advanced Search Result Features
+
+#### Multiple Content Blocks
+```swift
+let searchResult = AnthropicInputContent.searchResult(
+    source: "https://docs.company.com/api-guide",
+    title: "API Documentation",
+    content: [
+        AnthropicSearchResultTextBlock(text: "Authentication: All API requests require an API key."),
+        AnthropicSearchResultTextBlock(text: "Rate Limits: The API allows 1000 requests per hour per key."),
+        AnthropicSearchResultTextBlock(text: "Error Handling: The API returns standard HTTP status codes.")
+    ],
+    citations: AnthropicSearchResultCitations(enabled: true),
+    cacheControl: nil
+)
+```
+
+#### Cache Control
+```swift
+let searchResult = AnthropicInputContent.searchResult(
+    source: "https://docs.company.com/guide",
+    title: "User Guide",
+    content: [AnthropicSearchResultTextBlock(text: "Important documentation...")],
+    citations: AnthropicSearchResultCitations(enabled: true),
+    cacheControl: AnthropicCacheControl(type: "ephemeral")  // Cache for better performance
+)
+```
+
+#### Citation Control
+```swift
+// Enable citations for high-quality source attribution
+let withCitations = AnthropicSearchResultCitations(enabled: true)
+
+// Disable citations if not needed
+let withoutCitations = AnthropicSearchResultCitations(enabled: false)
+```
+
+### Best Practices
+
+1. **Consistent Citation Settings**: All search results in a request must have the same citation setting (all enabled or all disabled)
+
+2. **Clear Source URLs**: Use permanent, descriptive URLs for sources
+
+3. **Descriptive Titles**: Provide clear titles that accurately reflect the content
+
+4. **Logical Content Blocks**: Break long content into logical text blocks for better citation granularity
+
+5. **Cache Control**: Use ephemeral caching for frequently accessed content
+
+### Error Handling
+
+```swift
+// Handle search results without beta header
+do {
+    let response = try await service.messageRequest(body: request) // Missing beta header
+} catch let error as LLMError {
+    if case .apiError(let message) = error {
+        if message.contains("search-results-2025-06-09") {
+            print("Search results require beta header - enable with searchResults: true")
+        }
+    }
+}
+```
+
+### Complete RAG Workflow Example
+
+```swift
+// 1. Define a comprehensive RAG tool
+struct RAGSearchTool: Tool {
+    let name = "search_documents"
+    let description = "Search through company documentation and knowledge base"
+    
+    @Parameter(description: "Search query")
+    var query: String = ""
+    
+    @Parameter(description: "Maximum number of results to return")
+    var maxResults: Int = 5
+    
+    init() {}
+    
+    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        // Perform vector search, keyword search, etc.
+        let results = try await performRAGSearch(query: query, maxResults: maxResults)
+        return ("Found \(results.count) relevant documents", nil)
+    }
+}
+
+// 2. Handle RAG tool execution with search results
+func handleRAGTool(_ toolUseBlock: AnthropicToolUseBlock) async -> [AnthropicInputContent] {
+    let query = toolUseBlock.input["query"] as? String ?? ""
+    let maxResults = toolUseBlock.input["maxResults"] as? Int ?? 5
+    
+    let results = try await performRAGSearch(query: query, maxResults: maxResults)
+    
+    var content: [AnthropicInputContent] = []
+    
+    // Add tool result
+    content.append(.toolResult(
+        toolUseId: toolUseBlock.id,
+        content: "Found \(results.count) relevant documents for: \(query)",
+        isError: false
+    ))
+    
+    // Add search results with citations
+    for result in results {
+        content.append(.searchResult(
+            source: result.source,
+            title: result.title,
+            content: [AnthropicSearchResultTextBlock(text: result.content)],
+            citations: AnthropicSearchResultCitations(enabled: true),
+            cacheControl: AnthropicCacheControl(type: "ephemeral")
+        ))
+    }
+    
+    return content
+}
+
+// 3. Complete RAG conversation
+func runRAGConversation() async throws {
+    let ragService = AnthropicService(apiKey: "your-api-key")
+        .withBetaFeatures(searchResults: true, tokenEfficientTools: true)
+    
+    let request = AnthropicMessageRequestBody(
+        maxTokens: 2048,
+        messages: [
+            AnthropicInputMessage(
+                content: [.text("How do I authenticate with the API and what are the rate limits?")],
+                role: .user
+            )
+        ],
+        model: "claude-3-7-sonnet-20250219",
+        tools: [AnthropicTool(from: RAGSearchTool.self)]
+    )
+    
+    // Process response with citations
+    let response = try await ragService.messageRequest(body: request)
+    
+    for contentBlock in response.content {
+        switch contentBlock {
+        case .text(let text, let citations):
+            print("Claude: \(text)")
+            
+            if let citations = citations {
+                print("\nSources:")
+                for citation in citations {
+                    print("  • \(citation.title ?? "Document") (\(citation.source))")
+                    print("    \"\(citation.citedText)\"")
+                }
+            }
+        
+        case .toolUse(let toolUse):
+            print("Using tool: \(toolUse.name)")
+            let toolResults = await handleRAGTool(toolUse)
+            // Continue conversation with tool results...
+        }
+    }
+}
 ```
 
 ## Error Handling

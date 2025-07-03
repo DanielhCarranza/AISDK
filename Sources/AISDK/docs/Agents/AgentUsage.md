@@ -18,6 +18,7 @@ The Agent class is the core component of AISDK that manages interactions with AI
 ## Overview
 
 The Agent class provides:
+- **Provider-centric architecture**: Works directly with OpenAI, Anthropic, and Gemini providers
 - **Synchronous messaging**: Send a message and wait for a complete response
 - **Streaming messaging**: Real-time streaming responses for dynamic UI updates
 - **Tool execution**: Automatic coordination of AI-requested tool calls
@@ -27,23 +28,34 @@ The Agent class provides:
 
 ## Initialization
 
-### Basic Initialization
+### Provider-Centric Initialization (Recommended)
 
 ```swift
 import AISDK
 
-// Initialize with a model configuration
-let model = LLMModel(
-    name: "gpt-4",
-    apiKey: "your-api-key",
-    mode: .chat
+// Create agent with OpenAI provider (uses smart default: gpt-4o)
+let openai = OpenAIProvider()
+let agent = Agent(
+    llm: openai,
+    instructions: "You are a helpful assistant."
 )
 
-let agent = try Agent(
-    model: model,
-    tools: [], // Optional tools array
-    messages: [], // Optional initial messages
-    instructions: "You are a helpful assistant." // Optional system instructions
+// Create agent with specific model
+let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
+let agentMini = Agent(llm: openaiMini)
+
+// Create agent with Anthropic provider (uses smart default: sonnet-3.7)
+let anthropic = AnthropicService()
+let claudeAgent = Agent(
+    llm: anthropic,
+    instructions: "You are a helpful assistant."
+)
+
+// Create agent with Gemini provider (uses smart default: gemini-2.5-flash)
+let gemini = GeminiProvider()
+let geminiAgent = Agent(
+    llm: gemini,
+    instructions: "You are a helpful assistant."
 )
 ```
 
@@ -57,8 +69,9 @@ let tools: [Tool.Type] = [
     SearchTool.self
 ]
 
-let agent = try Agent(
-    model: model,
+let openai = OpenAIProvider()
+let agent = Agent(
+    llm: openai,
     tools: tools,
     instructions: "You are an assistant with access to weather, calculator, and search tools."
 )
@@ -73,11 +86,23 @@ let initialMessages = [
     ChatMessage(message: .assistant(content: .text("Hi! How can I help you today?")))
 ]
 
-let agent = try Agent(
-    model: model,
+let openai = OpenAIProvider()
+let agent = Agent(
+    llm: openai,
     tools: tools,
     messages: initialMessages,
     instructions: "Continue this conversation naturally."
+)
+```
+
+### Legacy Initialization (Backward Compatibility)
+
+```swift
+// Legacy approach - still supported but deprecated
+let agent = Agent(
+    model: AgenticModels.gpt4,
+    tools: [],
+    instructions: "You are a helpful assistant."
 )
 ```
 
@@ -90,7 +115,7 @@ Use `send(_:)` for simple request-response interactions:
 ```swift
 do {
     let response = try await agent.send("What's the weather like in Paris?")
-    print("Agent response: \(response.content)")
+    print("Agent response: \(response.displayContent)")
 } catch {
     print("Error: \(error.localizedDescription)")
 }
@@ -106,6 +131,20 @@ let newMessages = [
 ]
 
 agent.setMessages(newMessages)
+```
+
+### Simple Tool Usage
+
+```swift
+// Agent automatically uses tools when needed
+let openai = OpenAIProvider()
+let agent = Agent(
+    llm: openai,
+    tools: [WeatherTool.self, CalculatorTool.self]
+)
+
+let response = try await agent.send("What's 15 * 23 and what's the weather in Tokyo?")
+print(response.displayContent)
 ```
 
 ## Streaming Conversations
@@ -172,7 +211,7 @@ func handleStreamingMessage(_ message: ChatMessage) {
 The agent maintains internal state that you can observe:
 
 ```swift
-enum AgentState {
+public enum AgentState {
     case idle                    // Ready for new requests
     case thinking               // Processing user input
     case executingTool(String)  // Running a specific tool
@@ -184,7 +223,7 @@ enum AgentState {
 ### State Observation
 
 ```swift
-// Monitor state changes
+// Monitor state changes for UI updates
 agent.onStateChange = { state in
     DispatchQueue.main.async {
         switch state {
@@ -198,7 +237,7 @@ agent.onStateChange = { state in
             showLoadingIndicator("Using \(toolName)...")
             
         case .responding:
-            showLoadingIndicator("Formulating response...")
+            showLoadingIndicator("Responding...")
             
         case .error(let error):
             showError(error.localizedDescription)
@@ -349,7 +388,7 @@ func execute() async throws -> (String, ToolMetadata?) {
 ```swift
 do {
     let response = try await agent.send("Hello")
-    // Handle response
+    print(response.displayContent)
 } catch AgentError.toolExecutionFailed(let message) {
     print("Tool failed: \(message)")
 } catch AgentError.invalidToolResponse {
@@ -417,15 +456,12 @@ let weatherAgent = try Agent(
 ### 4. Error Recovery
 
 ```swift
-func robustSend(_ message: String, retries: Int = 3) async throws -> ChatMessage {
+func sendWithRetry(_ message: String, retries: Int = 3) async throws -> ChatMessage {
     for attempt in 1...retries {
         do {
             return try await agent.send(message)
         } catch {
-            if attempt == retries {
-                throw error
-            }
-            // Wait before retry
+            if attempt == retries { throw error }
             try await Task.sleep(nanoseconds: 1_000_000_000 * UInt64(attempt))
         }
     }
@@ -486,16 +522,12 @@ class ContextAwareAgent {
     private let agent: Agent
     private var context: [String: Any] = [:]
     
-    init(model: LLMModel) throws {
-        self.agent = try Agent(
-            model: model,
-            tools: [ContextTool.self],
-            instructions: "Use context information to provide personalized responses."
+    init() {
+        let openai = OpenAIProvider()
+        self.agent = Agent(
+            llm: openai,
+            instructions: "Use provided context to personalize responses."
         )
-        
-        let contextManager = ContextManager()
-        contextManager.context = context
-        agent.addCallbacks(contextManager)
     }
     
     func updateContext(_ key: String, value: Any) {
@@ -503,23 +535,8 @@ class ContextAwareAgent {
     }
     
     func sendWithContext(_ message: String) async throws -> ChatMessage {
-        // Include context in the message
         let contextualMessage = "Context: \(context)\n\nUser: \(message)"
         return try await agent.send(contextualMessage)
-    }
-}
-
-class ContextManager: AgentCallbacks {
-    var context: [String: Any] = [:]
-    
-    func onMessageReceived(message: Message) async -> CallbackResult {
-        // Inject context into user messages
-        if case .user(let content) = message {
-            let contextualContent = "Context: \(context)\n\n\(content.text ?? "")"
-            let newMessage = Message.user(content: .text(contextualContent))
-            return .replace(newMessage)
-        }
-        return .continue
     }
 }
 ```

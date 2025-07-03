@@ -337,7 +337,7 @@ final class AnthropicServiceTests: XCTestCase {
             XCTAssertEqual(response.model, "claude-3-7-sonnet-20250219")
             XCTAssertEqual(response.content.count, 1)
             
-            if case .text(let text) = response.content.first {
+            if case .text(let text, citations: _) = response.content.first {
                 XCTAssertTrue(text.contains("Claude"))
             } else {
                 XCTFail("Expected text content")
@@ -567,7 +567,7 @@ final class AnthropicServiceTests: XCTestCase {
             XCTAssertEqual(response.model, "claude-3-7-sonnet-20250219")
             XCTAssertGreaterThan(response.content.count, 0)
             
-            if case .text(let text) = response.content.first {
+            if case .text(let text, citations: _) = response.content.first {
                 XCTAssertFalse(text.isEmpty)
                 print("Real API Response: \(text)")
             }
@@ -608,7 +608,7 @@ final class AnthropicServiceTests: XCTestCase {
         """
         
         let mockResponse = AnthropicMessageResponseBody(
-            content: [.text(mockJSON)],
+            content: [.text(mockJSON, citations: nil)],
             id: "test-id",
             model: "claude-3-7-sonnet-20250219",
             role: "assistant",
@@ -647,7 +647,7 @@ final class AnthropicServiceTests: XCTestCase {
         )
         
         let mockResponse = AnthropicMessageResponseBody(
-            content: [.text("{\"response\": \"hello\"}")],
+            content: [.text("{\"response\": \"hello\"}", citations: nil)],
             id: "test-id",
             model: "claude-3-7-sonnet-20250219",
             role: "assistant",

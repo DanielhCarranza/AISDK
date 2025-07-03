@@ -149,7 +149,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         XCTAssertEqual(response.model, "claude-3-7-sonnet-20250219")
         XCTAssertGreaterThan(response.content.count, 0)
         
-        if case .text(let text) = response.content.first {
+        if case .text(let text, citations: _) = response.content.first {
             XCTAssertFalse(text.isEmpty)
             print("✅ Real API Basic Conversation Test Passed")
             print("Response: '\(text)'")
@@ -183,7 +183,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         XCTAssertFalse(response.id.isEmpty)
         XCTAssertGreaterThan(response.content.count, 0)
         
-        if case .text(let text) = response.content.first {
+        if case .text(let text, citations: _) = response.content.first {
             // Should be roughly one word due to system prompt
             let wordCount = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .whitespacesAndNewlines)
@@ -216,7 +216,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         
         XCTAssertGreaterThan(firstResponse.content.count, 0)
         
-        guard case .text(let firstText) = firstResponse.content.first else {
+        guard case .text(let firstText, citations: _) = firstResponse.content.first else {
             XCTFail("Expected text content in first response")
             return
         }
@@ -371,7 +371,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         XCTAssertFalse(response.id.isEmpty)
         XCTAssertGreaterThan(response.content.count, 0)
         
-        if case .text(let text) = response.content.first {
+        if case .text(let text, citations: _) = response.content.first {
             XCTAssertFalse(text.isEmpty)
             print("✅ Real API Beta Features Test Passed")
             print("Response with beta features: '\(text.prefix(100))...'")

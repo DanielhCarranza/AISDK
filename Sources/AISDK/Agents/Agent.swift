@@ -12,7 +12,7 @@ import Foundation
 public class Agent {
     // MARK: - Properties
     
-    private var model: LLMModel
+    private let model: LLMModelProtocol
     let llm: LLM
     private var tools: [Tool.Type]
     private var state: AgentState = .idle
@@ -30,10 +30,46 @@ public class Agent {
     
     // MARK: - Initialization
     
-    /// Initialize an agent with a specific model, tools, and optional instructions
+    /// Provider-centric initializer - recommended approach
+    /// - Parameters:
+    ///   - llm: The LLM provider to use (e.g., OpenAIProvider(), AnthropicService())
+    ///   - tools: Array of available tools (default: empty)
+    ///   - messages: Initial conversation history (default: empty)
+    ///   - instructions: Optional system instructions for the agent's behavior
+    public init(
+        llm: LLM,
+        tools: [Tool.Type] = [],
+        messages: [ChatMessage] = [],
+        instructions: String? = nil
+    ) {
+        self.llm = llm
+        self.tools = tools
+        self.messages = messages
+        self.instructions = instructions
+        
+        // Get model from provider
+        if let openAIProvider = llm as? OpenAIProvider {
+            self.model = openAIProvider.model
+        } else {
+            // Fallback model for other providers
+            self.model = OpenAIModels.gpt4o
+        }
+        
+        // Register tools with ToolRegistry
+        ToolRegistry.registerAll(tools: tools)
+        
+        // Add system message if instructions are provided
+        if let instructions = instructions {
+            let systemMessage = ChatMessage(message: .system(content: .text(instructions)))
+            self.messages.append(systemMessage)
+        }
+    }
+    
+    /// Legacy initializer - maintained for backward compatibility
     /// - Parameters:
     ///   - model: The language model configuration to use
     ///   - tools: Array of available tools (default: empty)
+    ///   - messages: Initial conversation history (default: empty)
     ///   - instructions: Optional system instructions for the agent's behavior
     /// - Throws: AgentError if initialization fails
     init(
@@ -41,17 +77,18 @@ public class Agent {
         tools: [Tool.Type] = [],
         messages: [ChatMessage] = [], 
         instructions: String? = nil
-    ) throws {
-        self.model = model
+    ) {
         self.tools = tools
         self.messages = messages
         self.instructions = instructions
+        
+        // Convert legacy model to protocol
+        self.model = model.toProtocol()
         
         // Register tools with ToolRegistry
         ToolRegistry.registerAll(tools: tools)
         
         // Initialize appropriate LLM based on model
-        self.model = model
         self.llm = OpenAIProvider(apiKey: model.apiKey ?? " ")
         
         // Add system message if instructions are provided
@@ -73,7 +110,7 @@ public class Agent {
     /// - Parameter content: The user's message
     /// - Returns: The agent's response message
     /// - Throws: Various errors related to API calls or tool execution
-    func send(_ content: String) async throws -> ChatMessage {
+    public func send(_ content: String) async throws -> ChatMessage {
         setState(.thinking)
         
         let userMessage = ChatMessage(message: .user(content: .text(content)))
@@ -97,7 +134,7 @@ public class Agent {
             model: model.name,
             messages: convertToAPIMessages(),
             tools: tools.map { $0.jsonSchema() },
-            toolChoice: model.mode == .parallelTools ? .auto : nil,
+            toolChoice: (model.hasCapability(.tools) || model.hasCapability(.functionCalling)) ? .auto : nil,
             parallelToolCalls: true
         )
         
@@ -280,7 +317,10 @@ public class Agent {
                                     let finalRequest = ChatCompletionRequest(
                                         model: model.name,
                                         messages: convertToAPIMessages(),
-                                        stream: true  // Enable streaming for final response
+                                        stream: true,  // Enable streaming for final response
+                                        tools: tools.map { $0.jsonSchema() },
+                                        toolChoice: (model.hasCapability(.tools) || model.hasCapability(.functionCalling)) ? .auto : nil,
+                                        parallelToolCalls: true
                                     )
                                     
                                     // Stream the final response
@@ -493,6 +533,8 @@ public class Agent {
         let finalRequest = ChatCompletionRequest(
             model: model.name,
             messages: convertToAPIMessages(),
+            tools: tools.map { $0.jsonSchema() },
+            toolChoice: (model.hasCapability(.tools) || model.hasCapability(.functionCalling)) ? .auto : nil,
             parallelToolCalls: true
         )
         

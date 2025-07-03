@@ -54,16 +54,19 @@ targets: [
 **Option 1: Environment Variables (Recommended)**
 ```bash
 export OPENAI_API_KEY="your-openai-key-here"
-export CLAUDE_API_KEY="your-anthropic-key-here"
-export GOOGLE_GEMINI_API_KEY="your-gemini-key-here"
-export GROQ_API_KEY="your-groq-key-here"
+export ANTHROPIC_API_KEY="your-anthropic-key-here"
+export GOOGLE_API_KEY="your-gemini-key-here"
 ```
 
 **Option 2: Runtime Configuration**
 ```swift
-var model = AgenticModels.gpt4
-model.apiKey = "your-api-key"
-let agent = try Agent(model: model)
+// Provider-centric approach with explicit API keys
+let openai = OpenAIProvider(apiKey: "your-openai-key")
+let anthropic = AnthropicService(apiKey: "your-anthropic-key")
+let gemini = GeminiProvider(apiKey: "your-gemini-key")
+
+// Create agents with specific providers
+let agent = Agent(llm: openai)
 ```
 
 ### 5-Minute Example
@@ -71,8 +74,9 @@ let agent = try Agent(model: model)
 ```swift
 import AISDK
 
-// 1. Create an agent with a model
-let agent = try Agent(model: AgenticModels.gpt4)
+// 1. Create an agent with provider (uses smart default: gpt-4o)
+let openai = OpenAIProvider()
+let agent = Agent(llm: openai)
 
 // 2. Send a simple message
 let response = try await agent.send("Hello, world!")
@@ -93,11 +97,32 @@ print() // New line after streaming
 AISDK is built around several key concepts:
 
 **🤖 Agent**: The main orchestrator that manages conversations with AI models
+**🏗️ LLM Providers**: Direct interfaces to OpenAI, Anthropic, and Gemini APIs
 **🛠️ Tools**: Functions the AI can call to perform specific tasks
 **💬 ChatManager**: Handles session management and storage
 **🗣️ VoiceMode**: Manages speech recognition and synthesis
 **👁️ Vision**: Real-time video interactions with AI
 **🔬 Research**: Specialized research capabilities
+
+### Provider-Centric Architecture
+
+AISDK uses a provider-centric approach where you create specific provider instances and pass them to agents:
+
+```swift
+// Create provider with smart defaults
+let openai = OpenAIProvider()        // Uses gpt-4o by default
+let anthropic = AnthropicService()   // Uses sonnet-3.7 by default
+let gemini = GeminiProvider()        // Uses gemini-2.5-flash by default
+
+// Create agents that use these providers
+let agent = Agent(llm: openai)
+```
+
+This approach provides:
+- **Smart Defaults**: Each provider has an optimal default model
+- **Type Safety**: Provider-specific model enums prevent configuration errors
+- **Easy Switching**: Change providers without changing agent code
+- **Model Flexibility**: Override defaults with specific models when needed
 
 ### Modular Design
 
@@ -463,39 +488,64 @@ func getCachedResponse(for prompt: String) async throws -> String {
 
 ## Basic Agent Usage
 
-### Creating an Agent
+### Creating an Agent (Provider-Centric Approach)
 
 ```swift
 import AISDK
 
-// Basic agent
-let agent = try Agent(model: AgenticModels.gpt4)
+// Basic agent with OpenAI (uses smart default: gpt-4o)
+let openai = OpenAIProvider()
+let agent = Agent(llm: openai)
 
 // Agent with system instructions
-let agent = try Agent(
-    model: AgenticModels.gpt4,
+let openai = OpenAIProvider()
+let agent = Agent(
+    llm: openai,
     instructions: "You are a helpful coding assistant."
 )
 
 // Agent with tools
-let agent = try Agent(
-    model: AgenticModels.gpt4,
+let openai = OpenAIProvider()
+let agent = Agent(
+    llm: openai,
     tools: [WeatherTool.self, CalculatorTool.self]
 )
+
+// Agent with specific model
+let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
+let agent = Agent(llm: openaiMini)
 ```
 
-### Available Models
+### Available Providers and Models
 
 ```swift
-// OpenAI models
-let gpt4Agent = try Agent(model: AgenticModels.gpt4)
-let o4miniAgent = try Agent(model: AgenticModels.o4mini)
+// OpenAI Provider
+let openai = OpenAIProvider() // Uses gpt-4o by default
+let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
+let openaiO3 = OpenAIProvider(model: OpenAIModels.o3)
 
-// Claude models
-let claudeAgent = try Agent(model: AgenticModels.claude)
+// Anthropic Provider  
+let anthropic = AnthropicService() // Uses sonnet-3.7 by default
+let anthropicSonnet4 = AnthropicService(model: AnthropicModels.sonnet4)
 
-// Groq models
-let llamaAgent = try Agent(model: AgenticModels.llama370b8k)
+// Gemini Provider
+let gemini = GeminiProvider() // Uses gemini-2.5-flash by default
+let geminiPro = GeminiProvider(model: GeminiModels.gemini25Pro)
+
+// Create agents with any provider
+let openaiAgent = Agent(llm: openai)
+let claudeAgent = Agent(llm: anthropic)
+let geminiAgent = Agent(llm: gemini)
+```
+
+### Legacy Approach (Still Supported)
+
+```swift
+// Legacy model-based initialization - deprecated but functional
+let agent = Agent(
+    model: AgenticModels.gpt4,
+    instructions: "You are a helpful assistant."
+)
 ```
 
 ### Sending Messages
@@ -680,8 +730,9 @@ let response = try await agent.send("Calculate 15 * 23 and show the result in a 
 import AISDK
 import AISDKChat
 
-// Create chat manager
-let agent = try Agent(model: AgenticModels.gpt4)
+// Create chat manager with provider-centric approach
+let openai = OpenAIProvider()
+let agent = Agent(llm: openai)
 let storage = MemoryStorage() // or your custom storage
 let chatManager = AIChatManager(agent: agent, storage: storage)
 
@@ -702,7 +753,8 @@ struct ChatView: View {
     @State private var chatManager: AIChatManager
     
     init() {
-        let agent = try! Agent(model: AgenticModels.gpt4)
+        let openai = OpenAIProvider()
+        let agent = Agent(llm: openai)
         let storage = MemoryStorage()
         _chatManager = State(wrappedValue: AIChatManager(agent: agent, storage: storage))
     }
@@ -758,8 +810,9 @@ import AISDKVoice
 let hasPermission = try await SpeechRecognizer.requestAuthorization()
 guard hasPermission else { return }
 
-// Start voice conversation
-let agent = try Agent(model: AgenticModels.gpt4)
+// Start voice conversation  
+let openai = OpenAIProvider()
+let agent = Agent(llm: openai)
 try await voiceMode.startConversation(with: agent)
 ```
 
@@ -865,7 +918,8 @@ struct VisionAgentView: View {
 import AISDKResearch
 
 // Create research agent
-let researcher = try ResearcherAgent(model: AgenticModels.gpt4)
+let openai = OpenAIProvider()
+let researcher = try ResearcherAgent(llm: openai)
 
 // Conduct research
 let result = try await researcher.research(
@@ -1048,20 +1102,28 @@ func sendWithRetry(_ message: String, maxRetries: Int = 3) async throws -> ChatM
 
 ## Best Practices
 
-### 1. Model Selection
+### 1. Provider and Model Selection
 
 ```swift
-// For general chat applications
-let chatAgent = try Agent(model: AgenticModels.gpt4)
+// For general chat applications - OpenAI with smart defaults
+let openai = OpenAIProvider()
+let chatAgent = Agent(llm: openai)
 
-// For tool-heavy applications
-let toolAgent = try Agent(model: AgenticModels.gpt4) // Better tool calling
+// For tool-heavy applications - OpenAI excels at function calling
+let openaiProvider = OpenAIProvider(model: OpenAIModels.gpt4o)
+let toolAgent = Agent(llm: openaiProvider)
 
-// For faster responses
-let fastAgent = try Agent(model: AgenticModels.o4mini)
+// For faster, cost-effective responses
+let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
+let fastAgent = Agent(llm: openaiMini)
 
-// For reasoning-heavy tasks
-let reasoningAgent = try Agent(model: AgenticModels.claude)
+// For complex reasoning tasks - Anthropic Claude
+let anthropic = AnthropicService(model: AnthropicModels.sonnet37)
+let reasoningAgent = Agent(llm: anthropic)
+
+// For multimodal tasks - Gemini  
+let gemini = GeminiProvider(model: GeminiModels.gemini25Pro)
+let multimodalAgent = Agent(llm: gemini)
 ```
 
 ### 2. Memory Management
@@ -1156,9 +1218,10 @@ Please answer these questions:
 struct ChatBot {
     private let agent: Agent
     
-    init() throws {
-        self.agent = try Agent(
-            model: AgenticModels.gpt4,
+    init() {
+        let openai = OpenAIProvider()
+        self.agent = Agent(
+            llm: openai,
             tools: [
                 WeatherTool.self,
                 CalculatorTool.self,
@@ -1185,9 +1248,10 @@ struct ChatBot {
 struct DocumentAnalyzer {
     private let agent: Agent
     
-    init() throws {
-        self.agent = try Agent(
-            model: AgenticModels.gpt4,
+    init() {
+        let openai = OpenAIProvider()
+        self.agent = Agent(
+            llm: openai,
             tools: [PDFReaderTool.self, SummarizerTool.self],
             instructions: """
             You are a document analysis expert. 
@@ -1214,9 +1278,11 @@ struct DocumentAnalyzer {
 struct MultiModalAgent {
     private let agent: Agent
     
-    init() throws {
-        self.agent = try Agent(
-            model: AgenticModels.gpt4, // Vision-capable model
+    init() {
+        // Use OpenAI for vision capabilities
+        let openai = OpenAIProvider(model: OpenAIModels.gpt4o) // Vision-capable model
+        self.agent = Agent(
+            llm: openai,
             tools: [ImageAnalysisTool.self, TextToSpeechTool.self]
         )
     }
@@ -1418,17 +1484,20 @@ class ChatViewModel {
 
 ### Performance Tips
 
-#### 1. Choose the Right Model
+#### 1. Choose the Right Provider and Model
 
 ```swift
 // For simple tasks - faster and cheaper
-let quickAgent = try Agent(model: AgenticModels.o4mini)
+let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
+let quickAgent = Agent(llm: openaiMini)
 
-// For complex reasoning
-let smartAgent = try Agent(model: AgenticModels.gpt4)
+// For complex reasoning - Anthropic Claude
+let anthropic = AnthropicService(model: AnthropicModels.sonnet37)
+let smartAgent = Agent(llm: anthropic)
 
-// For tool-heavy workflows
-let toolAgent = try Agent(model: AgenticModels.gpt4) // Best tool calling
+// For tool-heavy workflows - OpenAI excels at function calling
+let openai = OpenAIProvider(model: OpenAIModels.gpt4o)
+let toolAgent = Agent(llm: openai)
 ```
 
 #### 2. Optimize Tool Design

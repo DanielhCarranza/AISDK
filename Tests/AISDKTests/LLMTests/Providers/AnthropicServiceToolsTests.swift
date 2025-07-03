@@ -82,7 +82,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
         // Setup mock response with tool use
         let mockResponse = AnthropicMessageResponseBody(
             content: [
-                .text("I'll check the weather for you."),
+                .text("I'll check the weather for you.", citations: nil),
                 .toolUse(createMockToolUseBlock(
                     id: "tool_123",
                     name: "get_weather",
@@ -121,7 +121,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
         XCTAssertEqual(response.content.count, 2)
         
         // Verify text content
-        if case .text(let text) = response.content[0] {
+        if case .text(let text, citations: _) = response.content[0] {
             XCTAssertEqual(text, "I'll check the weather for you.")
         } else {
             XCTFail("Expected text content")
@@ -507,7 +507,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
         
         for content in firstResponse.content {
             switch content {
-            case .text(let text):
+            case .text(let text, citations: _):
                 responses.append(text)
             case .toolUse(let toolUse):
                 toolsUsed.append(toolUse.name)
@@ -733,7 +733,7 @@ public class MockAnthropicService {
         
         let contentText: String
         switch firstContent {
-        case .text(let text):
+        case .text(let text, citations: _):
             contentText = text
         case .toolUse(_):
             throw LLMError.parsingError("Received tool use response when expecting structured data")
@@ -799,7 +799,7 @@ public class MockAnthropicService {
         let responseText = "Mock response to: \(inputText)"
         
         return AnthropicMessageResponseBody(
-            content: [.text(responseText)],
+            content: [.text(responseText, citations: nil)],
             id: responseId,
             model: request.model,
             role: "assistant",

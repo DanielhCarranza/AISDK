@@ -88,6 +88,30 @@ struct BasicChatDemo {
         await interactiveChat(provider: openAIProvider)
         
         print("\n✅ Demo completed!")
+        
+        do {
+            print("🚀 Testing Agent with OpenAI Provider...")
+            
+            // Create OpenAI provider (uses smart default: gpt-4o)
+            let openai = OpenAIProvider()
+            
+            // Create agent with the provider
+            let agent = Agent(
+                llm: openai,
+                instructions: "You are a helpful assistant."
+            )
+            
+            print("✅ Agent created successfully!")
+            
+            // Test a conversation
+            let response = try await agent.send("Hello! What's 2+2?")
+            print("🤖 Response: \(response.displayContent)")
+            
+            print("\n✅ Demo completed!")
+            
+        } catch {
+            print("❌ Error: \(error.localizedDescription)")
+        }
     }
 }
 

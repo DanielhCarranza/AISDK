@@ -395,7 +395,8 @@ public enum AnthropicInputContent: Encodable {
     case pdf(data: String)
     case text(String)
     case toolUse(id: String, name: String, input: [String: AIProxyJSONValue])
-            case toolResult(toolUseId: String, content: String, isError: Bool = false)
+    case toolResult(toolUseId: String, content: String, isError: Bool = false)
+    case searchResult(source: String, title: String, content: [AnthropicSearchResultTextBlock], citations: AnthropicSearchResultCitations?, cacheControl: AnthropicCacheControl?)
 
     private enum CodingKeys: String, CodingKey {
         case image
@@ -408,6 +409,9 @@ public enum AnthropicInputContent: Encodable {
         case toolUseId = "tool_use_id"
         case content
         case isError = "is_error"
+        case title
+        case citations
+        case cacheControl = "cache_control"
     }
 
     private enum SourceCodingKeys: String, CodingKey {
@@ -445,6 +449,17 @@ public enum AnthropicInputContent: Encodable {
             try container.encode(content, forKey: .content)
             if isError {
                 try container.encode(true, forKey: .isError)
+            }
+        case .searchResult(source: let source, title: let title, content: let content, citations: let citations, cacheControl: let cacheControl):
+            try container.encode("search_result", forKey: .type)
+            try container.encode(source, forKey: .source)
+            try container.encode(title, forKey: .title)
+            try container.encode(content, forKey: .content)
+            if let citations = citations {
+                try container.encode(citations, forKey: .citations)
+            }
+            if let cacheControl = cacheControl {
+                try container.encode(cacheControl, forKey: .cacheControl)
             }
         }
     }
@@ -792,6 +807,50 @@ public struct AnthropicThinkingConfig: Codable {
     private enum CodingKeys: String, CodingKey {
         case type
         case budgetTokens = "budget_tokens"
+    }
+}
+
+// MARK: - Search Result Types
+
+/// Search result text block content
+public struct AnthropicSearchResultTextBlock: Encodable {
+    public let type: String
+    public let text: String
+    
+    public init(text: String) {
+        self.type = "text"
+        self.text = text
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case text
+    }
+}
+
+/// Search result citations configuration
+public struct AnthropicSearchResultCitations: Encodable {
+    public let enabled: Bool
+    
+    public init(enabled: Bool) {
+        self.enabled = enabled
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+    }
+}
+
+/// Cache control for search results
+public struct AnthropicCacheControl: Encodable {
+    public let type: String
+    
+    public init(type: String = "ephemeral") {
+        self.type = type
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case type
     }
 }
 

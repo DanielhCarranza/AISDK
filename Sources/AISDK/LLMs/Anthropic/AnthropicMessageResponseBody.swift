@@ -43,7 +43,7 @@ public struct AnthropicMessageResponseBody: Decodable {
 
 
 public enum AnthropicMessageResponseContent: Decodable {
-    case text(String)
+    case text(String, citations: [AnthropicSearchResultCitation]?)
     case toolUse(AnthropicToolUseBlock)
     case mcpToolUse(AnthropicMCPToolUseBlock)
     case mcpToolResult(AnthropicMCPToolResultBlock)
@@ -51,6 +51,7 @@ public enum AnthropicMessageResponseContent: Decodable {
     private enum CodingKeys: String, CodingKey {
         case type
         case text
+        case citations
         case id
         case name
         case input
@@ -73,7 +74,8 @@ public enum AnthropicMessageResponseContent: Decodable {
         switch type {
         case .text:
             let value = try container.decode(String.self, forKey: .text)
-            self = .text(value)
+            let citations = try container.decodeIfPresent([AnthropicSearchResultCitation].self, forKey: .citations)
+            self = .text(value, citations: citations)
         case .toolUse:
             let toolUseBlock = try AnthropicToolUseBlock(from: decoder)
             self = .toolUse(toolUseBlock)
@@ -169,5 +171,59 @@ public struct AnthropicMessageUsage: Decodable {
     public init(inputTokens: Int, outputTokens: Int) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+    }
+}
+
+// MARK: - Search Result Citation Types
+
+/// Citation information for search result references
+public struct AnthropicSearchResultCitation: Decodable {
+    /// Always "search_result_location" for search result citations
+    public let type: String
+    
+    /// The source from the original search result
+    public let source: String
+    
+    /// The title from the original search result
+    public let title: String?
+    
+    /// The exact text being cited
+    public let citedText: String
+    
+    /// Index of the search result (0-based)
+    public let searchResultIndex: Int
+    
+    /// Starting position in the content array
+    public let startBlockIndex: Int
+    
+    /// Ending position in the content array
+    public let endBlockIndex: Int
+    
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case source
+        case title
+        case citedText = "cited_text"
+        case searchResultIndex = "search_result_index"
+        case startBlockIndex = "start_block_index"
+        case endBlockIndex = "end_block_index"
+    }
+    
+    public init(
+        type: String = "search_result_location",
+        source: String,
+        title: String?,
+        citedText: String,
+        searchResultIndex: Int,
+        startBlockIndex: Int,
+        endBlockIndex: Int
+    ) {
+        self.type = type
+        self.source = source
+        self.title = title
+        self.citedText = citedText
+        self.searchResultIndex = searchResultIndex
+        self.startBlockIndex = startBlockIndex
+        self.endBlockIndex = endBlockIndex
     }
 }

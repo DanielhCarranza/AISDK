@@ -48,6 +48,9 @@ public class AnthropicService {
     private let maxRetries: Int
     private let retryDelay: TimeInterval
     
+    /// The selected model for this provider instance
+    public let model: LLMModelProtocol
+    
     // MARK: - Beta Feature Configuration
     
     /// Configuration for beta features
@@ -56,17 +59,20 @@ public class AnthropicService {
         public let extendedThinking: Bool
         public let interleavedThinking: Bool
         public let mcpClient: Bool
+        public let searchResults: Bool
         
         public init(
             tokenEfficientTools: Bool = false,
             extendedThinking: Bool = false,
             interleavedThinking: Bool = false,
-            mcpClient: Bool = false
+            mcpClient: Bool = false,
+            searchResults: Bool = false
         ) {
             self.tokenEfficientTools = tokenEfficientTools
             self.extendedThinking = extendedThinking
             self.interleavedThinking = interleavedThinking
             self.mcpClient = mcpClient
+            self.searchResults = searchResults
         }
         
         public static let none = BetaConfiguration()
@@ -74,7 +80,8 @@ public class AnthropicService {
             tokenEfficientTools: true,
             extendedThinking: true,
             interleavedThinking: true,
-            mcpClient: true
+            mcpClient: true,
+            searchResults: true
         )
     }
     
@@ -82,8 +89,41 @@ public class AnthropicService {
     
     // MARK: - Initialization
     
-    /// Initialize the Anthropic service with configuration options
-    ///
+    /// Model-aware initializer with smart default
+    /// - Parameters:
+    ///   - model: The Anthropic model to use (defaults to Claude 3.7 Sonnet)
+    ///   - apiKey: Your Anthropic API key (falls back to environment variables)
+    ///   - baseUrl: Base URL for Anthropic's native API (defaults to official API)
+    ///   - session: Custom Alamofire session for advanced networking configuration
+    ///   - betaConfiguration: Configuration for beta features
+    ///   - maxRetries: Maximum number of retry attempts for failed requests
+    ///   - retryDelay: Delay between retry attempts in seconds
+    public init(
+        model: LLMModelProtocol? = nil,
+        apiKey: String? = nil,
+        baseUrl: String = "https://api.anthropic.com/v1",
+        session: Session = .default,
+        betaConfiguration: BetaConfiguration = .none,
+        maxRetries: Int = 3,
+        retryDelay: TimeInterval = 1.0
+    ) {
+        // Use provided model or default to Anthropic's best general-purpose model
+        self.model = model ?? AnthropicModels.sonnet37
+        
+        // Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY environment variables
+        self.apiKey = apiKey 
+            ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] 
+            ?? ProcessInfo.processInfo.environment["CLAUDE_API_KEY"] 
+            ?? ""
+        
+        self.baseUrl = baseUrl
+        self.session = session
+        self.betaConfiguration = betaConfiguration
+        self.maxRetries = maxRetries
+        self.retryDelay = retryDelay
+    }
+    
+    /// Legacy initializer - maintained for backward compatibility
     /// - Parameters:
     ///   - apiKey: Your Anthropic API key (supports both ANTHROPIC_API_KEY and CLAUDE_API_KEY)
     ///   - baseUrl: Base URL for Anthropic's native API (defaults to official API)
@@ -99,6 +139,8 @@ public class AnthropicService {
         maxRetries: Int = 3,
         retryDelay: TimeInterval = 1.0
     ) {
+        self.model = AnthropicModels.sonnet37 // Default model for legacy usage
+        
         // Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY environment variables
         self.apiKey = apiKey 
             ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] 
@@ -120,6 +162,7 @@ public class AnthropicService {
         maxRetries: Int = 3
     ) {
         self.init(
+            model: nil,
             apiKey: nil,
             betaConfiguration: betaConfiguration,
             maxRetries: maxRetries
@@ -153,6 +196,10 @@ public class AnthropicService {
         
         if betaConfiguration.mcpClient {
             betaHeaders.append("mcp-client-2025-04-04")
+        }
+        
+        if betaConfiguration.searchResults {
+            betaHeaders.append("search-results-2025-06-09")
         }
         
         if !betaHeaders.isEmpty {
@@ -417,13 +464,15 @@ public class AnthropicService {
         tokenEfficientTools: Bool = false,
         extendedThinking: Bool = false,
         interleavedThinking: Bool = false,
-        mcpClient: Bool = false
+        mcpClient: Bool = false,
+        searchResults: Bool = false
     ) -> AnthropicService {
         let configuration = BetaConfiguration(
             tokenEfficientTools: tokenEfficientTools,
             extendedThinking: extendedThinking,
             interleavedThinking: interleavedThinking,
-            mcpClient: mcpClient
+            mcpClient: mcpClient,
+            searchResults: searchResults
         )
         return withBetaConfiguration(configuration)
     }
@@ -435,6 +484,7 @@ public class AnthropicService {
         if betaConfiguration.extendedThinking { features.append("extended-thinking") }
         if betaConfiguration.interleavedThinking { features.append("interleaved-thinking") }
         if betaConfiguration.mcpClient { features.append("mcp-client") }
+        if betaConfiguration.searchResults { features.append("search-results") }
         
         return """
         AnthropicService Configuration:
@@ -539,7 +589,7 @@ public class AnthropicService {
         // Extract text content from the response
         let contentText: String
         switch firstContent {
-        case .text(let text):
+        case .text(let text, citations: _):
             contentText = text
         case .toolUse(_):
             throw LLMError.parsingError("Received tool use response when expecting structured data")
