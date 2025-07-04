@@ -14,7 +14,7 @@ import UIKit
 import AppKit
 #endif
 
-@main
+
 struct BasicChatDemo {
     
     static func main() async {
