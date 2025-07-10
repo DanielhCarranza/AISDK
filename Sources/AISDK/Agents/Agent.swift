@@ -13,7 +13,7 @@ public class Agent {
     // MARK: - Properties
     
     private let model: LLMModelProtocol
-    let llm: LLM
+    public let llm: LLM
     private var tools: [Tool.Type]
     private var state: AgentState = .idle
     
@@ -411,7 +411,7 @@ public class Agent {
     
     /// Updates the agent's message history
     /// - Parameter messages: The new message history to use
-    func setMessages(_ messages: [ChatMessage]) {
+    public func setMessages(_ messages: [ChatMessage]) {
         self.messages = messages
         
         // Reset metadata tracker when setting new messages

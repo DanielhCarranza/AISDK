@@ -37,6 +37,11 @@ struct LLMModel {
 }
 
 struct AgenticModels {
+    static let o3 = LLMModel(name: "o3",
+                                    modalities: [.text, .vision, .audio],
+                                    apiKey: ConfigManager.shared["OPENAI_API_KEY"],
+                                    mode: .parallelTools)
+    
     static let o4mini = LLMModel(name: "o4-mini",
                                     modalities: [.text, .vision],
                                     apiKey: ConfigManager.shared["OPENAI_API_KEY"],

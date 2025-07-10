@@ -2,7 +2,6 @@ import SwiftUI
 import PhotosUI
 import AVKit
 import Speech
-import SpeziSpeechRecognizer
 import AVFoundation
 
 // Define the AI mode enum

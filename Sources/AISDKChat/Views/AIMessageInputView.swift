@@ -8,7 +8,6 @@
 import SwiftUI
 import AVFoundation
 import Speech
-import SpeziSpeechRecognizer
 import PhotosUI
 
 struct AIMessageInputView: View {
