@@ -7,26 +7,33 @@
 
 import Foundation
 
-struct LLMModel {
-    let name: String
-    let modalities: [Modality]
-    var apiKey: String?
-    var mode: Mode?
+public struct LLMModel {
+    public let name: String
+    public let modalities: [Modality]
+    public var apiKey: String?
+    public var mode: Mode?
     
-    enum Modality: String {
+    public init(name: String, modalities: [Modality], apiKey: String? = nil, mode: Mode? = nil) {
+        self.name = name
+        self.modalities = modalities
+        self.apiKey = apiKey
+        self.mode = mode
+    }
+    
+    public enum Modality: String {
         case text = "text"
         case vision = "vision"
         case audio = "audio"
         case video = "video"
     }
     
-    enum Mode: String {
+    public enum Mode: String {
         case parallelTools = "PARALLEL_TOOLS"
         case tools = "TOOLS"
         case json  = "JSON"
     }
     
-    enum Capability {
+    public enum Capability {
         case functionCalling
         case structuredOutputs
         case uploadFiles
@@ -36,38 +43,38 @@ struct LLMModel {
     }
 }
 
-struct AgenticModels {
-    static let o3 = LLMModel(name: "o3",
+public struct AgenticModels {
+    public static let o3 = LLMModel(name: "o3",
                                     modalities: [.text, .vision, .audio],
                                     apiKey: ConfigManager.shared["OPENAI_API_KEY"],
                                     mode: .parallelTools)
     
-    static let o4mini = LLMModel(name: "o4-mini",
+    public static let o4mini = LLMModel(name: "o4-mini",
                                     modalities: [.text, .vision],
                                     apiKey: ConfigManager.shared["OPENAI_API_KEY"],
                                     mode: .parallelTools)
                                     
-    static let gpt4 = LLMModel(name: "gpt-4o",
+    public static let gpt4 = LLMModel(name: "gpt-4o",
                                     modalities: [.text, .vision],
                                     apiKey: ConfigManager.shared["OPENAI_API_KEY"],
                                     mode: .parallelTools)
                                 
     
-    static let llama370b8k = LLMModel(name: "llama3-70b-8192",
+    public static let llama370b8k = LLMModel(name: "llama3-70b-8192",
                                       modalities: [.text],
                                       apiKey: ConfigManager.shared["GROQ_API_KEY"],
                                       mode: .tools)
-    static let llama38b8k = LLMModel(name: "llama3-8b-8192",
+    public static let llama38b8k = LLMModel(name: "llama3-8b-8192",
                                       modalities: [.text],
                                       apiKey: ConfigManager.shared["GROQ_API_KEY"],
                                       mode: .tools)
     
-    static let mixtral8x7b32k = LLMModel(name: "groq/mixtral-8x7b-32768",
+    public static let mixtral8x7b32k = LLMModel(name: "groq/mixtral-8x7b-32768",
                                          modalities: [.text],
                                          apiKey: ConfigManager.shared["GROQ_API_KEY"],
                                          mode: .tools)
     
-    static let gemini15ProLatest = LLMModel(name: "gemini-1.5-pro-latest",
+    public static let gemini15ProLatest = LLMModel(name: "gemini-1.5-pro-latest",
                                             modalities: [.text, .vision, .video],
                                             apiKey: ConfigManager.shared["GOOGLE_GEMINI_API_KEY"])
 

@@ -222,7 +222,7 @@ extension Error {
 
 extension Error {
     /// Converts any error to an AIError
-    var asAIError: AIError {
+    public var asAIError: AIError {
         switch self {
         case let error as AIError:
             return error

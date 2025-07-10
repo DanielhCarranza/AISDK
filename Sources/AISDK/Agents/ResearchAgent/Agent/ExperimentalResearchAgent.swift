@@ -20,12 +20,12 @@ import Foundation
 public class ExperimentalResearchAgent {
     // MARK: - Properties
     
-    private var model: LLMModel
-    let llm: LLM
+    private let model: LLMModelProtocol
+    public let llm: LLM
     private var tools: [Tool.Type]
-    private var state: AgentState = .idle
+    public var state: AgentState = .idle
     
-    var messages: [ChatMessage] = []
+    public var messages: [ChatMessage] = []
 
     private let instructions: String?
     private var callbacks: [AgentCallbacks] = []
@@ -37,9 +37,9 @@ public class ExperimentalResearchAgent {
     private var currentStreamMetadata: [ToolMetadata] = []
     
     // Research workflow tracking
-    private var isResearchInProgress: Bool = false
-    private var researchCompletionToolName: String = "complete_research"
-    private let researchToolNames: Set<String> = [
+    public var isResearchInProgress: Bool = false
+    public var researchCompletionToolName: String = "complete_research"
+    public let researchToolNames: Set<String> = [
         "start_research",
         "search_medical_evidence",
         "read_evidence",
@@ -50,10 +50,46 @@ public class ExperimentalResearchAgent {
     
     // MARK: - Initialization
     
-    /// Initialize an agent with a specific model, tools, and optional instructions
+    /// Provider-centric initializer - recommended approach
+    /// - Parameters:
+    ///   - llm: The LLM provider to use (e.g., OpenAIProvider(), AnthropicService())
+    ///   - tools: Array of available tools (default: empty)
+    ///   - messages: Initial conversation history (default: empty)
+    ///   - instructions: Optional system instructions for the agent's behavior
+    public init(
+        llm: LLM,
+        tools: [Tool.Type] = [],
+        messages: [ChatMessage] = [],
+        instructions: String? = nil
+    ) {
+        self.llm = llm
+        self.tools = tools
+        self.messages = messages
+        self.instructions = instructions
+        
+        // Get model from provider
+        if let openAIProvider = llm as? OpenAIProvider {
+            self.model = openAIProvider.model
+        } else {
+            // Fallback model for other providers
+            self.model = OpenAIModels.gpt4o
+        }
+        
+        // Register tools with ToolRegistry
+        ToolRegistry.registerAll(tools: tools)
+        
+        // Add system message if instructions are provided
+        if let instructions = instructions {
+            let systemMessage = ChatMessage(message: .system(content: .text(instructions)))
+            self.messages.append(systemMessage)
+        }
+    }
+    
+    /// Legacy initializer - maintained for backward compatibility
     /// - Parameters:
     ///   - model: The language model configuration to use
     ///   - tools: Array of available tools (default: empty)
+    ///   - messages: Initial conversation history (default: empty)
     ///   - instructions: Optional system instructions for the agent's behavior
     /// - Throws: AgentError if initialization fails
     init(
@@ -61,22 +97,23 @@ public class ExperimentalResearchAgent {
         tools: [Tool.Type] = [],
         messages: [ChatMessage] = [], 
         instructions: String? = nil
-    ) throws {
-        self.model = model
+    ) {
         self.tools = tools
         self.messages = messages
         self.instructions = instructions
+        
+        // Convert legacy model to protocol
+        self.model = model.toProtocol()
         
         // Register tools with ToolRegistry
         ToolRegistry.registerAll(tools: tools)
         
         // Initialize appropriate LLM based on model
-        self.model = AgenticModels.gpt4
-        self.llm = OpenAIProvider(apiKey: AgenticModels.gpt4.apiKey ?? " ")
+        self.llm = OpenAIProvider(apiKey: model.apiKey ?? " ")
         
         // Add system message if instructions are provided
         if let instructions = instructions {
-            let systemMessage = ChatMessage(message: .developer(content: .text(instructions)))
+            let systemMessage = ChatMessage(message: .system(content: .text(instructions)))
             self.messages.append(systemMessage)
         }
     }

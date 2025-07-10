@@ -15,9 +15,9 @@ public class Agent {
     private let model: LLMModelProtocol
     public let llm: LLM
     private var tools: [Tool.Type]
-    private var state: AgentState = .idle
+    public var state: AgentState = .idle
     
-    var messages: [ChatMessage] = []
+    public var messages: [ChatMessage] = []
 
     private let instructions: String?
     private var callbacks: [AgentCallbacks] = []
