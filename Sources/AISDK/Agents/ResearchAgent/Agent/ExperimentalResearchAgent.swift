@@ -93,7 +93,7 @@ public class ExperimentalResearchAgent {
     /// - Parameter content: The user's message
     /// - Returns: The agent's response message
     /// - Throws: Various errors related to API calls or tool execution
-    func send(_ content: String) async throws -> ChatMessage {
+    public func send(_ content: String) async throws -> ChatMessage {
         setState(.thinking)
         
         let userMessage = ChatMessage(message: .user(content: .text(content)))
@@ -156,7 +156,7 @@ public class ExperimentalResearchAgent {
     /// Useful for real-time UI updates and handling tool executions
     /// - Parameter content: The user's message
     /// - Returns: An async stream of response messages
-    func sendStream(_ message: ChatMessage) -> AsyncThrowingStream<ChatMessage, Error> {
+    public func sendStream(_ message: ChatMessage) -> AsyncThrowingStream<ChatMessage, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 // Reset metadata at start of new stream
@@ -572,7 +572,7 @@ public class ExperimentalResearchAgent {
     
     /// Updates the agent's message history
     /// - Parameter messages: The new message history to use
-    func setMessages(_ messages: [ChatMessage]) {
+    public func setMessages(_ messages: [ChatMessage]) {
         self.messages = messages
         
         // Reset metadata tracker when setting new messages

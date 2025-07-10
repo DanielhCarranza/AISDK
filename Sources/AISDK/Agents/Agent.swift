@@ -174,7 +174,7 @@ public class Agent {
     /// Useful for real-time UI updates and handling tool executions
     /// - Parameter content: The user's message
     /// - Returns: An async stream of response messages
-    func sendStream(_ message: ChatMessage, requiredTool: String? = nil) -> AsyncThrowingStream<ChatMessage, Error> {
+    public func sendStream(_ message: ChatMessage, requiredTool: String? = nil) -> AsyncThrowingStream<ChatMessage, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 // Reset metadata at start of new stream
