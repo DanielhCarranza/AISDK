@@ -154,7 +154,7 @@ public class ExperimentalResearchAgent {
             model: model.name,
             messages: convertToAPIMessages(),
             tools: tools.map { $0.jsonSchema() },
-            toolChoice: model.mode == .parallelTools ? .auto : nil
+            toolChoice: model.hasCapability(.tools) ? .auto : nil
         )
         
         // Execute before LLM request callback
@@ -237,7 +237,7 @@ public class ExperimentalResearchAgent {
                 messages: convertToAPIMessages(),
                 stream: true,
                 tools: tools.map { $0.jsonSchema() },
-                toolChoice: model.mode == .parallelTools ? .auto : nil
+                toolChoice: model.hasCapability(.tools) ? .auto : nil
             )
             
             // Execute before LLM request callback

@@ -6,6 +6,7 @@ public enum AttachmentType: String, Codable {
     case audio
     case video
     case json
+    case medicalRecord
     case other
     
     public var icon: String {
@@ -15,6 +16,7 @@ public enum AttachmentType: String, Codable {
         case .audio: return "waveform"
         case .video: return "play.rectangle"
         case .json: return "curlybraces"
+        case .medicalRecord: return "heart.text.square"
         case .other: return "doc"
         }
     }
@@ -26,6 +28,7 @@ public enum AttachmentType: String, Codable {
         case .audio: return "audio/mpeg"
         case .video: return "video/mp4"
         case .json: return "application/json"
+        case .medicalRecord: return "application/json"
         case .other: return "application/octet-stream"
         }
     }
@@ -50,6 +53,7 @@ public struct Attachment: Identifiable, Codable {
     public let size: Int64?
     public let createdAt: Date
     public let content: String?
+    public let medicalRecordData: Data?
     
     public init(url: URL, name: String, type: AttachmentType? = nil, size: Int64? = nil, content: String? = nil) {
         self.id = UUID()
@@ -59,6 +63,7 @@ public struct Attachment: Identifiable, Codable {
         self.size = size
         self.createdAt = Date()
         self.content = content
+        self.medicalRecordData = nil
     }
     
     public init() {
@@ -69,5 +74,33 @@ public struct Attachment: Identifiable, Codable {
         self.size = nil
         self.createdAt = Date()
         self.content = nil
+        self.medicalRecordData = nil
+    }
+    
+    /// Creates an attachment from a medical record
+    public init<T: MedicalRecordContent>(medicalRecord: T) {
+        self.id = UUID()
+        self.url = URL(string: "medical-record://\(medicalRecord.id)")!
+        self.name = medicalRecord.name
+        self.type = .medicalRecord
+        self.size = nil
+        self.createdAt = Date()
+        self.content = medicalRecord.summary
+        
+        // Serialize the medical record to Data
+        let encoder = JSONEncoder()
+        self.medicalRecordData = try? encoder.encode(medicalRecord)
+    }
+    
+    /// Retrieves the medical record from this attachment
+    public func getMedicalRecord<T: MedicalRecordContent>(as type: T.Type) -> T? {
+        guard let data = medicalRecordData else { return nil }
+        let decoder = JSONDecoder()
+        return try? decoder.decode(type, from: data)
+    }
+    
+    /// Gets the LLM context string for the medical record
+    public func getLLMContext<T: MedicalRecordContent>(as type: T.Type) -> String? {
+        return getMedicalRecord(as: type)?.toLLMContext()
     }
 } 
