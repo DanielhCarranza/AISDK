@@ -76,8 +76,67 @@ public struct Field<Value: Codable>: Codable {
     // MARK: - Codable conformance for the property wrapper
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
+        
+        // Generic enum handling - works for ANY enum type that conforms to CaseIterable & RawRepresentable
+        if let enumType = Value.self as? any (CaseIterable & RawRepresentable).Type {
+            // Try to decode the enum from various formats that APIs might return
+            
+            // First, try normal decoding (raw value)
+            if let normalValue = try? container.decode(Value.self) {
+                self.wrappedValue = normalValue
+                self.description = nil
+                self.validation = nil
+                return
+            }
+            
+            // If normal decoding fails, try string-based decoding for any enum
+            if let stringValue = try? container.decode(String.self) {
+                // Try to find matching enum case by raw value
+                if let matchingCase = enumType.allCases.first(where: { enumCase in
+                    if let rawRep = enumCase as? any RawRepresentable {
+                        return String(describing: rawRep.rawValue) == stringValue
+                    }
+                    return false
+                }) as? Value {
+                    self.wrappedValue = matchingCase
+                    self.description = nil
+                    self.validation = nil
+                    return
+                }
+                
+                // Try to find matching enum case by case name (case-insensitive)
+                let lowercasedString = stringValue.lowercased()
+                if let matchingCase = enumType.allCases.first(where: { enumCase in
+                    let caseName = String(describing: enumCase).lowercased()
+                    return caseName == lowercasedString
+                }) as? Value {
+                    self.wrappedValue = matchingCase
+                    self.description = nil
+                    self.validation = nil
+                    return
+                }
+                
+                // For Int-based enums, try parsing string as number
+                if let intValue = Int(stringValue),
+                   let matchingCase = enumType.allCases.first(where: { enumCase in
+                       if let rawRep = enumCase as? any RawRepresentable,
+                          let rawInt = rawRep.rawValue as? Int {
+                           return rawInt == intValue
+                       }
+                       return false
+                   }) as? Value {
+                    self.wrappedValue = matchingCase
+                    self.description = nil
+                    self.validation = nil
+                    return
+                }
+            }
+            
+            // If all enum decoding attempts fail, fall back to normal decoding which will throw appropriate error
+        }
+        
+        // Default decoding for non-enum types or when enum decoding fails
         self.wrappedValue = try container.decode(Value.self)
-        // Since metadata doesn't appear in actual JSON data, we store no metadata here.
         self.description = nil
         self.validation = nil
     }
@@ -388,16 +447,17 @@ private func schemaForProperty(fieldWrapper: FieldProtocol, isOptional: Bool) ->
         var mergedValidation = fieldWrapper.validationDict ?? [:]
         mergedValidation["enum"] = enumValidation
         
-        // Determine the underlying type for enum based on type name
-        let typeName = String(describing: fieldWrapper.valueType)
-        if typeName.contains("String") {
+        // Determine the JSON Schema type based on the actual enum values, not the Swift type name
+        let jsonSchemaType = determineJSONSchemaType(from: enumValidation)
+        
+        switch jsonSchemaType {
+        case "string":
             return .string(description: fieldWrapper.fieldDescription, validation: mergedValidation)
-        } else if typeName.contains("Int") {
+        case "integer":
             return .integer(description: fieldWrapper.fieldDescription, validation: mergedValidation)
-        } else if typeName.contains("Double") || typeName.contains("Float") {
+        case "number":
             return .number(description: fieldWrapper.fieldDescription, validation: mergedValidation)
-        } else {
-            // Default to string for most enums
+        default:
             return .string(description: fieldWrapper.fieldDescription, validation: mergedValidation)
         }
     }
@@ -448,12 +508,76 @@ private func generateArraySchema(
 
 /// Automatically generate enum validation for types that conform to CaseIterable & RawRepresentable
 private func generateEnumValidationIfApplicable(for valueType: Any.Type) -> ValidationValue? {
-    // Use a more direct approach - check if the type conforms to our automatic enum protocols
+    // First try the AutoEnumValidatable protocol
     if let autoEnumType = valueType as? any AutoEnumValidatable.Type {
         return autoEnumType.generateValidationValue()
     }
     
+    // Generic enum detection using reflection - works for ANY enum type
+    if let caseIterableType = valueType as? any CaseIterable.Type {
+        let allCases = caseIterableType.allCases
+        
+        // Try String-based enums first
+        let stringValues = allCases.compactMap { enumCase in
+            if let rawRepresentable = enumCase as? any RawRepresentable,
+               let stringValue = rawRepresentable.rawValue as? String {
+                return stringValue
+            }
+            return nil
+        }
+        if !stringValues.isEmpty {
+            return .array(stringValues.map { .string($0) })
+        }
+        
+        // Try Int-based enums
+        let intValues = allCases.compactMap { enumCase in
+            if let rawRepresentable = enumCase as? any RawRepresentable,
+               let intValue = rawRepresentable.rawValue as? Int {
+                return intValue
+            }
+            return nil
+        }
+        if !intValues.isEmpty {
+            return .array(intValues.map { .integer($0) })
+        }
+        
+        // Try Double-based enums
+        let doubleValues = allCases.compactMap { enumCase in
+            if let rawRepresentable = enumCase as? any RawRepresentable,
+               let doubleValue = rawRepresentable.rawValue as? Double {
+                return doubleValue
+            }
+            return nil
+        }
+        if !doubleValues.isEmpty {
+            return .array(doubleValues.map { .number($0) })
+        }
+    }
+    
     return nil
+}
+
+/// Determine the correct JSON Schema type based on the enum validation values
+private func determineJSONSchemaType(from enumValidation: ValidationValue) -> String {
+    if case .array(let values) = enumValidation {
+        // Check the type of the first value to determine the schema type
+        if let firstValue = values.first {
+            switch firstValue {
+            case .string(_):
+                return "string"
+            case .integer(_):
+                return "integer"
+            case .number(_):
+                return "number"
+            case .boolean(_):
+                return "boolean"
+            case .array(_):
+                return "array"
+            }
+        }
+    }
+    // Default fallback
+    return "string"
 }
 
 /// Protocol for automatic enum validation - enums can conform to this to provide automatic validation

@@ -828,4 +828,151 @@ final class StructuredOutputTests: XCTestCase {
                      analysis.title.lowercased().contains("cbc") ||
                      analysis.title.lowercased().contains("lab"))
     }
+
+    // MARK: - Debug Test to Help Identify the Issue
+    
+    func testDebugEnumDetection() throws {
+        // Test the automatic enum detection directly
+        print("🔍 Testing automatic enum detection...")
+        
+        // Test DocumentType enum
+        print("DocumentType.self: \(DocumentType.self)")
+        print("String(describing: DocumentType.self): \(String(describing: DocumentType.self))")
+        print("DocumentType conforms to CaseIterable: \(DocumentType.self is any CaseIterable.Type)")
+        print("DocumentType conforms to RawRepresentable: \(DocumentType.self is any RawRepresentable.Type)")
+        print("DocumentType conforms to AutoEnumValidatable: \(DocumentType.self is any AutoEnumValidatable.Type)")
+        
+        // Test Priority enum
+        print("Priority.self: \(Priority.self)")
+        print("String(describing: Priority.self): \(String(describing: Priority.self))")
+        print("Priority conforms to CaseIterable: \(Priority.self is any CaseIterable.Type)")
+        print("Priority conforms to RawRepresentable: \(Priority.self is any RawRepresentable.Type)")
+        print("Priority conforms to AutoEnumValidatable: \(Priority.self is any AutoEnumValidatable.Type)")
+        
+        // Test direct validation generation
+        do {
+            let docTypeValidation = DocumentType.generateValidationValue()
+            print("DocumentType validation generated: \(docTypeValidation)")
+        } catch {
+            print("❌ DocumentType validation generation failed: \(error)")
+        }
+        
+        do {
+            let priorityValidation = Priority.generateValidationValue()
+            print("Priority validation generated: \(priorityValidation)")
+        } catch {
+            print("❌ Priority validation generation failed: \(error)")
+        }
+        
+        // Test the actual field types that would be detected during reflection
+        print("\n🔍 Testing field type detection...")
+        let testInstance = TestDocumentAnalysis()
+        let mirror = Mirror(reflecting: testInstance)
+        
+        for child in mirror.children {
+            guard let propName = child.label?.replacingOccurrences(of: "_", with: "") else { continue }
+            
+            // Get the Field wrapper
+            let fieldMirror = Mirror(reflecting: child.value)
+            guard let propertyWrapper = fieldMirror.children.first(where: { $0.label == "wrappedValue" }) else {
+                continue
+            }
+            
+            let valueType = type(of: propertyWrapper.value)
+            print("Property '\(propName)': valueType = \(valueType)")
+            print("  String(describing: valueType) = \(String(describing: valueType))")
+            print("  valueType is AutoEnumValidatable: \(valueType is any AutoEnumValidatable.Type)")
+            
+            if let fieldWrapper = child.value as? FieldProtocol {
+                print("  fieldWrapper.valueType = \(fieldWrapper.valueType)")
+                print("  String(describing: fieldWrapper.valueType) = \(String(describing: fieldWrapper.valueType))")
+                print("  fieldWrapper.valueType is AutoEnumValidatable: \(fieldWrapper.valueType is any AutoEnumValidatable.Type)")
+            }
+        }
+    }
+    
+    func testDebugAutomaticEnumIssue() async throws {
+        // Debug test to help identify what's going wrong
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"], !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY environment variable required for this test")
+        }
+        
+        let openAI = OpenAIProvider(model: OpenAIModels.gpt4o, apiKey: apiKey)
+        
+        // Step 1: Generate and print the JSON schema
+        let schema = TestDocumentAnalysis.schema()
+            .title("Debug Document Analysis")
+            .description("Debug test for enum validation")
+        
+        print("🔍 STEP 1: Generated JSON Schema:")
+        let builtSchema = schema.build()
+        // Convert AnyEncodable to regular JSON for printing
+        if let schemaData = try? JSONEncoder().encode(builtSchema),
+           let schemaDict = try? JSONSerialization.jsonObject(with: schemaData),
+           let prettyData = try? JSONSerialization.data(withJSONObject: schemaDict, options: .prettyPrinted),
+           let schemaString = String(data: prettyData, encoding: .utf8) {
+            print(schemaString)
+        }
+        
+        // Step 2: Create the request
+        let request = ChatCompletionRequest(
+            model: "gpt-4o",
+            messages: [
+                .user(content: .text("Generate a medical document analysis with title 'Test Lab Results', document type as lab results, medium priority, and summary 'Test summary'"))
+            ],
+            responseFormat: .jsonSchema(
+                name: "debug_document_analysis",
+                description: "Debug test document analysis",
+                schemaBuilder: schema,
+                strict: true
+            )
+        )
+        
+        // Step 3: Get raw ChatCompletionResponse to see what OpenAI returns
+        print("🔍 STEP 2: Making request to OpenAI...")
+        let chatResponse = try await openAI.sendChatCompletion(request: request)
+        
+        // Step 4: Print the raw JSON response
+        if let jsonContent = chatResponse.choices.first?.message.content {
+            print("🔍 STEP 3: Raw JSON response from OpenAI:")
+            print(jsonContent)
+            
+            // Step 5: Try to manually decode to see specific error
+            if let jsonData = jsonContent.data(using: .utf8) {
+                print("🔍 STEP 4: Attempting manual decode...")
+                do {
+                    let decoder = JSONDecoder()
+                    let analysis = try decoder.decode(TestDocumentAnalysis.self, from: jsonData)
+                    print("✅ Manual decode SUCCESS!")
+                    print("Title: \(analysis.title)")
+                    print("Type: \(analysis.documentType.rawValue)")
+                    print("Priority: \(analysis.priority.rawValue)")
+                    print("Summary: \(analysis.summary)")
+                } catch {
+                    print("❌ Manual decode FAILED with error:")
+                    print(error.localizedDescription)
+                    
+                    // Try to decode as generic dictionary to see structure
+                    if let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                        print("🔍 STEP 5: Raw dictionary structure:")
+                        for (key, value) in dict {
+                            print("  \(key): \(value) (type: \(type(of: value)))")
+                        }
+                    }
+                }
+            }
+        } else {
+            print("❌ No content in response")
+        }
+        
+        // This will likely fail, but now we have debug info
+        do {
+            let analysis: TestDocumentAnalysis = try await openAI.generateObject(request: request)
+            print("✅ generateObject succeeded unexpectedly!")
+            print("Result: \(analysis)")
+        } catch {
+            print("❌ generateObject failed as expected:")
+            print(error.localizedDescription)
+        }
+    }
 } 
