@@ -382,6 +382,26 @@ private func schemaForProperty(fieldWrapper: FieldProtocol, isOptional: Bool) ->
         )
     }
 
+    // Check if it's an enum type that we can automatically handle
+    if let enumValidation = generateEnumValidationIfApplicable(for: fieldWrapper.valueType) {
+        // Merge automatic enum validation with any existing validation
+        var mergedValidation = fieldWrapper.validationDict ?? [:]
+        mergedValidation["enum"] = enumValidation
+        
+        // Determine the underlying type for enum based on type name
+        let typeName = String(describing: fieldWrapper.valueType)
+        if typeName.contains("String") {
+            return .string(description: fieldWrapper.fieldDescription, validation: mergedValidation)
+        } else if typeName.contains("Int") {
+            return .integer(description: fieldWrapper.fieldDescription, validation: mergedValidation)
+        } else if typeName.contains("Double") || typeName.contains("Float") {
+            return .number(description: fieldWrapper.fieldDescription, validation: mergedValidation)
+        } else {
+            // Default to string for most enums
+            return .string(description: fieldWrapper.fieldDescription, validation: mergedValidation)
+        }
+    }
+
     // Otherwise, figure out the basic type
     switch String(describing: fieldWrapper.valueType) {
     case "String":
@@ -423,6 +443,42 @@ private func generateArraySchema(
     default:
         // fallback
         return .array(description: description, items: .string(), validation: validation)
+    }
+}
+
+/// Automatically generate enum validation for types that conform to CaseIterable & RawRepresentable
+private func generateEnumValidationIfApplicable(for valueType: Any.Type) -> ValidationValue? {
+    // Use a more direct approach - check if the type conforms to our automatic enum protocols
+    if let autoEnumType = valueType as? any AutoEnumValidatable.Type {
+        return autoEnumType.generateValidationValue()
+    }
+    
+    return nil
+}
+
+/// Protocol for automatic enum validation - enums can conform to this to provide automatic validation
+public protocol AutoEnumValidatable {
+    static func generateValidationValue() -> ValidationValue
+}
+
+/// Automatic conformance for String-based CaseIterable enums
+extension RawRepresentable where Self: CaseIterable, RawValue == String {
+    public static func generateValidationValue() -> ValidationValue {
+        return .array(Self.allCases.map { .string($0.rawValue) })
+    }
+}
+
+/// Automatic conformance for Int-based CaseIterable enums  
+extension RawRepresentable where Self: CaseIterable, RawValue == Int {
+    public static func generateValidationValue() -> ValidationValue {
+        return .array(Self.allCases.map { .integer($0.rawValue) })
+    }
+}
+
+/// Automatic conformance for Double-based CaseIterable enums
+extension RawRepresentable where Self: CaseIterable, RawValue == Double {
+    public static func generateValidationValue() -> ValidationValue {
+        return .array(Self.allCases.map { .number($0.rawValue) })
     }
 }
 
@@ -529,6 +585,118 @@ public extension JSONSchemaModel {
     }
 }
 
+// MARK: - Field Convenience Extensions
+
+extension Field where Value == String {
+    /// Convenience initializer for enum fields using CaseIterable enums
+    /// 
+    /// Example:
+    /// ```swift
+    /// enum Status: String, CaseIterable {
+    ///     case pending, approved, rejected
+    /// }
+    /// 
+    /// @Field(description: "Request status", enumType: Status.self, defaultCase: .pending)
+    /// var status: String = ""
+    /// ```
+    public init<T: CaseIterable & RawRepresentable>(
+        description: String,
+        enumType: T.Type,
+        defaultCase: T? = nil
+    ) where T.RawValue == String {
+        let validation: [String: ValidationValue] = [
+            "enum": ValidationValue.enumArray(enumType)
+        ]
+        
+        let defaultValue = defaultCase?.rawValue ?? ""
+        
+        self.init(
+            wrappedValue: defaultValue,
+            description: description,
+            validation: validation
+        )
+    }
+    
+    /// Convenience initializer for enum fields using string arrays
+    /// 
+    /// Example:
+    /// ```swift
+    /// @Field(description: "Color", stringEnum: ["red", "green", "blue"], defaultValue: "red")
+    /// var color: String = ""
+    /// ```
+    public init(
+        description: String,
+        stringEnum values: [String],
+        defaultValue: String? = nil
+    ) {
+        let validation: [String: ValidationValue] = [
+            "enum": ValidationValue.stringArray(values)
+        ]
+        
+        let wrappedValue = defaultValue ?? values.first ?? ""
+        
+        self.init(
+            wrappedValue: wrappedValue,
+            description: description,
+            validation: validation
+        )
+    }
+}
+
+extension Field where Value == Int {
+    /// Convenience initializer for integer enum fields
+    /// 
+    /// Example:
+    /// ```swift
+    /// @Field(description: "Priority level", intEnum: [1, 2, 3, 4, 5], defaultValue: 3)
+    /// var priority: Int = 0
+    /// ```
+    public init(
+        description: String,
+        intEnum values: [Int],
+        defaultValue: Int? = nil
+    ) {
+        let validation: [String: ValidationValue] = [
+            "enum": ValidationValue.integerArray(values)
+        ]
+        
+        let wrappedValue = defaultValue ?? values.first ?? 0
+        
+        self.init(
+            wrappedValue: wrappedValue,
+            description: description,
+            validation: validation
+        )
+    }
+}
+
+extension Field where Value == Double {
+    /// Convenience initializer for double enum fields
+    /// 
+    /// Example:
+    /// ```swift
+    /// @Field(description: "Rating", doubleEnum: [0.0, 0.5, 1.0, 1.5, 2.0], defaultValue: 1.0)
+    /// var rating: Double = 0.0
+    /// ```
+    public init(
+        description: String,
+        doubleEnum values: [Double],
+        defaultValue: Double? = nil
+    ) {
+        let validation: [String: ValidationValue] = [
+            "enum": ValidationValue.numberArray(values)
+        ]
+        
+        let wrappedValue = defaultValue ?? values.first ?? 0.0
+        
+        self.init(
+            wrappedValue: wrappedValue,
+            description: description,
+            validation: validation
+        )
+    }
+}
+
 // Note: AIProxyJSONValue is now defined in AIProxyJSONValue.swift to avoid duplication
 
 // First, let's define what validation values can be
@@ -548,5 +716,57 @@ public enum ValidationValue: Encodable {
         case .boolean(let value): try container.encode(value)
         case .array(let value): try container.encode(value)
         }
+    }
+}
+
+// MARK: - ValidationValue Convenience Extensions
+
+extension ValidationValue {
+    /// Create ValidationValue array from CaseIterable String enum
+    /// 
+    /// Example:
+    /// ```swift
+    /// enum Status: String, CaseIterable {
+    ///     case pending, approved, rejected
+    /// }
+    /// 
+    /// @Field(validation: ["enum": .enumArray(Status.self)])
+    /// var status: String = ""
+    /// ```
+    public static func enumArray<T: CaseIterable & RawRepresentable>(_ enumType: T.Type) -> ValidationValue where T.RawValue == String {
+        return .array(enumType.allCases.map { .string($0.rawValue) })
+    }
+    
+    /// Create ValidationValue array from string array
+    /// 
+    /// Example:
+    /// ```swift
+    /// @Field(validation: ["enum": .stringArray(["red", "green", "blue"])])
+    /// var color: String = ""
+    /// ```
+    public static func stringArray(_ strings: [String]) -> ValidationValue {
+        return .array(strings.map { .string($0) })
+    }
+    
+    /// Create ValidationValue array from integer array
+    /// 
+    /// Example:
+    /// ```swift
+    /// @Field(validation: ["enum": .integerArray([1, 5, 10, 25, 50])])
+    /// var quantity: Int = 1
+    /// ```
+    public static func integerArray(_ integers: [Int]) -> ValidationValue {
+        return .array(integers.map { .integer($0) })
+    }
+    
+    /// Create ValidationValue array from double array
+    /// 
+    /// Example:
+    /// ```swift
+    /// @Field(validation: ["enum": .numberArray([0.0, 0.5, 1.0, 1.5, 2.0])])
+    /// var rating: Double = 0.0
+    /// ```
+    public static func numberArray(_ numbers: [Double]) -> ValidationValue {
+        return .array(numbers.map { .number($0) })
     }
 }

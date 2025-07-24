@@ -259,7 +259,14 @@ if let jsonContent = jsonResponse.choices.first?.message.content {
 Use AISDK's JSON schema system for type-safe responses:
 
 ```swift
-// Define your data model
+// Define your data model with automatic enum validation
+enum ProductCategory: String, CaseIterable, Codable {
+    case electronics = "Electronics"
+    case clothing = "Clothing"
+    case books = "Books"
+    case home = "Home"
+}
+
 struct Product: JSONSchemaModel, Codable {
     @Field(description: "Product name")
     var name: String = ""
@@ -267,8 +274,9 @@ struct Product: JSONSchemaModel, Codable {
     @Field(description: "Price in dollars", validation: ["minimum": 0])
     var price: Double = 0.0
     
+    // ✨ Automatic enum validation - no validation dictionary needed!
     @Field(description: "Product category")
-    var category: String = ""
+    var category: ProductCategory = .electronics
     
     @Field(description: "Whether the product is in stock")
     var inStock: Bool = false
@@ -292,7 +300,7 @@ let schemaRequest = ChatCompletionRequest(
 
 // Get type-safe response
 let product: Product = try await openAIProvider.generateObject(request: schemaRequest)
-print("Product: \(product.name), Price: $\(product.price)")
+print("Product: \(product.name), Price: $\(product.price), Category: \(product.category.rawValue)")
 ```
 
 ### Tool Calling (Function Calling)
