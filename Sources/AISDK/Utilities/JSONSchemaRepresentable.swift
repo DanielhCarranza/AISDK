@@ -388,16 +388,16 @@ public extension JSONSchemaModel {
                 continue
             }
 
-            // If not optional, add to required list
+            // For strict mode compatibility: only include non-optional fields
             if !isOptional {
                 requiredProps.append(propName)
+                let propSchema = schemaForProperty(
+                    fieldWrapper: fieldWrapper,
+                    isOptional: isOptional
+                )
+                properties[propName] = propSchema
             }
-
-            let propSchema = schemaForProperty(
-                fieldWrapper: fieldWrapper,
-                isOptional: isOptional
-            )
-            properties[propName] = propSchema
+            // Optional fields are excluded from both properties and required arrays
         }
 
         return (properties, requiredProps)
