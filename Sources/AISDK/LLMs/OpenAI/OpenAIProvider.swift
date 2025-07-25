@@ -273,6 +273,16 @@ public class OpenAIProvider: LLM {
             throw AISDKError.invalidURL
         }
         
+        // Add detailed request logging for debugging
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        if let requestData = try? encoder.encode(request),
+           let requestString = String(data: requestData, encoding: .utf8) {
+            print("🔍 GenerateObject Request Details:")
+            print("Endpoint: \(endpoint)")
+            print("Request Body: \(requestString)")
+        }
+        
         // Prepare and perform the request with Alamofire
         return try await withCheckedThrowingContinuation { continuation in
             session.request(
@@ -283,7 +293,12 @@ public class OpenAIProvider: LLM {
                 headers: authorizationHeaders
             )
             .responseData { response in
-                // print("GenerateObject Raw response: \(String(data: response.data ?? Data(), encoding: .utf8) ?? "none")")
+                // Always log the raw response for debugging
+                if let data = response.data, let responseString = String(data: data, encoding: .utf8) {
+                    print("🔍 GenerateObject Raw Response:")
+                    print("Status Code: \(response.response?.statusCode ?? -1)")
+                    print("Response Body: \(responseString)")
+                }
             }
             .validate()
             .responseDecodable(of: ChatCompletionResponse.self) { response in
@@ -298,7 +313,12 @@ public class OpenAIProvider: LLM {
                     // Otherwise, try to parse the content as a JSONSchemaModel
                     guard let content = chatResponse.choices.first?.message.content,
                           let jsonData = content.data(using: .utf8) else {
-                        continuation.resume(throwing: AISDKError.parsingError("Failed to extract content from response"))
+                        let errorMsg = """
+                        ❌ Failed to extract content from OpenAI response
+                        Response: \(chatResponse)
+                        Choices: \(chatResponse.choices)
+                        """
+                        continuation.resume(throwing: AISDKError.parsingError(errorMsg))
                         return
                     }
                     
@@ -306,9 +326,15 @@ public class OpenAIProvider: LLM {
                     do {
                         let decoder = JSONDecoder()
                         let result = try decoder.decode(T.self, from: jsonData)
+                        print("✅ GenerateObject Success: Decoded \(T.self)")
                         continuation.resume(returning: result)
                     } catch {
-                        continuation.resume(throwing: AISDKError.parsingError("Failed to decode response to \(T.self): \(error.localizedDescription)"))
+                        let errorMsg = """
+                        ❌ Failed to decode OpenAI response to \(T.self)
+                        Raw JSON Content: \(content)
+                        Decoding Error: \(error)
+                        """
+                        continuation.resume(throwing: AISDKError.parsingError(errorMsg))
                     }
                     
                 case .failure(let afError):

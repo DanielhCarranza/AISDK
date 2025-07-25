@@ -745,7 +745,7 @@ final class StructuredOutputTests: XCTestCase {
         let openAI = OpenAIProvider(model: OpenAIModels.gpt4o, apiKey: apiKey)
         
         let request = ChatCompletionRequest(
-            model: "gpt-4o",
+            model: "gpt-4.1",
             messages: [
                 .user(content: .text("Generate a medical document analysis with title 'Patient Lab Results', document type as lab results, high priority, and a brief summary"))
             ],
