@@ -80,42 +80,62 @@ public struct RenderMetadata: ToolMetadata {
 
 /// Type-erasing wrapper for ToolMetadata to handle encoding/decoding of different metadata types
 public struct AnyToolMetadata: Codable {
-    private enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey { 
         case type, metadata
     }
     
     public let metadata: ToolMetadata
     private let type: String
-    
+
     public init(_ metadata: ToolMetadata) {
         self.metadata = metadata
-        self.type = String(describing: Swift.type(of: metadata))
+        // Use fully-qualified type name for uniqueness across modules
+        self.type = String(reflecting: Swift.type(of: metadata))
+        // Register decoder closure for this concrete value
+        ToolMetadataRegistry.register(instance: metadata)
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.type = try container.decode(String.self, forKey: .type)
-        
-        switch self.type {
-        case String(describing: RenderMetadata.self):
-            self.metadata = try container.decode(RenderMetadata.self, forKey: .metadata)
-        default:
-            // For now, skip unknown metadata types and create a default RenderMetadata
-            self.metadata = RenderMetadata(toolName: "unknown", jsonData: Data())
+
+        // 1) Try registered decoder
+        if let decoderClosure = ToolMetadataRegistry.decoder(for: self.type) {
+            let nested = try container.superDecoder(forKey: .metadata)
+            self.metadata = try decoderClosure(nested)
+            return
         }
+
+        // 2) Try dynamic lookup via _typeByName
+        if let anyType = _typeByName(self.type),
+           let decodableMetaType = anyType as? Decodable.Type,
+           let _ = anyType as? ToolMetadata.Type {
+            let nested = try container.superDecoder(forKey: .metadata)
+            let anyObject = try decodableMetaType.init(from: nested)
+            if let toolMeta = anyObject as? ToolMetadata {
+                self.metadata = toolMeta
+                return
+            }
+        }
+
+        // 3) Legacy hard-coded RenderMetadata fallback
+        if self.type == String(describing: RenderMetadata.self) {
+            self.metadata = try container.decode(RenderMetadata.self, forKey: .metadata)
+            return
+        }
+
+        throw DecodingError.dataCorruptedError(forKey: .type,
+                                               in: container,
+                                               debugDescription: "Unknown ToolMetadata type: \(self.type)")
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(type, forKey: .type)
-        
-        switch metadata {
-        case let renderMeta as RenderMetadata:
-            try container.encode(renderMeta, forKey: .metadata)
-        default:
-            // Skip unknown metadata types for now
-            break
-        }
+
+        // Encode metadata inline using nested encoder
+        let nestedEncoder = container.superEncoder(forKey: .metadata)
+        try metadata.encode(to: nestedEncoder)
     }
 }
 
@@ -489,5 +509,26 @@ extension Encodable {
             return "Error converting to JSON"
         }
         return output
+    }
+}
+
+// MARK: - ToolMetadata Registry
+
+fileprivate enum ToolMetadataRegistry {
+    private static var _decoders: [String: (Decoder) throws -> ToolMetadata] = [:]
+    private static let lock = NSLock()
+
+    static func register<T: ToolMetadata & Decodable>(instance: T) {
+        let key = String(reflecting: T.self)
+        lock.lock(); defer { lock.unlock() }
+        guard _decoders[key] == nil else { return }
+        _decoders[key] = { decoder in
+            try T(from: decoder)
+        }
+    }
+
+    static func decoder(for key: String) -> ((Decoder) throws -> ToolMetadata)? {
+        lock.lock(); defer { lock.unlock() }
+        return _decoders[key]
     }
 }
