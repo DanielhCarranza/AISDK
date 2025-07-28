@@ -20,18 +20,61 @@ public class ChatMessage: Identifiable, Codable {
     
     /// Whether this message should be hidden in the UI
     public var hidden: Bool = false
+
+    /// User feedback on an AI (assistant) message. Nil when no feedback provided.
+    public var feedback: Feedback?
+
+    // MARK: - Feedback Type
+
+    public enum Feedback: Codable, Equatable {
+        case upvote
+        case downvote(context: String)
+
+        private enum CodingKeys: String, CodingKey {
+            case type, context
+        }
+
+        private enum FeedbackType: String, Codable {
+            case upvote
+            case downvote
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decode(FeedbackType.self, forKey: .type)
+            switch type {
+            case .upvote:
+                self = .upvote
+            case .downvote:
+                let context = try container.decode(String.self, forKey: .context)
+                self = .downvote(context: context)
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .upvote:
+                try container.encode(FeedbackType.upvote, forKey: .type)
+            case .downvote(let context):
+                try container.encode(FeedbackType.downvote, forKey: .type)
+                try container.encode(context, forKey: .context)
+            }
+        }
+    }
     
-    public init(message: Message, metadata: ToolMetadata? = nil, hidden: Bool = false) {
+    public init(message: Message, metadata: ToolMetadata? = nil, hidden: Bool = false, feedback: Feedback? = nil) {
         self.id = UUID()
         self.timestamp = Date()
         self.message = message
         self.metadata = metadata
         self.hidden = hidden
+        self.feedback = feedback
     }
     
     // Codable implementation
     enum CodingKeys: String, CodingKey {
-        case id, timestamp, message, metadata, attachments, hidden
+        case id, timestamp, message, metadata, attachments, hidden, feedback
     }
     
     public required init(from decoder: Decoder) throws {
@@ -42,6 +85,7 @@ public class ChatMessage: Identifiable, Codable {
         metadata = try container.decodeIfPresent(AnyToolMetadata.self, forKey: .metadata)?.metadata
         attachments = try container.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
         hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+        feedback = try container.decodeIfPresent(Feedback.self, forKey: .feedback)
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -57,6 +101,9 @@ public class ChatMessage: Identifiable, Codable {
         }
         if hidden {
             try container.encode(hidden, forKey: .hidden)
+        }
+        if let feedback = feedback {
+            try container.encode(feedback, forKey: .feedback)
         }
     }
     
