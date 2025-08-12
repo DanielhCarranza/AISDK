@@ -82,7 +82,8 @@ public struct ChatCompletionRequest: Encodable {
         self.topLogprobs = topLogprobs
         
         // Handle model-specific parameter adjustments
-        if model.lowercased() == "o4-mini" {
+        let lowercasedModel = model.lowercased()
+        if lowercasedModel.hasPrefix("o") || lowercasedModel.hasPrefix("gpt-5") {
             // For o4-mini, use maxCompletionTokens instead of maxTokens
             self.maxTokens = nil
             self.maxCompletionTokens = maxTokens ?? maxCompletionTokens
