@@ -44,6 +44,21 @@ public struct LLMModel {
 }
 
 public struct AgenticModels {
+    public static let gpt5 = LLMModel(name: "gpt-5",
+                                     modalities: [.text, .vision],
+                                     apiKey: ConfigManager.shared["OPENAI_API_KEY"],
+                                     mode: .parallelTools)
+    
+    public static let gpt5Mini = LLMModel(name: "gpt-5-mini",
+                                         modalities: [.text, .vision],
+                                         apiKey: ConfigManager.shared["OPENAI_API_KEY"],
+                                         mode: .parallelTools)
+    
+    public static let gpt5Nano = LLMModel(name: "gpt-5-nano",
+                                         modalities: [.text],
+                                         apiKey: ConfigManager.shared["OPENAI_API_KEY"],
+                                         mode: .parallelTools)
+    
     public static let o3 = LLMModel(name: "o3",
                                     modalities: [.text, .vision, .audio],
                                     apiKey: ConfigManager.shared["OPENAI_API_KEY"],

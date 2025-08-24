@@ -13,6 +13,8 @@ public struct OpenAIModels: LLMProviderModels {
     
     public let allModels: [LLMModelProtocol] = [
         // Reasoning Models
+        LLMModelAdapter(name: "gpt-5", description: "The best model for coding and agentic tasks across domains", provider: .openai, category: .reasoning, capabilities: [.text, .reasoning, .tools], tier: .flagship, latency: .moderate, inputTokenLimit: 200_000, outputTokenLimit: 100_000),
+        
         LLMModelAdapter(name: "o4-mini", description: "Faster, more affordable reasoning model", provider: .openai, category: .reasoning, capabilities: [.text, .reasoning, .tools], tier: .mini, latency: .fast, inputTokenLimit: 128_000, outputTokenLimit: 65_536),
         LLMModelAdapter(name: "o3", description: "Our most powerful reasoning model", provider: .openai, category: .reasoning, capabilities: [.text, .reasoning, .tools], tier: .flagship, latency: .moderate, inputTokenLimit: 200_000, outputTokenLimit: 100_000),
         LLMModelAdapter(name: "o3-pro", description: "Version of o3 with more compute for better responses", provider: .openai, category: .reasoning, capabilities: [.text, .reasoning, .tools], tier: .pro, latency: .moderate, inputTokenLimit: 200_000, outputTokenLimit: 100_000),
@@ -28,6 +30,8 @@ public struct OpenAIModels: LLMProviderModels {
         LLMModelAdapter(name: "chatgpt-4o-latest", description: "GPT-4o model used in ChatGPT", provider: .openai, category: .chat, versionType: .latest, capabilities: [.text, .vision, .tools], tier: .large, latency: .fast, inputTokenLimit: 128_000, outputTokenLimit: 16_384),
         
         // Cost-Optimized Models
+        LLMModelAdapter(name: "gpt-5-mini", description: "A faster, cost-efficient version of GPT-5 for well-defined tasks", provider: .openai, category: .chat, capabilities: [.text, .vision, .tools], tier: .mini, latency: .fast, inputTokenLimit: 128_000, outputTokenLimit: 16_384),
+        LLMModelAdapter(name: "gpt-5-nano", description: "Fastest, most cost-efficient version of GPT-5", provider: .openai, category: .chat, capabilities: [.text, .tools], tier: .nano, latency: .ultraFast, inputTokenLimit: 128_000, outputTokenLimit: 16_384),
         LLMModelAdapter(name: "gpt-4.1-mini", description: "Balanced for intelligence, speed, and cost", provider: .openai, category: .chat, capabilities: [.text, .vision, .tools], tier: .mini, latency: .fast, inputTokenLimit: 128_000, outputTokenLimit: 16_384),
         LLMModelAdapter(name: "gpt-4.1-nano", description: "Fastest, most cost-effective GPT-4.1 model", provider: .openai, category: .chat, capabilities: [.text, .tools], tier: .nano, latency: .ultraFast, inputTokenLimit: 128_000, outputTokenLimit: 16_384),
         LLMModelAdapter(name: "gpt-4o-mini", description: "Fast, affordable small model for focused tasks", provider: .openai, category: .chat, capabilities: [.text, .vision, .tools], tier: .mini, latency: .fast, inputTokenLimit: 128_000, outputTokenLimit: 16_384),
@@ -85,6 +89,9 @@ public struct OpenAIModels: LLMProviderModels {
 // MARK: - Convenience Extensions
 public extension OpenAIModels {
     // Most commonly used models for easy access
+    static var gpt5: LLMModelProtocol { OpenAIModels().model(named: "gpt-5")! }
+    static var gpt5Mini: LLMModelProtocol { OpenAIModels().model(named: "gpt-5-mini")! }
+    static var gpt5Nano: LLMModelProtocol { OpenAIModels().model(named: "gpt-5-nano")! }
     static var gpt4o: LLMModelProtocol { OpenAIModels().model(named: "gpt-4o")! }
     static var gpt4oMini: LLMModelProtocol { OpenAIModels().model(named: "gpt-4o-mini")! }
     static var gpt41: LLMModelProtocol { OpenAIModels().model(named: "gpt-4.1")! }

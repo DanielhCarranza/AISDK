@@ -52,7 +52,7 @@ public class Agent {
             self.model = openAIProvider.model
         } else {
             // Fallback model for other providers
-            self.model = OpenAIModels.gpt4o
+            self.model = OpenAIModels.gpt5Mini
         }
         
         // Register tools with ToolRegistry
