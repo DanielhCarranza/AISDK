@@ -431,6 +431,42 @@ sequenceDiagram
     UI->>User: Display text + rendered view
 ```
 
+### Optional: Registering Custom ToolMetadata Types
+
+No action is required to load chats that include custom `ToolMetadata`. AISDK will always decode safely and, if the exact type cannot be resolved, it will fall back to a generic `RawToolMetadata` to avoid failures.
+
+Registering is optional and only needed if you want AISDK to decode your custom metadata into its concrete type across cold starts (instead of the generic fallback):
+
+```swift
+import AISDK
+
+@main
+struct MyApp: App {
+    init() {
+        // Register all custom ToolMetadata types your app uses
+        ToolMetadataDecoderRegistry.register(Sources.self)
+        ToolMetadataDecoderRegistry.register(Source.self)
+        ToolMetadataDecoderRegistry.register(MedicalEvidence.self)
+    }
+    // ...
+}
+```
+
+Without registration, AISDK may not always recover the concrete type across modules on cold start due to Swift runtime limitations; in those cases it uses `RawToolMetadata` instead.
+
+### Unknown Metadata Fallback
+
+If AISDK cannot resolve a metadata type during decoding, it falls back to `RawToolMetadata`:
+
+```swift
+public struct RawToolMetadata: ToolMetadata {
+    public let originalType: String
+    public let payload: AIProxyJSONValue
+}
+```
+
+This prevents crashes when loading chats that include unfamiliar metadata. You can detect and ignore or log these until the proper types are registered.
+
 ## Storage
 
 ### Storage Protocol

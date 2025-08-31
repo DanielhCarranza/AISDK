@@ -74,6 +74,19 @@ public struct RenderMetadata: ToolMetadata {
 }
 
 
+/// Fallback metadata used when the concrete `ToolMetadata` type cannot be resolved at decode time.
+/// This preserves the original type name and the raw payload.
+public struct RawToolMetadata: ToolMetadata {
+    public let originalType: String
+    public let payload: AIProxyJSONValue
+    
+    public init(originalType: String, payload: AIProxyJSONValue) {
+        self.originalType = originalType
+        self.payload = payload
+    }
+}
+
+
 
 
 // MARK: - Type Erasing Wrapper
@@ -123,10 +136,18 @@ public struct AnyToolMetadata: Codable {
             self.metadata = try container.decode(RenderMetadata.self, forKey: .metadata)
             return
         }
-
-        throw DecodingError.dataCorruptedError(forKey: .type,
-                                               in: container,
-                                               debugDescription: "Unknown ToolMetadata type: \(self.type)")
+        // 4) Graceful fallback: capture raw payload to avoid breaking session decode
+        // Attempt to decode the nested payload as AIProxyJSONValue
+        do {
+            let nested = try container.superDecoder(forKey: .metadata)
+            let rawValue = try AIProxyJSONValue(from: nested)
+            self.metadata = RawToolMetadata(originalType: self.type, payload: rawValue)
+            return
+        } catch {
+            throw DecodingError.dataCorruptedError(forKey: .type,
+                                                   in: container,
+                                                   debugDescription: "Unknown ToolMetadata type: \(self.type)")
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -527,8 +548,25 @@ fileprivate enum ToolMetadataRegistry {
         }
     }
 
+    static func registerType<T: ToolMetadata & Decodable>(_ type: T.Type) {
+        let key = String(reflecting: T.self)
+        lock.lock(); defer { lock.unlock() }
+        guard _decoders[key] == nil else { return }
+        _decoders[key] = { decoder in
+            try T(from: decoder)
+        }
+    }
+
     static func decoder(for key: String) -> ((Decoder) throws -> ToolMetadata)? {
         lock.lock(); defer { lock.unlock() }
         return _decoders[key]
+    }
+}
+
+/// Public API for applications to register their custom ToolMetadata types for decoding.
+public enum ToolMetadataDecoderRegistry {
+    /// Register a concrete `ToolMetadata & Decodable` type so it can be resolved during decoding
+    public static func register<T: ToolMetadata & Decodable>(_ type: T.Type) {
+        ToolMetadataRegistry.registerType(type)
     }
 }
