@@ -24,13 +24,12 @@ struct AIUsageTests {
         #expect(usage.cachedTokens == nil)
     }
 
-    @Test("Creates usage with explicit total tokens")
-    func testExplicitTotalTokens() {
-        let usage = AIUsage(promptTokens: 100, completionTokens: 50, totalTokens: 200)
+    @Test("Total tokens is computed from prompt and completion")
+    func testTotalTokensComputed() {
+        let usage = AIUsage(promptTokens: 100, completionTokens: 50)
 
-        #expect(usage.promptTokens == 100)
-        #expect(usage.completionTokens == 50)
-        #expect(usage.totalTokens == 200)
+        // totalTokens should always be computed, never stored separately
+        #expect(usage.totalTokens == 150)
     }
 
     @Test("Creates usage with all parameters")
@@ -38,7 +37,6 @@ struct AIUsageTests {
         let usage = AIUsage(
             promptTokens: 100,
             completionTokens: 50,
-            totalTokens: 150,
             reasoningTokens: 20,
             cachedTokens: 30
         )
@@ -132,7 +130,7 @@ struct AIUsageTests {
     @Test("Zero equals zero")
     func testZeroEquality() {
         let zero1 = AIUsage.zero
-        let zero2 = AIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
+        let zero2 = AIUsage(promptTokens: 0, completionTokens: 0)
 
         #expect(zero1 == zero2)
     }
@@ -160,7 +158,6 @@ struct AIUsageTests {
         let original = AIUsage(
             promptTokens: 100,
             completionTokens: 50,
-            totalTokens: 150,
             reasoningTokens: 20,
             cachedTokens: 30
         )
@@ -178,9 +175,8 @@ struct AIUsageTests {
     func testDecodeWithNilOptionals() throws {
         let json = """
         {
-            "promptTokens": 100,
-            "completionTokens": 50,
-            "totalTokens": 150
+            "prompt_tokens": 100,
+            "completion_tokens": 50
         }
         """
 
@@ -192,6 +188,31 @@ struct AIUsageTests {
         #expect(usage.totalTokens == 150)
         #expect(usage.reasoningTokens == nil)
         #expect(usage.cachedTokens == nil)
+    }
+
+    @Test("Usage encodes with snake_case keys")
+    func testEncodesWithSnakeCase() throws {
+        let usage = AIUsage(promptTokens: 100, completionTokens: 50, reasoningTokens: 20)
+
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(usage)
+        let jsonString = String(data: data, encoding: .utf8)!
+
+        #expect(jsonString.contains("prompt_tokens"))
+        #expect(jsonString.contains("completion_tokens"))
+        #expect(jsonString.contains("reasoning_tokens"))
+    }
+
+    // MARK: - Legacy Initialization
+
+    @Test("Legacy init with nil usage returns zero")
+    func testLegacyInitNil() {
+        let usage = AIUsage(legacy: nil)
+
+        #expect(usage.promptTokens == 0)
+        #expect(usage.completionTokens == 0)
+        #expect(usage.totalTokens == 0)
+        #expect(usage.reasoningTokens == nil)
     }
 }
 
@@ -223,6 +244,12 @@ struct AIFinishReasonTests {
     @Test("Converts Anthropic end_turn reason")
     func testLegacyEndTurn() {
         let reason = AIFinishReason(legacyReason: "end_turn")
+        #expect(reason == .stop)
+    }
+
+    @Test("Converts Anthropic stop_sequence reason")
+    func testLegacyStopSequence() {
+        let reason = AIFinishReason(legacyReason: "stop_sequence")
         #expect(reason == .stop)
     }
 
@@ -287,6 +314,17 @@ struct AIFinishReasonTests {
     func testNilReason() {
         let reason = AIFinishReason(legacyReason: nil)
         #expect(reason == .unknown)
+    }
+
+    @Test("Case insensitive conversion")
+    func testCaseInsensitiveConversion() {
+        let reason1 = AIFinishReason(legacyReason: "STOP")
+        let reason2 = AIFinishReason(legacyReason: "Stop")
+        let reason3 = AIFinishReason(legacyReason: "TOOL_CALLS")
+
+        #expect(reason1 == .stop)
+        #expect(reason2 == .stop)
+        #expect(reason3 == .toolCalls)
     }
 
     // MARK: - isSuccess Property
@@ -382,5 +420,25 @@ struct AIFinishReasonTests {
         let reason = try decoder.decode(AIFinishReason.self, from: json.data(using: .utf8)!)
 
         #expect(reason == .toolCalls)
+    }
+
+    @Test("Decodes unknown future values to unknown")
+    func testDecodesUnknownFutureValues() throws {
+        let json = "\"some_new_future_reason\""
+
+        let decoder = JSONDecoder()
+        let reason = try decoder.decode(AIFinishReason.self, from: json.data(using: .utf8)!)
+
+        #expect(reason == .unknown)
+    }
+
+    @Test("Case insensitive decoding")
+    func testCaseInsensitiveDecoding() throws {
+        let json = "\"STOP\""
+
+        let decoder = JSONDecoder()
+        let reason = try decoder.decode(AIFinishReason.self, from: json.data(using: .utf8)!)
+
+        #expect(reason == .stop)
     }
 }

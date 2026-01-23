@@ -137,7 +137,7 @@ struct AIStepResultTests {
 
     @Test("Usage is aggregated per step")
     func testUsageAggregatedPerStep() {
-        let usage = AIUsage(promptTokens: 150, completionTokens: 75, totalTokens: 225)
+        let usage = AIUsage(promptTokens: 150, completionTokens: 75)
         let result = AIStepResult(stepIndex: 0, text: "Test", usage: usage)
 
         #expect(result.usage.promptTokens == 150)
