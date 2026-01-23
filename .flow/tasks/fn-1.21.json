@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-23T03:05:39.243446Z",
+  "depends_on": [],
+  "epic": "fn-1",
+  "id": "fn-1.21",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.21.md",
+  "status": "todo",
+  "title": "Task 2.5: OpenAIClientAdapter",
+  "updated_at": "2026-01-23T03:05:39.243588Z"
+}
