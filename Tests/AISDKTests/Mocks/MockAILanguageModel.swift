@@ -102,6 +102,38 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
         self.errorToThrow = nil
     }
 
+    // MARK: - Configuration Snapshot
+
+    /// Configuration snapshot for thread-safe reading
+    private struct ConfigSnapshot {
+        let responseText: String
+        let toolCalls: [AIToolCallResult]
+        let streamEvents: [AIStreamEvent]
+        let usage: AIUsage
+        let finishReason: AIFinishReason
+        let delay: Duration
+        let interEventDelay: Duration
+        let autoEmitStart: Bool
+        let errorToThrow: Error?
+    }
+
+    /// Atomically snapshot the current configuration
+    private func snapshotConfig() -> ConfigSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return ConfigSnapshot(
+            responseText: responseText,
+            toolCalls: toolCalls,
+            streamEvents: streamEvents,
+            usage: usage,
+            finishReason: finishReason,
+            delay: delay,
+            interEventDelay: interEventDelay,
+            autoEmitStart: autoEmitStart,
+            errorToThrow: errorToThrow
+        )
+    }
+
     // MARK: - Private State Update
 
     private func recordTextRequest(_ request: AITextRequest) {
@@ -123,24 +155,27 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public func generateText(request: AITextRequest) async throws -> AITextResult {
         recordTextRequest(request)
 
+        // Snapshot config atomically
+        let config = snapshotConfig()
+
         // Apply delay if configured
-        if delay > .zero {
-            try await Task.sleep(for: delay)
+        if config.delay > .zero {
+            try await Task.sleep(for: config.delay)
         }
 
         // Check for cancellation after delay
         try Task.checkCancellation()
 
         // Throw error if configured
-        if let error = errorToThrow {
+        if let error = config.errorToThrow {
             throw error
         }
 
         return AITextResult(
-            text: responseText,
-            toolCalls: toolCalls,
-            usage: usage,
-            finishReason: finishReason,
+            text: config.responseText,
+            toolCalls: config.toolCalls,
+            usage: config.usage,
+            finishReason: config.finishReason,
             requestId: "mock-request-\(UUID().uuidString.prefix(8))",
             model: request.model ?? modelId,
             provider: provider
@@ -150,8 +185,11 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
         recordTextRequest(request)
 
+        // Snapshot config atomically
+        let config = snapshotConfig()
+
         // If error is configured, emit error event then fail
-        if let error = errorToThrow {
+        if let error = config.errorToThrow {
             return SafeAsyncStream.makeSync { continuation in
                 continuation.yield(.error(error))
                 continuation.finish(throwing: error)
@@ -160,25 +198,21 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
 
         // Use custom stream events if provided, otherwise generate from responseText
         let events: [AIStreamEvent]
-        if !streamEvents.isEmpty {
-            events = streamEvents
+        if !config.streamEvents.isEmpty {
+            events = config.streamEvents
         } else {
-            events = generateStreamEvents(from: responseText, toolCalls: toolCalls, usage: usage, finishReason: finishReason)
+            events = generateStreamEvents(from: config.responseText, toolCalls: config.toolCalls, usage: config.usage, finishReason: config.finishReason)
         }
-
-        let capturedDelay = delay
-        let capturedInterEventDelay = interEventDelay
-        let capturedAutoEmitStart = autoEmitStart
 
         return SafeAsyncStream.make { continuation in
             // Apply delay if configured
-            if capturedDelay > .zero {
-                try await Task.sleep(for: capturedDelay)
+            if config.delay > .zero {
+                try await Task.sleep(for: config.delay)
             }
 
             // Emit stream start (unless disabled or custom events already include it)
             let hasStartEvent = events.contains { if case .start = $0 { return true }; return false }
-            if capturedAutoEmitStart && !hasStartEvent {
+            if config.autoEmitStart && !hasStartEvent {
                 continuation.yield(.start(metadata: AIStreamMetadata(
                     requestId: "mock-stream-\(UUID().uuidString.prefix(8))",
                     model: request.model ?? self.modelId,
@@ -191,8 +225,8 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
                 guard !continuation.isTerminated else { break }
                 continuation.yield(event)
                 // Apply inter-event delay if configured
-                if capturedInterEventDelay > .zero {
-                    try await Task.sleep(for: capturedInterEventDelay)
+                if config.interEventDelay > .zero {
+                    try await Task.sleep(for: config.interEventDelay)
                 }
             }
 
@@ -203,21 +237,24 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public func generateObject<T: Codable & Sendable>(request: AIObjectRequest<T>) async throws -> AIObjectResult<T> {
         recordObjectRequest(T.self)
 
+        // Snapshot config atomically
+        let config = snapshotConfig()
+
         // Apply delay if configured
-        if delay > .zero {
-            try await Task.sleep(for: delay)
+        if config.delay > .zero {
+            try await Task.sleep(for: config.delay)
         }
 
         // Check for cancellation after delay
         try Task.checkCancellation()
 
         // Throw error if configured
-        if let error = errorToThrow {
+        if let error = config.errorToThrow {
             throw error
         }
 
         // Parse responseText as JSON
-        guard let data = responseText.data(using: .utf8) else {
+        guard let data = config.responseText.data(using: .utf8) else {
             throw AISDKError.parsingError("Mock response is not valid UTF-8")
         }
 
@@ -225,36 +262,33 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
 
         return AIObjectResult(
             object: object,
-            usage: usage,
-            finishReason: finishReason,
+            usage: config.usage,
+            finishReason: config.finishReason,
             requestId: "mock-object-\(UUID().uuidString.prefix(8))",
             model: request.model ?? modelId,
             provider: provider,
-            rawJSON: responseText
+            rawJSON: config.responseText
         )
     }
 
     public func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
         recordObjectRequest(T.self)
 
+        // Snapshot config atomically
+        let config = snapshotConfig()
+
         // If error is configured, emit error event then fail
-        if let error = errorToThrow {
+        if let error = config.errorToThrow {
             return SafeAsyncStream.makeSync { continuation in
                 continuation.yield(.error(error))
                 continuation.finish(throwing: error)
             }
         }
 
-        let capturedDelay = delay
-        let capturedInterEventDelay = interEventDelay
-        let capturedResponse = responseText
-        let capturedUsage = usage
-        let capturedFinishReason = finishReason
-
         return SafeAsyncStream.make { continuation in
             // Apply delay if configured
-            if capturedDelay > .zero {
-                try await Task.sleep(for: capturedDelay)
+            if config.delay > .zero {
+                try await Task.sleep(for: config.delay)
             }
 
             // Emit stream start
@@ -265,7 +299,7 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
             )))
 
             // Emit the JSON as objectDelta events (chunk by chunk)
-            if let data = capturedResponse.data(using: .utf8) {
+            if let data = config.responseText.data(using: .utf8) {
                 let chunkSize = max(1, data.count / 5)
                 var offset = 0
                 while offset < data.count {
@@ -275,15 +309,15 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
                     continuation.yield(.objectDelta(chunk))
                     offset = end
                     // Apply inter-event delay if configured
-                    if capturedInterEventDelay > .zero {
-                        try await Task.sleep(for: capturedInterEventDelay)
+                    if config.interEventDelay > .zero {
+                        try await Task.sleep(for: config.interEventDelay)
                     }
                 }
             }
 
             // Emit usage and finish
-            continuation.yield(.usage(capturedUsage))
-            continuation.yield(.finish(finishReason: capturedFinishReason, usage: capturedUsage))
+            continuation.yield(.usage(config.usage))
+            continuation.yield(.finish(finishReason: config.finishReason, usage: config.usage))
             continuation.finish()
         }
     }
@@ -466,8 +500,8 @@ extension MockAILanguageModel {
 
 /// Mock that returns different responses for sequential calls
 ///
-/// Note: Requires at least one response. If initialized with an empty array,
-/// methods will throw/fail with appropriate errors.
+/// Note: If initialized with an empty array, methods will return an empty string
+/// for text operations. This enables testing edge cases.
 public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public let provider: String = "mock-sequential"
     public let modelId: String = "mock-sequential-model"
@@ -482,7 +516,7 @@ public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Se
     /// Creates a sequential mock with the given responses
     ///
     /// - Parameter responses: Array of responses to return sequentially.
-    ///   If empty, methods will return an empty string or throw.
+    ///   If empty, text methods return an empty string.
     init(responses: [String]) {
         self.responses = responses
     }
@@ -501,22 +535,26 @@ public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Se
     }
 
     public func generateText(request: AITextRequest) async throws -> AITextResult {
-        AITextResult(
+        let usage = AIUsage(promptTokens: 10, completionTokens: 20)
+        return AITextResult(
             text: nextResponse(),
-            usage: AIUsage(promptTokens: 10, completionTokens: 20),
+            usage: usage,
             finishReason: .stop,
-            model: modelId,
+            model: request.model ?? modelId,
             provider: provider
         )
     }
 
     public func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
         let response = nextResponse()
+        let usage = AIUsage(promptTokens: 10, completionTokens: 20)
+        let effectiveModel = request.model ?? modelId
         return SafeAsyncStream.from([
-            .start(metadata: AIStreamMetadata(model: modelId, provider: provider)),
+            .start(metadata: AIStreamMetadata(model: effectiveModel, provider: provider)),
             .textDelta(response),
             .textCompletion(response),
-            .finish(finishReason: .stop, usage: AIUsage(promptTokens: 10, completionTokens: 20))
+            .usage(usage),
+            .finish(finishReason: .stop, usage: usage)
         ])
     }
 
@@ -526,11 +564,12 @@ public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Se
             throw AISDKError.parsingError("Response is not valid UTF-8")
         }
         let object = try JSONDecoder().decode(T.self, from: data)
+        let usage = AIUsage(promptTokens: 10, completionTokens: 20)
         return AIObjectResult(
             object: object,
-            usage: AIUsage(promptTokens: 10, completionTokens: 20),
+            usage: usage,
             finishReason: .stop,
-            model: modelId,
+            model: request.model ?? modelId,
             provider: provider,
             rawJSON: response
         )
@@ -539,8 +578,9 @@ public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Se
     public func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
         let response = nextResponse()
         let usage = AIUsage(promptTokens: 10, completionTokens: 20)
+        let effectiveModel = request.model ?? modelId
         return SafeAsyncStream.from([
-            .start(metadata: AIStreamMetadata(model: modelId, provider: provider)),
+            .start(metadata: AIStreamMetadata(model: effectiveModel, provider: provider)),
             .objectDelta(response.data(using: .utf8) ?? Data()),
             .usage(usage),
             .finish(finishReason: .stop, usage: usage)
