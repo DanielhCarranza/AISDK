@@ -17,7 +17,7 @@ import Foundation
 // MARK: - ToolAdapterError
 
 /// Errors that can occur during tool adapter operations
-public enum ToolAdapterError: Error, Sendable {
+public enum ToolAdapterError: LocalizedError {
     /// Tool has an empty or invalid name
     case invalidToolName(String)
 
@@ -27,10 +27,7 @@ public enum ToolAdapterError: Error, Sendable {
     /// Tool was not found in the registry
     case toolNotFound(String)
 
-    /// Tool execution failed
-    case executionFailed(String, Error)
-
-    public var localizedDescription: String {
+    public var errorDescription: String? {
         switch self {
         case .invalidToolName(let reason):
             return "Invalid tool name: \(reason)"
@@ -38,8 +35,6 @@ public enum ToolAdapterError: Error, Sendable {
             return "Tool already registered: \(name)"
         case .toolNotFound(let name):
             return "Tool not found: \(name)"
-        case .executionFailed(let name, let error):
-            return "Tool execution failed (\(name)): \(error.localizedDescription)"
         }
     }
 }
@@ -104,8 +99,17 @@ public final class ToolAdapter: @unchecked Sendable {
     /// Execute the tool with the given arguments
     /// - Parameter arguments: Dictionary of argument names to values
     /// - Returns: The tool execution result
-    /// - Throws: ToolError if execution fails
+    /// - Throws: ToolError if execution fails (including missing required parameters)
     public func execute(arguments: [String: Any]) async throws -> AdaptedToolResult {
+        // Validate required parameters
+        if let requiredParams = schema.function?.parameters.required {
+            for param in requiredParams {
+                guard arguments[param] != nil else {
+                    throw ToolError.invalidParameters("Missing required parameter: \(param)")
+                }
+            }
+        }
+
         var tool = toolType.init()
         try tool.setParameters(from: arguments)
 
@@ -254,14 +258,43 @@ public final class ToolAdapterRegistry: @unchecked Sendable {
         adapters[adapter.name] = adapter
     }
 
-    /// Register multiple tool types at once
+    /// Register multiple tool types at once (atomic - all or nothing)
     /// - Parameters:
     ///   - toolTypes: Array of Tool.Type to register
     ///   - allowOverwrite: If false (default), throws on duplicate registration
-    /// - Throws: ToolAdapterError if any tool has an invalid name or is already registered
+    /// - Throws: ToolAdapterError if any tool has an invalid name or would be a duplicate
+    /// - Note: This operation is atomic - if any tool fails validation, no tools are registered
     public func registerAll(toolTypes: [Tool.Type], allowOverwrite: Bool = false) throws {
+        // Pre-build all adapters first (validates names)
+        var newAdapters: [ToolAdapter] = []
+        var seenNames: Set<String> = []
+
         for toolType in toolTypes {
-            try register(toolType: toolType, allowOverwrite: allowOverwrite)
+            let adapter = try ToolAdapter(toolType: toolType)
+
+            // Check for duplicates within the batch
+            if seenNames.contains(adapter.name) {
+                throw ToolAdapterError.duplicateRegistration(adapter.name)
+            }
+            seenNames.insert(adapter.name)
+            newAdapters.append(adapter)
+        }
+
+        // Check against existing registry (under lock)
+        lock.lock()
+        defer { lock.unlock() }
+
+        if !allowOverwrite {
+            for adapter in newAdapters {
+                if adapters[adapter.name] != nil {
+                    throw ToolAdapterError.duplicateRegistration(adapter.name)
+                }
+            }
+        }
+
+        // All validation passed - commit all at once
+        for adapter in newAdapters {
+            adapters[adapter.name] = adapter
         }
     }
 
@@ -335,11 +368,18 @@ public extension ToolAdapter {
         try toolTypes.map { try ToolAdapter(toolType: $0) }
     }
 
-    /// Create a tool schema array from tool types
+    /// Create a tool schema array from tool types (validated)
     /// - Parameter toolTypes: Array of Tool.Type
     /// - Returns: Array of ToolSchema for use with LLM requests
-    static func schemas(from toolTypes: [Tool.Type]) -> [ToolSchema] {
-        toolTypes.map { $0.jsonSchema() }
+    /// - Throws: ToolAdapterError if any tool has an invalid/empty name
+    static func schemas(from toolTypes: [Tool.Type]) throws -> [ToolSchema] {
+        try toolTypes.map { toolType in
+            let schema = toolType.jsonSchema()
+            guard let function = schema.function, !function.name.isEmpty else {
+                throw ToolAdapterError.invalidToolName("Tool schema must have a non-empty function name")
+            }
+            return schema
+        }
     }
 }
 
@@ -426,14 +466,5 @@ public final class ToolExecutor: @unchecked Sendable {
             throw ToolAdapterError.toolNotFound(toolCall.name)
         }
         return try await adapter.executeWithId(toolCallId: toolCall.id, argumentsJSON: toolCall.arguments)
-    }
-}
-
-// MARK: - ToolError Extension
-
-public extension ToolError {
-    /// Error when a tool is not found in the registry
-    static func toolNotFound(_ name: String) -> ToolError {
-        .executionFailed("Tool not found: \(name)")
     }
 }
