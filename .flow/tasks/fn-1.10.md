@@ -33,8 +33,7 @@ Created `Tests/AISDKTests/Errors/AIErrorTests.swift` with 41 tests covering:
 - Legacy error conversion
 - PHI redaction utilities
 - Protocol conformances
-
 ## Evidence
-- Commits: (pending)
-- Tests: Tests/AISDKTests/Errors/AIErrorTests.swift (41 tests, all passing)
-- PRs: (pending)
+- Commits: 6befd11ffd8e5a6370e72398c53f6b13d2c5d5e4
+- Tests: command, result
+- PRs:

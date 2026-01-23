@@ -127,8 +127,16 @@ public enum AIErrorCode: String, Sendable, Codable, CaseIterable {
 ///
 /// This struct captures error context while enforcing PHI redaction
 /// to prevent sensitive data from leaking into logs or error reports.
+///
+/// **IMPORTANT: PHI Constraints**
+/// - `requestId` MUST be a non-PHI trace token (e.g., UUID). Never derive from
+///   user IDs, patient IDs, session tokens, or any personally identifiable information.
+/// - `metadata` should ONLY contain operational data (timestamps, retry counts).
+///   Never include user input, prompts, or response content.
+/// - When in doubt, use `redacted()` before logging.
 public struct AIErrorContext: Sendable, Equatable {
-    /// The request ID (trace ID) if available
+    /// The request ID (trace ID) if available.
+    /// **MUST be a non-PHI value** (e.g., UUID, correlation ID). Never user/patient IDs.
     public let requestId: String?
 
     /// The provider that produced the error
@@ -207,25 +215,21 @@ public struct AISDKErrorV2: Error, Sendable, Equatable {
     /// Error context with additional information
     public let context: AIErrorContext
 
-    /// The underlying error if available (not included in Equatable)
-    private let _underlyingError: UnderlyingErrorBox?
+    /// The underlying error description (not included in Equatable)
+    /// Note: We store only the description, not the Error itself, to maintain Sendable conformance
+    private let _underlyingErrorDescription: String?
 
-    /// Access the underlying error
-    public var underlyingError: Error? {
-        _underlyingError?.error
+    /// The underlying error type name for debugging
+    private let _underlyingErrorTypeName: String?
+
+    /// Get a description of the underlying error (if available)
+    public var underlyingErrorDescription: String? {
+        _underlyingErrorDescription
     }
 
-    /// Wrapper to make underlying error Sendable-compatible
-    private struct UnderlyingErrorBox: Sendable {
-        // Using @unchecked because we store the error description, not the error itself
-        // for cross-isolation boundary safety
-        let error: Error
-        let description: String
-
-        init(_ error: Error) {
-            self.error = error
-            self.description = error.localizedDescription
-        }
+    /// Get the type name of the underlying error (if available)
+    public var underlyingErrorTypeName: String? {
+        _underlyingErrorTypeName
     }
 
     public init(
@@ -237,7 +241,8 @@ public struct AISDKErrorV2: Error, Sendable, Equatable {
         self.code = code
         self.message = message
         self.context = context
-        self._underlyingError = underlyingError.map { UnderlyingErrorBox($0) }
+        self._underlyingErrorDescription = underlyingError?.localizedDescription
+        self._underlyingErrorTypeName = underlyingError.map { String(describing: type(of: $0)) }
     }
 
     // MARK: - Equatable
@@ -547,12 +552,18 @@ public extension AISDKErrorV2 {
 
     /// Create a timeout error
     static func timeout(
-        after: TimeInterval,
+        after: TimeInterval? = nil,
         context: AIErrorContext = .empty
     ) -> AISDKErrorV2 {
-        AISDKErrorV2(
+        let message: String
+        if let after = after {
+            message = "Request timed out after \(Int(after)) seconds"
+        } else {
+            message = "Request timed out"
+        }
+        return AISDKErrorV2(
             code: .timeout,
-            message: "Request timed out after \(Int(after)) seconds",
+            message: message,
             context: context
         )
     }
@@ -694,7 +705,7 @@ public extension AISDKErrorV2 {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut:
-                return .timeout(after: 0, context: context)
+                return .timeout(context: context)  // No fabricated duration
             case .notConnectedToInternet, .networkConnectionLost:
                 return .networkFailed("No network connection", underlyingError: urlError, context: context)
             default:
@@ -831,28 +842,31 @@ public extension AISDKErrorV2 {
     /// Create a PHI-safe version of this error for logging
     ///
     /// This method ensures no PHI is present in error messages
-    /// by redacting context and using generic messages where needed.
+    /// by always using generic messages based on error code.
+    /// User-provided details (which may contain PHI) are never included.
     func redactedForLogging() -> AISDKErrorV2 {
         AISDKErrorV2(
             code: code,
-            message: code.isSecurityRelated ? genericSecurityMessage() : message,
+            message: genericMessage(for: code),
             context: context.redacted(),
             underlyingError: nil  // Don't include underlying error in logs
         )
     }
 
     /// Get a dictionary representation safe for logging
+    ///
+    /// All messages are replaced with generic versions to prevent PHI leakage.
+    /// requestId is excluded as it may be derived from user/session data.
     func toLogDictionary() -> [String: Any] {
         var dict: [String: Any] = [
             "code": code.rawValue,
-            "message": code.isSecurityRelated ? genericSecurityMessage() : message,
+            "message": genericMessage(for: code),
             "isRetryable": code.isRetryable,
-            "isClientError": code.isClientError
+            "isClientError": code.isClientError,
+            "isSecurityRelated": code.isSecurityRelated
         ]
 
-        if let requestId = context.requestId {
-            dict["requestId"] = requestId
-        }
+        // Note: requestId is intentionally excluded as it may contain PHI
         if let provider = context.provider {
             dict["provider"] = provider
         }
@@ -863,23 +877,85 @@ public extension AISDKErrorV2 {
             dict["statusCode"] = statusCode
         }
 
-        dict["phiRedacted"] = true  // Always mark as redacted for safety
+        dict["phiRedacted"] = true
 
         return dict
     }
 
-    private func genericSecurityMessage() -> String {
+    /// Get a generic, PHI-safe message for any error code
+    private func genericMessage(for code: AIErrorCode) -> String {
         switch code {
+        // Request errors
+        case .invalidRequest:
+            return "Invalid request parameters"
+        case .missingParameter:
+            return "Missing required parameter"
+        case .invalidModel:
+            return "Invalid model identifier"
+        case .validationFailed:
+            return "Request validation failed"
+
+        // Provider errors
+        case .authenticationFailed:
+            return "Authentication failed"
+        case .rateLimitExceeded:
+            return "Rate limit exceeded"
+        case .providerUnavailable:
+            return "Provider service unavailable"
+        case .modelNotAvailable:
+            return "Model not available"
+        case .quotaExceeded:
+            return "Quota exceeded"
+
+        // Content errors
+        case .contentFiltered:
+            return "Content filtered by safety systems"
+        case .contextLengthExceeded:
+            return "Context length exceeded"
+        case .invalidResponse:
+            return "Invalid response received"
+        case .parsingFailed:
+            return "Response parsing failed"
+
+        // Stream errors
+        case .streamConnectionFailed:
+            return "Stream connection failed"
+        case .streamInterrupted:
+            return "Stream interrupted"
+        case .streamTimeout:
+            return "Stream timeout"
+
+        // Tool errors
+        case .toolExecutionFailed:
+            return "Tool execution failed"
+        case .toolNotFound:
+            return "Tool not found"
+        case .invalidToolArguments:
+            return "Invalid tool arguments"
+        case .toolTimeout:
+            return "Tool execution timeout"
+
+        // Network errors
+        case .networkFailed:
+            return "Network request failed"
+        case .timeout:
+            return "Request timeout"
+
+        // PHI/Security errors
         case .providerNotAllowed:
             return "Provider access denied for data sensitivity level"
         case .phiRequiresAllowlist:
             return "Sensitive data requires explicit provider configuration"
         case .sensitiveDataExposure:
             return "Potential sensitive data exposure prevented"
-        case .authenticationFailed:
-            return "Authentication failed"
-        default:
-            return "Security-related error occurred"
+
+        // System errors
+        case .internalError:
+            return "Internal error occurred"
+        case .cancelled:
+            return "Operation cancelled"
+        case .unknown:
+            return "Unknown error occurred"
         }
     }
 }

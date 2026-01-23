@@ -221,7 +221,8 @@ final class AIErrorTests: XCTestCase {
         let underlying = URLError(.timedOut)
         let error = AISDKErrorV2.networkFailed("Connection lost", underlyingError: underlying)
         XCTAssertEqual(error.code, .networkFailed)
-        XCTAssertNotNil(error.underlyingError)
+        XCTAssertNotNil(error.underlyingErrorDescription)
+        XCTAssertNotNil(error.underlyingErrorTypeName)
     }
 
     func testTimeoutError() {
@@ -344,9 +345,23 @@ final class AIErrorTests: XCTestCase {
 
         XCTAssertTrue(redacted.context.phiRedacted)
         XCTAssertTrue(redacted.context.metadata.isEmpty)
-        XCTAssertNil(redacted.underlyingError)
-        // Security-related errors should have generic messages
+        XCTAssertNil(redacted.underlyingErrorDescription)
+        // All errors get generic messages when redacted
         XCTAssertFalse(redacted.message.contains("openai"))
+    }
+
+    func testRedactedForLoggingNonSecurityError() {
+        // Even non-security errors should have their messages redacted
+        // because user-provided details could contain PHI
+        let error = AISDKErrorV2.invalidRequest("Patient John Doe has invalid data")
+
+        let redacted = error.redactedForLogging()
+
+        // Should NOT contain the original PHI-containing message
+        XCTAssertFalse(redacted.message.contains("John Doe"))
+        XCTAssertFalse(redacted.message.contains("Patient"))
+        // Should have a generic message
+        XCTAssertEqual(redacted.message, "Invalid request parameters")
     }
 
     func testToLogDictionary() {
@@ -361,12 +376,16 @@ final class AIErrorTests: XCTestCase {
         let dict = error.toLogDictionary()
 
         XCTAssertEqual(dict["code"] as? String, "rate_limit_exceeded")
-        XCTAssertEqual(dict["requestId"] as? String, "req-123")
+        // requestId is intentionally excluded for PHI safety
+        XCTAssertNil(dict["requestId"])
         XCTAssertEqual(dict["provider"] as? String, "anthropic")
         XCTAssertEqual(dict["model"] as? String, "claude-3")
         XCTAssertEqual(dict["statusCode"] as? Int, 429)
         XCTAssertEqual(dict["isRetryable"] as? Bool, true)
-        XCTAssertEqual(dict["phiRedacted"] as? Bool, true)  // Always true for safety
+        XCTAssertEqual(dict["isSecurityRelated"] as? Bool, false)
+        XCTAssertEqual(dict["phiRedacted"] as? Bool, true)
+        // Message should be generic (PHI-safe)
+        XCTAssertEqual(dict["message"] as? String, "Rate limit exceeded")
     }
 
     // MARK: - LocalizedError Conformance Tests

@@ -1,14 +1,23 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-23T07:16:30.371124Z",
   "created_at": "2026-01-23T03:05:30.095016Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "6befd11ffd8e5a6370e72398c53f6b13d2c5d5e4"
+    ],
+    "tests": {
+      "command": "swift test --filter AIErrorTests",
+      "result": "41 tests passed"
+    }
+  },
   "id": "fn-1.10",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.10.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 1.7: AIError Taxonomy",
-  "updated_at": "2026-01-23T03:05:30.095344Z"
+  "updated_at": "2026-01-23T07:18:05.660419Z"
 }
