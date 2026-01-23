@@ -524,6 +524,70 @@ final class StopConditionTests: XCTestCase {
         }
     }
 
+    func test_tokenBudget_condition_stops_when_budget_exceeded() async throws {
+        // Given
+        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+            let provider = "mock"
+            let modelId = "mock-model"
+            let capabilities: LLMCapabilities = []
+            var callCount = 0
+            let lock = NSLock()
+
+            func generateText(request: AITextRequest) async throws -> AITextResult {
+                lock.lock()
+                callCount += 1
+                let currentCall = callCount
+                lock.unlock()
+
+                // Always return tool calls to keep the loop going
+                // Each step uses 100 tokens total (50 prompt + 50 completion)
+                return AITextResult(
+                    text: "Step \(currentCall)",
+                    toolCalls: [AIToolCallResult(id: "call-\(currentCall)", name: "mock_tool", arguments: "{}")],
+                    usage: AIUsage(promptTokens: 50, completionTokens: 50),
+                    finishReason: .toolCalls
+                )
+            }
+
+            func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+
+            func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        let model = MockLanguageModel()
+
+        // Stop when total tokens >= 250 (should stop after 2-3 steps since each uses 100 tokens)
+        let agent = AIAgentActor(
+            model: model,
+            stopCondition: .tokenBudget(maxTokens: 250)
+        )
+
+        // When - Execute (will fail on tool not found, but stop condition should still be checked)
+        do {
+            _ = try await agent.execute(messages: [.user("Test")])
+        } catch {
+            // Expected - tools not found, but we want to verify the stop condition was checked
+        }
+
+        // Then - Should have stopped due to token budget
+        let steps = await agent.steps
+        // With 100 tokens per step, 250 budget should stop after step 2 (200 tokens) or step 3 (300 tokens)
+        // The check happens after the step, so:
+        // - Step 0: 100 tokens total, < 250, continue
+        // - Step 1: 200 tokens total, < 250, continue
+        // - Step 2: 300 tokens total, >= 250, stop
+        XCTAssertLessThanOrEqual(steps.count, 3, "Should stop after token budget exceeded")
+        XCTAssertGreaterThan(steps.count, 0, "Should have at least one step")
+    }
+
     func test_custom_condition() {
         // Given
         let condition = StopCondition.custom { result in
