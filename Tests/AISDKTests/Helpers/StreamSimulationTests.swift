@@ -299,8 +299,61 @@ final class StreamSimulationTests: XCTestCase {
 
         let elapsed = ContinuousClock.now - start
         XCTAssertEqual(count, 3)
-        // Should take at least 20ms (2 delays between 3 events)
+        // Should take at least 20ms (2 delays between 3 events, no delay after last)
         XCTAssertGreaterThan(elapsed, .milliseconds(15))
+    }
+
+    // MARK: - Multi-Step Stream Tests
+
+    func testMultiStepStream() {
+        let step1 = AIStepResult(
+            stepIndex: 0,
+            text: "Step one result",
+            toolCalls: [],
+            toolResults: [],
+            usage: AIUsage(promptTokens: 10, completionTokens: 20),
+            finishReason: .stop
+        )
+        let step2 = AIStepResult(
+            stepIndex: 1,
+            text: "Step two result",
+            toolCalls: [],
+            toolResults: [],
+            usage: AIUsage(promptTokens: 15, completionTokens: 25, reasoningTokens: 5),
+            finishReason: .stop
+        )
+
+        let events = StreamSimulation.multiStepStream(steps: [step1, step2])
+
+        // Should have step starts and finishes
+        var stepStartCount = 0
+        var stepFinishCount = 0
+
+        for event in events {
+            if case .stepStart = event {
+                stepStartCount += 1
+            }
+            if case .stepFinish = event {
+                stepFinishCount += 1
+            }
+        }
+
+        XCTAssertEqual(stepStartCount, 2)
+        XCTAssertEqual(stepFinishCount, 2)
+
+        // Check total usage is aggregated correctly
+        let usageEvent = events.first { event in
+            if case .usage = event { return true }
+            return false
+        }
+
+        if case .usage(let usage) = usageEvent {
+            XCTAssertEqual(usage.promptTokens, 25) // 10 + 15
+            XCTAssertEqual(usage.completionTokens, 45) // 20 + 25
+            XCTAssertEqual(usage.reasoningTokens, 5) // Only step2 has reasoning tokens
+        } else {
+            XCTFail("Should have usage event")
+        }
     }
 
     func testAsStreamThrowsOnError() async {

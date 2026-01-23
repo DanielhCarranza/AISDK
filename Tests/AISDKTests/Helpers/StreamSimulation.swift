@@ -93,9 +93,9 @@ public enum StreamSimulation {
         // Text completion
         events.append(.textCompletion(text))
 
-        // Usage
+        // Usage (ensure prompt tokens are at least 1)
         let usage = AIUsage(
-            promptTokens: estimateTokens(text) / 2,
+            promptTokens: max(1, estimateTokens(text) / 2),
             completionTokens: estimateTokens(text)
         )
         events.append(.usage(usage))
@@ -311,10 +311,13 @@ public enum StreamSimulation {
         }
         events.append(.textCompletion(response))
 
-        // Usage (reasoning tokens are expensive)
+        // Usage (reasoning tokens tracked separately for o1/o3 models)
+        let reasoningTokenCount = estimateTokens(reasoning)
+        let responseTokenCount = estimateTokens(response)
         let usage = AIUsage(
             promptTokens: 100,
-            completionTokens: estimateTokens(reasoning) + estimateTokens(response)
+            completionTokens: reasoningTokenCount + responseTokenCount,
+            reasoningTokens: reasoningTokenCount
         )
         events.append(.usage(usage))
 
@@ -440,13 +443,8 @@ public enum StreamSimulation {
             events.append(.stepFinish(stepIndex: index, result: result))
         }
 
-        // Final usage (sum of all steps)
-        let totalUsage = steps.reduce(AIUsage(promptTokens: 0, completionTokens: 0)) { acc, step in
-            AIUsage(
-                promptTokens: acc.promptTokens + step.usage.promptTokens,
-                completionTokens: acc.completionTokens + step.usage.completionTokens
-            )
-        }
+        // Final usage (sum of all steps, preserving optional fields)
+        let totalUsage = steps.map(\.usage).reduce(.zero, +)
         events.append(.usage(totalUsage))
 
         // Finish
@@ -464,16 +462,18 @@ public enum StreamSimulation {
     ///
     /// - Parameters:
     ///   - text: The response text
-    ///   - heartbeatCount: Number of heartbeats to emit during the stream
+    ///   - heartbeatCount: Number of heartbeats to emit during the stream (must be >= 0)
     ///   - model: Model identifier
     ///   - provider: Provider identifier
-    /// - Returns: Array of stream events with interspersed heartbeats
+    /// - Returns: Array of stream events with exactly `heartbeatCount` heartbeats interspersed
     public static func heartbeatStream(
         text: String,
         heartbeatCount: Int = 3,
         model: String = defaultModel,
         provider: String = defaultProvider
     ) -> [AIStreamEvent] {
+        // Guard against negative heartbeat counts
+        let safeHeartbeatCount = max(0, heartbeatCount)
         var events: [AIStreamEvent] = []
 
         // Start event
@@ -485,14 +485,25 @@ public enum StreamSimulation {
 
         // Split text into chunks and intersperse heartbeats
         let words = text.split(separator: " ", omittingEmptySubsequences: false)
-        let wordsPerHeartbeat = max(1, words.count / (heartbeatCount + 1))
+
+        // Calculate insertion indices for exactly safeHeartbeatCount heartbeats
+        var heartbeatIndices: Set<Int> = []
+        if safeHeartbeatCount > 0 && words.count > 1 {
+            let step = Double(words.count - 1) / Double(safeHeartbeatCount + 1)
+            for i in 1...safeHeartbeatCount {
+                let insertAfter = Int(Double(i) * step) - 1
+                if insertAfter >= 0 && insertAfter < words.count - 1 {
+                    heartbeatIndices.insert(insertAfter)
+                }
+            }
+        }
 
         for (index, word) in words.enumerated() {
             let delta = index == 0 ? String(word) : " " + String(word)
             events.append(.textDelta(delta))
 
-            // Insert heartbeat at intervals
-            if (index + 1) % wordsPerHeartbeat == 0 && index < words.count - 1 {
+            // Insert heartbeat at computed indices
+            if heartbeatIndices.contains(index) {
                 events.append(.heartbeat(timestamp: Date()))
             }
         }
@@ -501,8 +512,9 @@ public enum StreamSimulation {
         events.append(.textCompletion(text))
 
         // Usage
+        let promptTokens = max(1, estimateTokens(text) / 2)
         let usage = AIUsage(
-            promptTokens: estimateTokens(text) / 2,
+            promptTokens: promptTokens,
             completionTokens: estimateTokens(text)
         )
         events.append(.usage(usage))
@@ -518,17 +530,18 @@ public enum StreamSimulation {
     /// Convert an event array to an AsyncThrowingStream
     ///
     /// Creates a stream that emits events with optional delays between them.
+    /// Delays are applied only between events, not after the last event.
     ///
     /// - Parameters:
     ///   - events: The events to stream
-    ///   - delay: Optional delay between events
+    ///   - delay: Optional delay between events (not after last event)
     /// - Returns: An AsyncThrowingStream that emits the events
     public static func asStream(
         _ events: [AIStreamEvent],
         delay: Duration = .zero
     ) -> AsyncThrowingStream<AIStreamEvent, Error> {
         SafeAsyncStream.make { continuation in
-            for event in events {
+            for (index, event) in events.enumerated() {
                 guard !continuation.isTerminated else { break }
 
                 // Check if this is an error event - if so, emit then throw
@@ -540,7 +553,9 @@ public enum StreamSimulation {
 
                 continuation.yield(event)
 
-                if delay > .zero {
+                // Apply delay only between events (not after the last one)
+                let isLastEvent = index == events.count - 1
+                if delay > .zero && !isLastEvent {
                     try await Task.sleep(for: delay)
                 }
             }
@@ -603,7 +618,8 @@ public enum StreamSimulation {
             index = endIndex
         }
 
-        return chunks.isEmpty ? [""] : chunks
+        // Return empty array for empty input to avoid spurious empty deltas
+        return chunks
     }
 }
 
@@ -648,7 +664,8 @@ extension StreamSimulation {
             case "heartbeat":
                 events.append(.heartbeat(timestamp: Date()))
             default:
-                break
+                // Fail fast on unknown pattern components to catch typos
+                assertionFailure("Unknown pattern component: '\(component)'. Valid components: start, text, tool, reasoning, usage, finish, error, heartbeat")
             }
         }
 
