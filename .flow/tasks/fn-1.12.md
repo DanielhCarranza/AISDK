@@ -23,16 +23,8 @@ Centralized SDK configuration with startup validation and fail-fast semantics. P
 - [x] Builds without errors
 
 ## Done summary
-Implemented AISDKConfiguration at Sources/AISDK/Core/Configuration/AISDKConfiguration.swift providing centralized SDK configuration with:
-- Full provider configuration (API keys, base URLs, rate limits, PHI trust)
-- Reliability configuration (timeouts, retries, circuit breaker, failover)
-- Telemetry configuration (logging, metrics, sampling with PHI-safe defaults)
-- Comprehensive validation with descriptive errors
-- Builder pattern for ergonomic configuration
-- Provider presets for common providers
-- Static shared instance pattern with fail-fast validation
-
+Implemented AISDKConfiguration with provider configs, reliability settings, telemetry, PHI protection, and fail-fast validation
 ## Evidence
-- Commits: (pending)
-- Tests: All 138 existing tests pass
+- Commits: f2dd1ae6f3b54b02469778e79009f28f5b430da9
+- Tests:
 - PRs:
