@@ -5,10 +5,27 @@
   "created_at": "2026-01-23T03:05:31.206217Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "build_verified": true,
+    "commits": [
+      "75f93c21f20d81d3b01309a8916358a64f7395fc"
+    ],
+    "files_changed": [
+      "Tests/AISDKTests/Helpers/StreamSimulation.swift",
+      "Tests/AISDKTests/Helpers/StreamSimulationTests.swift"
+    ],
+    "task_id": "fn-1.16",
+    "tests": {
+      "command": "swift test --filter StreamSimulationTests",
+      "failed": 0,
+      "passed": 19,
+      "result": "pass"
+    }
+  },
   "id": "fn-1.16",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.16.md",
-  "status": "in_progress",
+  "status": "done",
   "title": "Task 1.13: simulateStream Helper",
-  "updated_at": "2026-01-23T13:23:07.527683Z"
+  "updated_at": "2026-01-23T13:27:31.304191Z"
 }

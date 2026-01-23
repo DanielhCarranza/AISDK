@@ -1,22 +1,3 @@
-# fn-1.16 Task 1.13: simulateStream Helper
-
-## Description
-Implement stream simulation helpers for testing AI streaming behavior. The `StreamSimulation` enum provides factory methods for creating realistic `AIStreamEvent` sequences that mimic actual AI provider streaming behavior.
-
-## Acceptance
-- [x] StreamSimulation enum with factory methods for common stream patterns
-- [x] Text stream simulation with word/character chunking
-- [x] Tool call stream simulation with argument chunking
-- [x] Mixed stream simulation (text + tool calls)
-- [x] Reasoning stream simulation (for o1/o3 models)
-- [x] Error stream simulation (immediate and partial errors)
-- [x] Multi-step stream simulation
-- [x] Heartbeat stream simulation
-- [x] AsyncThrowingStream creation helpers with delay support
-- [x] Pattern-based event generation for assertion testing
-- [x] Comprehensive test coverage (19 tests)
-
-## Done summary
 # fn-1.16 simulateStream Helper - Done Summary
 
 ## What was implemented
@@ -75,7 +56,3 @@ Created `StreamSimulation` helper at `Tests/AISDKTests/Helpers/StreamSimulation.
 - `Tests/AISDKTests/Helpers/StreamSimulationTests.swift` (new)
 - `.flow/tasks/fn-1.16.md` (updated)
 - `.flow/tasks/fn-1.16.json` (updated)
-## Evidence
-- Commits: 75f93c21f20d81d3b01309a8916358a64f7395fc
-- Tests: command, passed, failed, result
-- PRs:
