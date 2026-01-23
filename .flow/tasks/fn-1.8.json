@@ -7,17 +7,18 @@
   "epic": "fn-1",
   "evidence": {
     "commits": [
-      "d830ceacd6a36afd46aa175c48058c0e1c34cbfe"
+      "d830ceacd6a36afd46aa175c48058c0e1c34cbfe",
+      "63a15e4cb75ce2d6bd8bdacf921442f88abf200d"
     ],
     "test_commands": [
       "swift test --filter AIStepResultTests"
     ],
-    "test_results": "19 tests pass"
+    "test_results": "21 tests pass"
   },
   "id": "fn-1.8",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.8.md",
   "status": "done",
   "title": "Task 1.5: AIStepResult",
-  "updated_at": "2026-01-23T06:27:52.958877Z"
+  "updated_at": "2026-01-23T06:34:15.004029Z"
 }

@@ -28,14 +28,17 @@ Extracted and enhanced AIStepResult from AIStreamEvent.swift to its own dedicate
   - Sendable, Codable, and Equatable conformances
   - Helper properties for common checks (hasToolCalls, hasToolResults, completedNormally, wasTruncated, totalTokens)
   - Static `empty` property for testing
-- Added Codable and Equatable conformances to AIToolResultData (metadata intentionally excluded from encoding/comparison)
+  - Custom `init(from:)` decoder for backwards compatibility with optional field defaults
+- Added Codable and Equatable conformances to AIToolResultData in AIStreamEvent.swift (metadata intentionally excluded)
 - Updated `Sources/AISDK/Core/Models/AIStreamEvent.swift` to reference the extracted type
 
 **Tests**:
-- Created `Tests/AISDKTests/Models/AIStepResultTests.swift` with 19 comprehensive tests:
+- Created `Tests/AISDKTests/Models/AIStepResultTests.swift` with 21 comprehensive tests:
   - Basic initialization (minimal and full)
   - Step index tracking
   - Tool calls and results preservation
+  - Tool results round-trip with metadata exclusion
+  - Decoding with missing optional fields
   - Usage aggregation per step
   - Helper properties validation
   - Encoding/decoding round-trip
@@ -43,6 +46,6 @@ Extracted and enhanced AIStepResult from AIStreamEvent.swift to its own dedicate
   - Finish reason handling
   - Empty result validation
 ## Evidence
-- Commits: d830ceacd6a36afd46aa175c48058c0e1c34cbfe
+- Commits: d830ceacd6a36afd46aa175c48058c0e1c34cbfe, 63a15e4cb75ce2d6bd8bdacf921442f88abf200d
 - Tests:
 - PRs:

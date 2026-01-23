@@ -278,8 +278,12 @@ struct AIStepResultTests {
 
     @Test("Tool results round-trip with metadata excluded")
     func testToolResultsRoundTrip() throws {
+        // Create a concrete metadata to verify it gets dropped during encoding
+        struct TestMetadata: ToolMetadata {}
+        let concreteMetadata = TestMetadata()
+
         let toolResults = [
-            AIToolResultData(id: "result-1", result: "Weather is sunny", metadata: nil),
+            AIToolResultData(id: "result-1", result: "Weather is sunny", metadata: concreteMetadata),
             AIToolResultData(id: "result-2", result: "Temperature is 72F", metadata: nil)
         ]
         let original = AIStepResult(
@@ -301,9 +305,11 @@ struct AIStepResultTests {
         #expect(decoded.toolResults.count == 2)
         #expect(decoded.toolResults[0].id == "result-1")
         #expect(decoded.toolResults[0].result == "Weather is sunny")
-        #expect(decoded.toolResults[0].metadata == nil)  // Metadata is intentionally excluded
+        // Verify metadata is nil after decoding (even though original had non-nil metadata)
+        #expect(decoded.toolResults[0].metadata == nil)
         #expect(decoded.toolResults[1].id == "result-2")
         #expect(decoded.toolResults[1].result == "Temperature is 72F")
+        #expect(decoded.toolResults[1].metadata == nil)
     }
 
     @Test("Decoding with missing optional fields uses defaults")
@@ -325,6 +331,22 @@ struct AIStepResultTests {
         #expect(result.toolResults.isEmpty)  // Default empty array
         #expect(result.usage == .zero)  // Default zero usage
         #expect(result.finishReason == .stop)  // Default stop
+    }
+
+    @Test("Unknown finish reason decodes to .unknown")
+    func testUnknownFinishReason() throws {
+        let json = """
+        {
+            "stepIndex": 0,
+            "text": "Test",
+            "finishReason": "some_future_reason"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let result = try decoder.decode(AIStepResult.self, from: json.data(using: .utf8)!)
+
+        #expect(result.finishReason == .unknown)
     }
 
     // MARK: - Equatable
