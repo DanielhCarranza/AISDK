@@ -1,0 +1,5 @@
+{
+  "commits": ["672de53af76d8c0ab2a41f2f25cd9565dee17dac"],
+  "tests": ["Tests/AISDKTests/Agents/AIAgentActorTests.swift"],
+  "test_command": "swift test --filter AIAgentActorToolExecutionTests"
+}
