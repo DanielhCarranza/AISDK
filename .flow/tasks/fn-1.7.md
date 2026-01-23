@@ -12,8 +12,8 @@ Create dedicated AIObjectRequest and AIObjectResult models for structured object
 - [x] Remove duplicate definitions from AILanguageModel.swift
 
 ## Done summary
-Created AIObjectRequest and AIObjectResult as standalone models with PHI protection. Added transformation methods, helper properties, and 15 comprehensive tests. Removed duplicate definitions from AILanguageModel.swift.
+Created AIObjectRequest and AIObjectResult as standalone models with PHI protection. Added transformation methods, helper properties, and 15 tests. Added PHI/provider validation to adapter, populated metadata, and fixed map() to clear stale rawJSON.
 ## Evidence
-- Commits: f0e0ac5
+- Commits: f0e0ac5, f8351af
 - Tests: swift test --filter AIObjectRequestTests|AIObjectResultTests
 - PRs:

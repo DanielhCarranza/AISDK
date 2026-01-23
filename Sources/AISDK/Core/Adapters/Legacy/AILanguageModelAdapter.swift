@@ -146,12 +146,14 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         let chatRequest = ChatCompletionRequest(
             model: effectiveModel,
             messages: messages,
+            metadata: request.metadata,
             maxTokens: request.maxTokens,
             responseFormat: .jsonSchema(
                 name: String(describing: T.self),
                 schemaBuilder: request.schema
             ),
-            temperature: request.temperature
+            temperature: request.temperature,
+            topP: request.topP
         )
 
         // Use the legacy generateObject method
