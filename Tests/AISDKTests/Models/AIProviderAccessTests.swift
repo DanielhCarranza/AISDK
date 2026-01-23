@@ -361,3 +361,167 @@ struct AIObjectRequestProviderValidationTests {
         #expect(withProviders.allowedProviders == ["openai"])
     }
 }
+
+// MARK: - AIObjectRequest Adapter-Level Provider Validation Tests
+
+@Suite("AIObjectRequest Adapter Provider Validation Tests")
+struct AIObjectRequestAdapterProviderValidationTests {
+    @Test("Adapter rejects AIObjectRequest when provider not in allowlist")
+    func testAdapterRejectsDisallowedProviderForObject() async throws {
+        let mockLLM = MockLLMProvider()
+        let adapter = AILanguageModelAdapter(
+            llm: mockLLM,
+            provider: "google",  // Not in the allowlist
+            modelId: "gemini"
+        )
+
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("Create profile")],
+            schema: schema,
+            allowedProviders: ["openai", "anthropic"],  // google not allowed
+            sensitivity: .standard
+        )
+
+        do {
+            _ = try await adapter.generateObject(request: request)
+            #expect(Bool(false), "Expected AIProviderAccessError.providerNotAllowed")
+        } catch let error as AIProviderAccessError {
+            if case .providerNotAllowed(let provider, let allowed) = error {
+                #expect(provider == "google")
+                #expect(allowed.contains("openai"))
+                #expect(!allowed.contains("google"))
+            } else {
+                #expect(Bool(false), "Expected providerNotAllowed error")
+            }
+        }
+    }
+
+    @Test("Adapter rejects sensitive AIObjectRequest without allowlist")
+    func testAdapterRejectsSensitiveObjectWithoutAllowlist() async throws {
+        let mockLLM = MockLLMProvider()
+        let adapter = AILanguageModelAdapter(
+            llm: mockLLM,
+            provider: "openai",
+            modelId: "gpt-4"
+        )
+
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("Sensitive profile")],
+            schema: schema,
+            allowedProviders: nil,  // No allowlist
+            sensitivity: .sensitive  // Requires allowlist
+        )
+
+        do {
+            _ = try await adapter.generateObject(request: request)
+            #expect(Bool(false), "Expected AIProviderAccessError.sensitiveDataRequiresAllowlist")
+        } catch let error as AIProviderAccessError {
+            if case .sensitiveDataRequiresAllowlist(let sensitivity) = error {
+                #expect(sensitivity == .sensitive)
+            } else {
+                #expect(Bool(false), "Expected sensitiveDataRequiresAllowlist error")
+            }
+        }
+    }
+
+    @Test("Adapter rejects PHI AIObjectRequest without allowlist")
+    func testAdapterRejectsPHIObjectWithoutAllowlist() async throws {
+        let mockLLM = MockLLMProvider()
+        let adapter = AILanguageModelAdapter(
+            llm: mockLLM,
+            provider: "openai",
+            modelId: "gpt-4"
+        )
+
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("PHI profile")],
+            schema: schema,
+            allowedProviders: nil,  // No allowlist
+            sensitivity: .phi  // PHI requires allowlist
+        )
+
+        do {
+            _ = try await adapter.generateObject(request: request)
+            #expect(Bool(false), "Expected AIProviderAccessError.sensitiveDataRequiresAllowlist")
+        } catch let error as AIProviderAccessError {
+            if case .sensitiveDataRequiresAllowlist(let sensitivity) = error {
+                #expect(sensitivity == .phi)
+            } else {
+                #expect(Bool(false), "Expected sensitiveDataRequiresAllowlist error")
+            }
+        }
+    }
+
+    @Test("Adapter allows AIObjectRequest when provider is in allowlist")
+    func testAdapterAllowsAllowedProviderForObject() async throws {
+        let mockLLM = MockLLMProvider()
+        // Set up mock to return valid JSON for TestProfile
+        mockLLM.mockChatResponse = MockLLMProvider.mockJSONResponse(
+            jsonContent: "{\"name\": \"Test User\"}"
+        )
+        let adapter = AILanguageModelAdapter(
+            llm: mockLLM,
+            provider: "openai",  // In the allowlist
+            modelId: "gpt-4"
+        )
+
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("Create profile")],
+            schema: schema,
+            allowedProviders: ["openai", "anthropic"],
+            sensitivity: .standard
+        )
+
+        // Should not throw - mock will return a valid response
+        let result = try await adapter.generateObject(request: request)
+        #expect(result.provider == "openai")
+        #expect(result.object.name == "Test User")
+    }
+
+    @Test("streamObject also validates provider access for AIObjectRequest")
+    func testStreamObjectValidatesProviderAccess() async throws {
+        let mockLLM = MockLLMProvider()
+        let adapter = AILanguageModelAdapter(
+            llm: mockLLM,
+            provider: "azure",  // Not in allowlist
+            modelId: "gpt-4"
+        )
+
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("Create profile")],
+            schema: schema,
+            allowedProviders: ["openai"],  // azure not allowed
+            sensitivity: .standard
+        )
+
+        let stream = adapter.streamObject(request: request)
+        var errorEventCaught = false
+        var throwingErrorCaught: AIProviderAccessError?
+
+        do {
+            for try await event in stream {
+                if case .error(let error) = event {
+                    if let accessError = error as? AIProviderAccessError {
+                        throwingErrorCaught = accessError
+                    }
+                    errorEventCaught = true
+                }
+            }
+        } catch let error as AIProviderAccessError {
+            throwingErrorCaught = error
+        }
+
+        // Either an error event was yielded or an error was thrown
+        #expect(errorEventCaught || throwingErrorCaught != nil)
+        if let accessError = throwingErrorCaught {
+            if case .providerNotAllowed(let provider, _) = accessError {
+                #expect(provider == "azure")
+            }
+        }
+    }
+}
