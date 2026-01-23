@@ -9,17 +9,27 @@
 import Foundation
 
 /// All possible events emitted during AI streaming operations
-/// Supports 14 distinct event types for comprehensive stream handling
+/// Supports 17 distinct event types for comprehensive stream handling
+/// Based on Vercel AI SDK 6.x event semantics
 public enum AIStreamEvent: Sendable {
     // MARK: - Text Events
 
     /// Partial text content received during streaming
     case textDelta(String)
 
+    /// Text generation completed with final content
+    case textCompletion(String)
+
     // MARK: - Reasoning Events (for o1/o3 models)
+
+    /// Reasoning/thinking phase started
+    case reasoningStart
 
     /// Reasoning/thinking text delta (for models that support it)
     case reasoningDelta(String)
+
+    /// Reasoning/thinking phase completed
+    case reasoningFinish(String)
 
     // MARK: - Tool Events
 
@@ -29,8 +39,11 @@ public enum AIStreamEvent: Sendable {
     /// Partial arguments for an in-progress tool call
     case toolCallDelta(id: String, argumentsDelta: String)
 
-    /// Tool call is complete with full arguments
+    /// Tool call is complete with full arguments (alias for toolCallFinish for compatibility)
     case toolCall(id: String, name: String, arguments: String)
+
+    /// Tool call finished (semantic alias for toolCall)
+    case toolCallFinish(id: String, name: String, arguments: String)
 
     /// Result from executing a tool
     case toolResult(id: String, result: String, metadata: ToolMetadata?)
@@ -60,8 +73,16 @@ public enum AIStreamEvent: Sendable {
     /// Stream has started
     case start(metadata: AIStreamMetadata?)
 
+    /// A step in multi-step execution is starting
+    case stepStart(stepIndex: Int)
+
     /// A step in multi-step execution completed
     case stepFinish(stepIndex: Int, result: AIStepResult)
+
+    // MARK: - Heartbeat Events
+
+    /// Heartbeat for connection keepalive during long operations
+    case heartbeat(timestamp: Date)
 
     /// Stream finished with reason and final usage
     case finish(finishReason: AIFinishReason, usage: AIUsage)
