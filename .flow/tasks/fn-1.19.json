@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-23T03:05:38.913842Z",
+  "depends_on": [],
+  "epic": "fn-1",
+  "id": "fn-1.19",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.19.md",
+  "status": "todo",
+  "title": "Task 2.3: LiteLLMClient (Secondary)",
+  "updated_at": "2026-01-23T03:05:38.914009Z"
+}

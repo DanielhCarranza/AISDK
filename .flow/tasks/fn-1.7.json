@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-23T03:05:29.553319Z",
+  "depends_on": [],
+  "epic": "fn-1",
+  "id": "fn-1.7",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.7.md",
+  "status": "todo",
+  "title": "Task 1.4: AIObjectRequest/AIObjectResult",
+  "updated_at": "2026-01-23T03:05:29.553490Z"
+}
