@@ -564,28 +564,153 @@ final class StopConditionTests: XCTestCase {
 
         let model = MockLanguageModel()
 
-        // Stop when total tokens >= 250 (should stop after 2-3 steps since each uses 100 tokens)
+        // Stop when total tokens >= 250
+        // Token accumulation: step0=100, step1=200, step2=300
+        // Budget check happens after step with accumulated tokens
+        // At step 2 completion: 300 >= 250, should stop
         let agent = AIAgentActor(
             model: model,
             stopCondition: .tokenBudget(maxTokens: 250)
         )
 
-        // When - Execute (will fail on tool not found, but stop condition should still be checked)
+        // When - Execute (tool errors are swallowed and loop continues until stop condition)
         do {
             _ = try await agent.execute(messages: [.user("Test")])
         } catch {
-            // Expected - tools not found, but we want to verify the stop condition was checked
+            // Tool not found errors are handled internally
         }
 
         // Then - Should have stopped due to token budget
         let steps = await agent.steps
-        // With 100 tokens per step, 250 budget should stop after step 2 (200 tokens) or step 3 (300 tokens)
-        // The check happens after the step, so:
-        // - Step 0: 100 tokens total, < 250, continue
-        // - Step 1: 200 tokens total, < 250, continue
-        // - Step 2: 300 tokens total, >= 250, stop
-        XCTAssertLessThanOrEqual(steps.count, 3, "Should stop after token budget exceeded")
-        XCTAssertGreaterThan(steps.count, 0, "Should have at least one step")
+        // The agent loop should stop when accumulated tokens >= 250
+        // Step 0: 100 tokens, < 250, continue
+        // Step 1: 200 tokens, < 250, continue
+        // Step 2: 300 tokens, >= 250, stop
+        XCTAssertEqual(steps.count, 3, "Should stop after exactly 3 steps when token budget (250) exceeded (300 tokens)")
+
+        // Verify total usage matches expectation
+        let totalTokens = steps.reduce(0) { $0 + $1.usage.totalTokens }
+        XCTAssertEqual(totalTokens, 300, "Total tokens should be 300 (3 steps x 100 tokens)")
+        XCTAssertGreaterThanOrEqual(totalTokens, 250, "Total tokens should exceed budget")
+
+        // Verify model was called exactly 3 times
+        model.lock.lock()
+        let callCount = model.callCount
+        model.lock.unlock()
+        XCTAssertEqual(callCount, 3, "Model should have been called 3 times")
+    }
+
+    func test_stepCount_condition_stops_at_max_steps() async throws {
+        // Given
+        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+            let provider = "mock"
+            let modelId = "mock-model"
+            let capabilities: LLMCapabilities = []
+            var callCount = 0
+            let lock = NSLock()
+
+            func generateText(request: AITextRequest) async throws -> AITextResult {
+                lock.lock()
+                callCount += 1
+                let currentCall = callCount
+                lock.unlock()
+
+                // Always return tool calls to keep the loop going
+                return AITextResult(
+                    text: "Step \(currentCall)",
+                    toolCalls: [AIToolCallResult(id: "call-\(currentCall)", name: "mock_tool", arguments: "{}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            }
+
+            func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+
+            func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        let model = MockLanguageModel()
+
+        // Stop after exactly 2 steps
+        let agent = AIAgentActor(
+            model: model,
+            stopCondition: .stepCount(2)
+        )
+
+        // When
+        do {
+            _ = try await agent.execute(messages: [.user("Test")])
+        } catch {
+            // Tool errors are handled internally
+        }
+
+        // Then
+        let steps = await agent.steps
+        XCTAssertEqual(steps.count, 2, "Should stop after exactly 2 steps with stepCount(2)")
+
+        model.lock.lock()
+        let callCount = model.callCount
+        model.lock.unlock()
+        XCTAssertEqual(callCount, 2, "Model should have been called exactly 2 times")
+    }
+
+    func test_stepCount_zero_stops_immediately() async throws {
+        // Given
+        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+            let provider = "mock"
+            let modelId = "mock-model"
+            let capabilities: LLMCapabilities = []
+            var callCount = 0
+
+            func generateText(request: AITextRequest) async throws -> AITextResult {
+                callCount += 1
+                return AITextResult(
+                    text: "Response",
+                    toolCalls: [AIToolCallResult(id: "call-1", name: "mock_tool", arguments: "{}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            }
+
+            func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+
+            func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        let model = MockLanguageModel()
+
+        // stepCount(0) should stop immediately after first step
+        let agent = AIAgentActor(
+            model: model,
+            stopCondition: .stepCount(0)
+        )
+
+        // When
+        do {
+            _ = try await agent.execute(messages: [.user("Test")])
+        } catch {
+            // Tool errors are handled internally
+        }
+
+        // Then - Edge case: stepCount(0) means max <= 0, should stop after 1 step
+        let steps = await agent.steps
+        XCTAssertEqual(steps.count, 1, "stepCount(0) should stop after 1 step (edge case)")
     }
 
     func test_custom_condition() {
