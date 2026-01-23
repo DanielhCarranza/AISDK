@@ -12,7 +12,7 @@ Implement unified AIError taxonomy with PHI redaction enforcement for AISDK 2.0.
 - [x] Error conversion from legacy types: LLMError, AgentError, ToolError, AISDKError, AIProviderAccessError
 - [x] LocalizedError and CustomStringConvertible conformance
 - [x] Sendable and Equatable conformance for concurrency safety
-- [x] Comprehensive test coverage (41 tests)
+- [x] Comprehensive test coverage (42 tests)
 - [x] All tests passing
 
 ## Done summary
@@ -26,7 +26,7 @@ Created `Sources/AISDK/Core/Errors/AIError.swift` with:
   - `redactedForLogging()` and `toLogDictionary()` for safe logging
   - Full LocalizedError, CustomStringConvertible, Sendable, Equatable conformance
 
-Created `Tests/AISDKTests/Errors/AIErrorTests.swift` with 41 tests covering:
+Created `Tests/AISDKTests/Errors/AIErrorTests.swift` with 42 tests covering:
 - Error code properties (retryable, client, security)
 - Error context creation and redaction
 - All factory methods
@@ -34,6 +34,6 @@ Created `Tests/AISDKTests/Errors/AIErrorTests.swift` with 41 tests covering:
 - PHI redaction utilities
 - Protocol conformances
 ## Evidence
-- Commits: 6befd11ffd8e5a6370e72398c53f6b13d2c5d5e4
-- Tests: command, result
+- Commits: 6befd11ffd8e5a6370e72398c53f6b13d2c5d5e4, b8de64f (review fixes)
+- Tests: swift test --filter AIErrorTests (42 tests passed)
 - PRs:
