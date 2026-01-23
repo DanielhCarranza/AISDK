@@ -18,7 +18,7 @@ import Foundation
 /// let usage = AIUsage(promptTokens: 100, completionTokens: 50)
 /// print("Total tokens: \(usage.totalTokens)")  // 150
 /// ```
-public struct AIUsage: Sendable, Codable, Equatable, Hashable {
+public struct AIUsage: Sendable, Equatable, Hashable {
     /// Number of tokens in the prompt/input
     public let promptTokens: Int
 
@@ -70,14 +70,50 @@ public struct AIUsage: Sendable, Codable, Equatable, Hashable {
         case (nil, nil): return nil
         }
     }
+}
 
-    // MARK: - Codable
+// MARK: - AIUsage Codable
 
+extension AIUsage: Codable {
     enum CodingKeys: String, CodingKey {
+        // Primary keys (camelCase - backward compatible)
+        case promptTokens
+        case completionTokens
+        case reasoningTokens
+        case cachedTokens
+    }
+
+    enum SnakeCaseCodingKeys: String, CodingKey {
+        // Alternative keys (snake_case - API format)
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case reasoningTokens = "reasoning_tokens"
         case cachedTokens = "cached_tokens"
+    }
+
+    public init(from decoder: Decoder) throws {
+        // Try camelCase first (backward compatible), then snake_case
+        if let container = try? decoder.container(keyedBy: CodingKeys.self),
+           container.contains(.promptTokens) {
+            promptTokens = try container.decode(Int.self, forKey: .promptTokens)
+            completionTokens = try container.decode(Int.self, forKey: .completionTokens)
+            reasoningTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningTokens)
+            cachedTokens = try container.decodeIfPresent(Int.self, forKey: .cachedTokens)
+        } else {
+            let container = try decoder.container(keyedBy: SnakeCaseCodingKeys.self)
+            promptTokens = try container.decode(Int.self, forKey: .promptTokens)
+            completionTokens = try container.decode(Int.self, forKey: .completionTokens)
+            reasoningTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningTokens)
+            cachedTokens = try container.decodeIfPresent(Int.self, forKey: .cachedTokens)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(promptTokens, forKey: .promptTokens)
+        try container.encode(completionTokens, forKey: .completionTokens)
+        try container.encodeIfPresent(reasoningTokens, forKey: .reasoningTokens)
+        try container.encodeIfPresent(cachedTokens, forKey: .cachedTokens)
     }
 }
 
@@ -87,54 +123,27 @@ public struct AIUsage: Sendable, Codable, Equatable, Hashable {
 ///
 /// Maps to Vercel AI SDK 6.x finish reasons and provider-specific values.
 /// Uses custom Codable implementation to safely handle unknown future values.
-public enum AIFinishReason: Sendable, Hashable, CaseIterable {
+public enum AIFinishReason: String, Sendable, Hashable, CaseIterable {
     /// Model completed naturally (end of response)
-    case stop
+    case stop = "stop"
 
     /// Hit maximum token limit
-    case length
+    case length = "length"
 
     /// Model requested tool/function calls
-    case toolCalls
+    case toolCalls = "tool_calls"
 
     /// Content was filtered by safety systems
-    case contentFilter
+    case contentFilter = "content_filter"
 
     /// An error occurred during generation
-    case error
+    case error = "error"
 
     /// Request was cancelled
-    case cancelled
+    case cancelled = "cancelled"
 
-    /// Unknown finish reason (preserves original string for debugging)
-    case unknown
-
-    /// The raw string value for serialization
-    public var rawValue: String {
-        switch self {
-        case .stop: return "stop"
-        case .length: return "length"
-        case .toolCalls: return "tool_calls"
-        case .contentFilter: return "content_filter"
-        case .error: return "error"
-        case .cancelled: return "cancelled"
-        case .unknown: return "unknown"
-        }
-    }
-
-    /// Initialize from a raw string value
-    public init?(rawValue: String) {
-        switch rawValue.lowercased() {
-        case "stop": self = .stop
-        case "length": self = .length
-        case "tool_calls": self = .toolCalls
-        case "content_filter": self = .contentFilter
-        case "error": self = .error
-        case "cancelled", "canceled": self = .cancelled
-        case "unknown": self = .unknown
-        default: return nil
-        }
-    }
+    /// Unknown finish reason
+    case unknown = "unknown"
 
     /// Convert from legacy finish_reason strings (OpenAI, Anthropic, etc.)
     /// Always succeeds - unknown values map to .unknown

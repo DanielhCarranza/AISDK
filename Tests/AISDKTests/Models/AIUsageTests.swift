@@ -171,8 +171,8 @@ struct AIUsageTests {
         #expect(decoded == original)
     }
 
-    @Test("Usage decodes from JSON with nil optionals")
-    func testDecodeWithNilOptionals() throws {
+    @Test("Usage decodes from snake_case JSON")
+    func testDecodeSnakeCase() throws {
         let json = """
         {
             "prompt_tokens": 100,
@@ -190,17 +190,37 @@ struct AIUsageTests {
         #expect(usage.cachedTokens == nil)
     }
 
-    @Test("Usage encodes with snake_case keys")
-    func testEncodesWithSnakeCase() throws {
+    @Test("Usage decodes from camelCase JSON (backward compatible)")
+    func testDecodeCamelCase() throws {
+        let json = """
+        {
+            "promptTokens": 100,
+            "completionTokens": 50,
+            "reasoningTokens": 20
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let usage = try decoder.decode(AIUsage.self, from: json.data(using: .utf8)!)
+
+        #expect(usage.promptTokens == 100)
+        #expect(usage.completionTokens == 50)
+        #expect(usage.totalTokens == 150)
+        #expect(usage.reasoningTokens == 20)
+        #expect(usage.cachedTokens == nil)
+    }
+
+    @Test("Usage encodes with camelCase keys")
+    func testEncodesWithCamelCase() throws {
         let usage = AIUsage(promptTokens: 100, completionTokens: 50, reasoningTokens: 20)
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(usage)
         let jsonString = String(data: data, encoding: .utf8)!
 
-        #expect(jsonString.contains("prompt_tokens"))
-        #expect(jsonString.contains("completion_tokens"))
-        #expect(jsonString.contains("reasoning_tokens"))
+        #expect(jsonString.contains("promptTokens"))
+        #expect(jsonString.contains("completionTokens"))
+        #expect(jsonString.contains("reasoningTokens"))
     }
 
     // MARK: - Legacy Initialization
