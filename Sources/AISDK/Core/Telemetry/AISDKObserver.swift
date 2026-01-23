@@ -21,10 +21,15 @@ import Foundation
 ///
 /// **PHI Safety**: Observers receive trace context and event data. Implementations
 /// are responsible for PHI-safe handling when logging or transmitting data.
-/// Use `AITraceContext.toLogDictionary()` for PHI-safe logging.
+/// Use `AITraceContext.toLogDictionary()` for PHI-safe logging. Never log
+/// raw text content, arguments, or error messages without proper redaction.
 ///
 /// **Performance**: Observer methods are called synchronously on the request path.
 /// Keep implementations fast (<1ms). Use async dispatch for heavy operations.
+///
+/// **Integration Note**: This protocol defines the observer interface. Wiring into
+/// SDK request paths (generateText, streamText, etc.) is handled by the SDK's
+/// internal orchestration layer, which calls these methods at appropriate lifecycle points.
 ///
 /// Example:
 /// ```swift
@@ -34,13 +39,12 @@ import Foundation
 ///     }
 ///
 ///     func didReceiveEvent(_ event: AIStreamEvent, context: AITraceContext) {
-///         // Track event types for stream analysis
-///         if case .heartbeat = event {
-///             MetricsClient.shared.increment("ai.stream.heartbeats")
-///         }
+///         // Track event types for stream analysis (PHI-safe: only log type, not content)
+///         MetricsClient.shared.increment("ai.stream.events",
+///             tags: ["type": event.eventType])
 ///     }
 ///
-///     func didCompleteRequest(_ result: AITextResult, context: AITraceContext) {
+///     func didCompleteTextRequest(_ result: AITextResult, context: AITraceContext) {
 ///         MetricsClient.shared.recordDuration(
 ///             "ai.requests.duration",
 ///             seconds: context.elapsed
@@ -48,6 +52,7 @@ import Foundation
 ///     }
 ///
 ///     func didFailRequest(_ error: AISDKErrorV2, context: AITraceContext) {
+///         // PHI-safe: only log error code, not message
 ///         MetricsClient.shared.increment("ai.requests.failed",
 ///             tags: ["error_code": error.code.rawValue]
 ///         )
@@ -57,8 +62,7 @@ import Foundation
 public protocol AISDKObserver: Sendable {
     /// Called when a request begins
     ///
-    /// This is called at the start of `generateText`, `streamText`,
-    /// `generateObject`, and `streamObject` operations.
+    /// This is called at the start of text and object generation operations.
     ///
     /// - Parameter context: The trace context for this request
     func didStartRequest(_ context: AITraceContext)
@@ -73,15 +77,25 @@ public protocol AISDKObserver: Sendable {
     ///   - context: The trace context for this request
     func didReceiveEvent(_ event: AIStreamEvent, context: AITraceContext)
 
-    /// Called when a request completes successfully
+    /// Called when a text generation request completes successfully
     ///
     /// For streaming operations, this is called after the stream finishes.
     /// The result contains the accumulated response data.
     ///
     /// - Parameters:
-    ///   - result: The successful result
+    ///   - result: The successful text result
     ///   - context: The trace context for this request
-    func didCompleteRequest(_ result: AITextResult, context: AITraceContext)
+    func didCompleteTextRequest(_ result: AITextResult, context: AITraceContext)
+
+    /// Called when an object generation request completes successfully
+    ///
+    /// The object is type-erased to `Any` for observer flexibility.
+    /// Use this for metrics/logging; avoid type-specific processing.
+    ///
+    /// - Parameters:
+    ///   - object: The generated object (type-erased)
+    ///   - context: The trace context for this request
+    func didCompleteObjectRequest(_ object: Any, context: AITraceContext)
 
     /// Called when a request fails
     ///
@@ -102,7 +116,8 @@ public protocol AISDKObserver: Sendable {
 public extension AISDKObserver {
     func didStartRequest(_ context: AITraceContext) {}
     func didReceiveEvent(_ event: AIStreamEvent, context: AITraceContext) {}
-    func didCompleteRequest(_ result: AITextResult, context: AITraceContext) {}
+    func didCompleteTextRequest(_ result: AITextResult, context: AITraceContext) {}
+    func didCompleteObjectRequest(_ object: Any, context: AITraceContext) {}
     func didFailRequest(_ error: AISDKErrorV2, context: AITraceContext) {}
 }
 
@@ -117,12 +132,15 @@ public extension AISDKObserver {
 /// **Thread Safety**: Child observers are accessed under a lock to support
 /// concurrent registration while ensuring consistent delivery.
 ///
+/// **Note**: Duplicate observers are allowed. Use `remove(_:)` or `removeAll()`
+/// to manage the observer list. Reference identity is used for removal.
+///
 /// Example:
 /// ```swift
 /// let composite = CompositeAISDKObserver()
 /// composite.add(MetricsObserver())
 /// composite.add(LoggingObserver())
-/// SDKConfiguration.shared.observer = composite
+/// // Register composite with SDK configuration
 /// ```
 public final class CompositeAISDKObserver: AISDKObserver, @unchecked Sendable {
     private let lock = NSLock()
@@ -132,11 +150,31 @@ public final class CompositeAISDKObserver: AISDKObserver, @unchecked Sendable {
 
     /// Add an observer to the composite
     ///
+    /// Duplicate observers are allowed. Each addition will receive events.
+    ///
     /// - Parameter observer: The observer to add
     public func add(_ observer: any AISDKObserver) {
         lock.lock()
         defer { lock.unlock() }
         observers.append(observer)
+    }
+
+    /// Remove a specific observer by reference identity
+    ///
+    /// For class-based observers, removes the first matching instance.
+    /// For struct observers, this may not work as expected due to value semantics.
+    ///
+    /// - Parameter observer: The observer to remove
+    /// - Returns: True if an observer was removed
+    @discardableResult
+    public func remove(_ observer: any AISDKObserver) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let index = observers.firstIndex(where: { ($0 as AnyObject) === (observer as AnyObject) }) {
+            observers.remove(at: index)
+            return true
+        }
+        return false
     }
 
     /// Remove all observers
@@ -169,10 +207,17 @@ public final class CompositeAISDKObserver: AISDKObserver, @unchecked Sendable {
         }
     }
 
-    public func didCompleteRequest(_ result: AITextResult, context: AITraceContext) {
+    public func didCompleteTextRequest(_ result: AITextResult, context: AITraceContext) {
         let current = withLock { observers }
         for observer in current {
-            observer.didCompleteRequest(result, context: context)
+            observer.didCompleteTextRequest(result, context: context)
+        }
+    }
+
+    public func didCompleteObjectRequest(_ object: Any, context: AITraceContext) {
+        let current = withLock { observers }
+        for observer in current {
+            observer.didCompleteObjectRequest(object, context: context)
         }
     }
 
@@ -192,15 +237,19 @@ public final class CompositeAISDKObserver: AISDKObserver, @unchecked Sendable {
 
 // MARK: - Logging Observer
 
-/// A simple logging observer for debugging
+/// A PHI-safe logging observer for debugging
 ///
-/// Logs all observer events to the console with trace context.
+/// Logs observer events to the console with trace context.
+/// **PHI Safety**: This observer only logs metadata (event types, IDs, counts).
+/// It never logs text content, arguments, or error messages.
+///
 /// Useful for development and debugging, not recommended for production.
 ///
 /// Example:
 /// ```swift
 /// #if DEBUG
-/// SDKConfiguration.shared.observer = LoggingAISDKObserver()
+/// let observer = LoggingAISDKObserver()
+/// // Register with SDK configuration
 /// #endif
 /// ```
 public final class LoggingAISDKObserver: AISDKObserver {
@@ -223,21 +272,30 @@ public final class LoggingAISDKObserver: AISDKObserver {
 
     public func didReceiveEvent(_ event: AIStreamEvent, context: AITraceContext) {
         guard logEvents else { return }
-        print("\(prefix) Event: \(eventDescription(event)) trace=\(context.traceId)")
+        // PHI-safe: only log event type, never content
+        print("\(prefix) Event: \(phiSafeEventDescription(event)) trace=\(context.traceId)")
     }
 
-    public func didCompleteRequest(_ result: AITextResult, context: AITraceContext) {
-        print("\(prefix) Request completed: trace=\(context.traceId) duration=\(String(format: "%.3f", context.elapsed))s tokens=\(result.usage.totalTokens)")
+    public func didCompleteTextRequest(_ result: AITextResult, context: AITraceContext) {
+        // PHI-safe: only log metadata, never text content
+        print("\(prefix) Text request completed: trace=\(context.traceId) duration=\(String(format: "%.3f", context.elapsed))s tokens=\(result.usage.totalTokens)")
+    }
+
+    public func didCompleteObjectRequest(_ object: Any, context: AITraceContext) {
+        // PHI-safe: only log type, never object content
+        print("\(prefix) Object request completed: trace=\(context.traceId) duration=\(String(format: "%.3f", context.elapsed))s type=\(type(of: object))")
     }
 
     public func didFailRequest(_ error: AISDKErrorV2, context: AITraceContext) {
-        print("\(prefix) Request failed: trace=\(context.traceId) error=\(error.code.rawValue) duration=\(String(format: "%.3f", context.elapsed))s")
+        // PHI-safe: only log error code, never message (may contain PHI)
+        print("\(prefix) Request failed: trace=\(context.traceId) error_code=\(error.code.rawValue) duration=\(String(format: "%.3f", context.elapsed))s")
     }
 
-    private func eventDescription(_ event: AIStreamEvent) -> String {
+    /// PHI-safe event description - only logs event type and metadata IDs, never content
+    private func phiSafeEventDescription(_ event: AIStreamEvent) -> String {
         switch event {
-        case .textDelta(let delta):
-            return "textDelta(\(delta.prefix(20))...)"
+        case .textDelta:
+            return "textDelta"
         case .textCompletion:
             return "textCompletion"
         case .reasoningStart:
@@ -274,8 +332,9 @@ public final class LoggingAISDKObserver: AISDKObserver {
             return "heartbeat"
         case .finish(let reason, _):
             return "finish(\(reason.rawValue))"
-        case .error(let error):
-            return "error(\(error.localizedDescription))"
+        case .error:
+            // PHI-safe: don't log error description
+            return "error"
         }
     }
 }
@@ -289,4 +348,34 @@ public struct NoOpAISDKObserver: AISDKObserver {
     public init() {}
 
     // All methods use default no-op implementations
+}
+
+// MARK: - AIStreamEvent Extension
+
+extension AIStreamEvent {
+    /// PHI-safe event type string for logging/metrics
+    public var eventType: String {
+        switch self {
+        case .textDelta: return "textDelta"
+        case .textCompletion: return "textCompletion"
+        case .reasoningStart: return "reasoningStart"
+        case .reasoningDelta: return "reasoningDelta"
+        case .reasoningFinish: return "reasoningFinish"
+        case .toolCallStart: return "toolCallStart"
+        case .toolCallDelta: return "toolCallDelta"
+        case .toolCall: return "toolCall"
+        case .toolCallFinish: return "toolCallFinish"
+        case .toolResult: return "toolResult"
+        case .objectDelta: return "objectDelta"
+        case .source: return "source"
+        case .file: return "file"
+        case .usage: return "usage"
+        case .start: return "start"
+        case .stepStart: return "stepStart"
+        case .stepFinish: return "stepFinish"
+        case .heartbeat: return "heartbeat"
+        case .finish: return "finish"
+        case .error: return "error"
+        }
+    }
 }
