@@ -20,10 +20,20 @@ public enum AISDKConfigurationError: Error, LocalizedError, Sendable {
     case invalidDefaultModel(model: String)
     /// Provider configuration is invalid
     case invalidProviderConfiguration(provider: String, reason: String)
+    /// Duplicate provider names detected
+    case duplicateProvider(provider: String)
     /// Stream buffer capacity is invalid
     case invalidBufferCapacity(capacity: Int)
     /// Timeout value is invalid
     case invalidTimeout(value: TimeInterval, reason: String)
+    /// Invalid retry configuration
+    case invalidRetryConfiguration(reason: String)
+    /// Invalid circuit breaker configuration
+    case invalidCircuitBreakerConfiguration(reason: String)
+    /// Invalid failover configuration
+    case invalidFailoverConfiguration(reason: String)
+    /// Invalid max concurrent requests
+    case invalidMaxConcurrentRequests(value: Int)
     /// Multiple validation errors occurred
     case multipleErrors([AISDKConfigurationError])
 
@@ -37,10 +47,20 @@ public enum AISDKConfigurationError: Error, LocalizedError, Sendable {
             return "Invalid default model: \(model)"
         case .invalidProviderConfiguration(let provider, let reason):
             return "Invalid configuration for \(provider): \(reason)"
+        case .duplicateProvider(let provider):
+            return "Duplicate provider configuration: \(provider)"
         case .invalidBufferCapacity(let capacity):
             return "Invalid buffer capacity: \(capacity). Must be > 0."
         case .invalidTimeout(let value, let reason):
             return "Invalid timeout \(value)s: \(reason)"
+        case .invalidRetryConfiguration(let reason):
+            return "Invalid retry configuration: \(reason)"
+        case .invalidCircuitBreakerConfiguration(let reason):
+            return "Invalid circuit breaker configuration: \(reason)"
+        case .invalidFailoverConfiguration(let reason):
+            return "Invalid failover configuration: \(reason)"
+        case .invalidMaxConcurrentRequests(let value):
+            return "Invalid maxConcurrentRequests: \(value). Must be >= 0."
         case .multipleErrors(let errors):
             let descriptions = errors.compactMap { $0.errorDescription }
             return "Multiple configuration errors:\n" + descriptions.joined(separator: "\n")
@@ -52,14 +72,17 @@ public enum AISDKConfigurationError: Error, LocalizedError, Sendable {
 
 /// Configuration for a specific AI provider
 public struct AIProviderConfiguration: Sendable, Equatable {
-    /// The provider identifier (e.g., "openai", "anthropic", "google")
+    /// The provider identifier (normalized to lowercase)
     public let provider: String
+
+    /// The original provider identifier as provided
+    public let providerId: String
 
     /// API key for this provider (nil if using environment variable)
     public let apiKey: String?
 
-    /// Environment variable name for API key (default: derived from provider)
-    public let apiKeyEnvVar: String
+    /// Environment variable names for API key resolution (checked in order)
+    public let apiKeyEnvVars: [String]
 
     /// Base URL override (nil uses provider default)
     public let baseURL: URL?
@@ -88,10 +111,14 @@ public struct AIProviderConfiguration: Sendable, Equatable {
     /// Whether this provider is trusted for PHI data
     public let trustedForPHI: Bool
 
+    /// Whether API key is required for this provider
+    public let requiresAPIKey: Bool
+
     public init(
         provider: String,
         apiKey: String? = nil,
         apiKeyEnvVar: String? = nil,
+        apiKeyEnvVars: [String]? = nil,
         baseURL: URL? = nil,
         organizationId: String? = nil,
         projectId: String? = nil,
@@ -100,11 +127,27 @@ public struct AIProviderConfiguration: Sendable, Equatable {
         maxTokensPerMinute: Int? = nil,
         customHeaders: [String: String] = [:],
         isEnabled: Bool = true,
-        trustedForPHI: Bool = false
+        trustedForPHI: Bool = false,
+        requiresAPIKey: Bool = true
     ) {
-        self.provider = provider
+        self.providerId = provider
+        self.provider = provider.lowercased()
         self.apiKey = apiKey
-        self.apiKeyEnvVar = apiKeyEnvVar ?? Self.defaultEnvVar(for: provider)
+
+        // Build env var list: explicit vars first, then default
+        var envVars: [String] = []
+        if let vars = apiKeyEnvVars {
+            envVars.append(contentsOf: vars)
+        } else if let envVar = apiKeyEnvVar {
+            envVars.append(envVar)
+        }
+        // Add default if not already present
+        let defaultVar = Self.defaultEnvVar(for: provider)
+        if !envVars.contains(defaultVar) {
+            envVars.append(defaultVar)
+        }
+        self.apiKeyEnvVars = envVars
+
         self.baseURL = baseURL
         self.organizationId = organizationId
         self.projectId = projectId
@@ -114,6 +157,7 @@ public struct AIProviderConfiguration: Sendable, Equatable {
         self.customHeaders = customHeaders
         self.isEnabled = isEnabled
         self.trustedForPHI = trustedForPHI
+        self.requiresAPIKey = requiresAPIKey
     }
 
     /// Default environment variable name for a provider
@@ -121,12 +165,23 @@ public struct AIProviderConfiguration: Sendable, Equatable {
         "\(provider.uppercased())_API_KEY"
     }
 
-    /// Resolve the API key from explicit value or environment
+    /// Resolve the API key from explicit value or environment variables
     public func resolveAPIKey() -> String? {
         if let apiKey = apiKey, !apiKey.isEmpty {
             return apiKey
         }
-        return ProcessInfo.processInfo.environment[apiKeyEnvVar]
+        // Try each env var in order
+        for envVar in apiKeyEnvVars {
+            if let key = ProcessInfo.processInfo.environment[envVar], !key.isEmpty {
+                return key
+            }
+        }
+        return nil
+    }
+
+    /// Check if API key is available (explicit or from environment)
+    public var hasAPIKey: Bool {
+        resolveAPIKey() != nil
     }
 }
 
@@ -268,12 +323,12 @@ public struct AITelemetryConfiguration: Sendable, Equatable {
 ///     validateOnInit: true  // Fail-fast validation
 /// )
 ///
-/// // Or use builder pattern
-/// let config = try AISDKConfiguration.Builder()
-///     .defaultModel("gpt-4o")
-///     .addProvider(.openai(apiKey: "sk-..."))
-///     .reliability(.default)
-///     .build()
+/// // Or use builder pattern with closure
+/// try AISDKConfiguration.configure { builder in
+///     builder.defaultModel("gpt-4o")
+///     builder.addProvider(.openai(apiKey: "sk-..."))
+///     builder.reliability(.default)
+/// }
 /// ```
 public struct AISDKConfiguration: Sendable {
     // MARK: - Properties
@@ -281,7 +336,7 @@ public struct AISDKConfiguration: Sendable {
     /// Default model to use when not specified in requests
     public let defaultModel: String?
 
-    /// Provider configurations indexed by provider name
+    /// Provider configurations indexed by normalized provider name (lowercase)
     public let providers: [String: AIProviderConfiguration]
 
     /// Default stream buffer policy
@@ -297,6 +352,13 @@ public struct AISDKConfiguration: Sendable {
     public let telemetry: AITelemetryConfiguration
 
     /// Whether to enforce PHI protection (require explicit allowlist for sensitive data)
+    ///
+    /// When true (default), requests with `.sensitive` or `.phi` data sensitivity
+    /// require explicit `allowedProviders` to be set. This prevents accidental
+    /// routing of PHI data to untrusted providers.
+    ///
+    /// Note: This flag is checked by `isProviderAllowedForSensitivity(_:_:)`.
+    /// Integration with request routing is handled in the Provider & Routing Layer.
     public let enforcePHIProtection: Bool
 
     /// Maximum concurrent requests (0 = unlimited)
@@ -334,9 +396,31 @@ public struct AISDKConfiguration: Sendable {
         validateOnInit: Bool = true
     ) throws {
         self.defaultModel = defaultModel
-        self.providers = Dictionary(
-            uniqueKeysWithValues: providers.map { ($0.provider, $0) }
-        )
+
+        // Build providers dictionary with duplicate detection
+        var providerDict: [String: AIProviderConfiguration] = [:]
+        var duplicates: [String] = []
+        for config in providers {
+            let key = config.provider  // Already normalized to lowercase
+            if providerDict[key] != nil {
+                duplicates.append(config.providerId)
+            } else {
+                providerDict[key] = config
+            }
+        }
+
+        // Check for duplicates before assignment
+        if !duplicates.isEmpty {
+            if duplicates.count == 1 {
+                throw AISDKConfigurationError.duplicateProvider(provider: duplicates[0])
+            } else {
+                throw AISDKConfigurationError.multipleErrors(
+                    duplicates.map { .duplicateProvider(provider: $0) }
+                )
+            }
+        }
+
+        self.providers = providerDict
         self.defaultBufferPolicy = defaultBufferPolicy
         self.defaultSensitivity = defaultSensitivity
         self.reliability = reliability
@@ -361,6 +445,11 @@ public struct AISDKConfiguration: Sendable {
     public func validate() throws {
         var errors: [AISDKConfigurationError] = []
 
+        // Validate default model if specified
+        if let model = defaultModel, model.trimmingCharacters(in: .whitespaces).isEmpty {
+            errors.append(.invalidDefaultModel(model: model))
+        }
+
         // Validate buffer policy
         if case .dropOldest(let capacity) = defaultBufferPolicy, capacity <= 0 {
             errors.append(.invalidBufferCapacity(capacity: capacity))
@@ -369,25 +458,17 @@ public struct AISDKConfiguration: Sendable {
             errors.append(.invalidBufferCapacity(capacity: capacity))
         }
 
+        // Validate maxConcurrentRequests
+        if maxConcurrentRequests < 0 {
+            errors.append(.invalidMaxConcurrentRequests(value: maxConcurrentRequests))
+        }
+
         // Validate reliability settings
-        if reliability.defaultTimeout <= 0 {
-            errors.append(.invalidTimeout(
-                value: reliability.defaultTimeout,
-                reason: "must be positive"
-            ))
-        }
-        if reliability.retryBaseDelay <= 0 {
-            errors.append(.invalidTimeout(
-                value: reliability.retryBaseDelay,
-                reason: "retry base delay must be positive"
-            ))
-        }
+        errors.append(contentsOf: validateReliability())
 
         // Validate each provider configuration
         for (_, providerConfig) in providers {
-            if let error = validateProvider(providerConfig) {
-                errors.append(error)
-            }
+            errors.append(contentsOf: validateProvider(providerConfig))
         }
 
         // Throw errors if any
@@ -398,24 +479,85 @@ public struct AISDKConfiguration: Sendable {
         }
     }
 
+    /// Validate reliability configuration
+    private func validateReliability() -> [AISDKConfigurationError] {
+        var errors: [AISDKConfigurationError] = []
+
+        // Timeout validation
+        if reliability.defaultTimeout <= 0 {
+            errors.append(.invalidTimeout(
+                value: reliability.defaultTimeout,
+                reason: "must be positive"
+            ))
+        }
+
+        // Retry validation
+        if reliability.maxRetries < 0 {
+            errors.append(.invalidRetryConfiguration(reason: "maxRetries must be >= 0"))
+        }
+        if reliability.retryBaseDelay <= 0 {
+            errors.append(.invalidRetryConfiguration(reason: "retryBaseDelay must be positive"))
+        }
+        if reliability.retryMaxDelay <= 0 {
+            errors.append(.invalidRetryConfiguration(reason: "retryMaxDelay must be positive"))
+        }
+        if reliability.retryMaxDelay < reliability.retryBaseDelay {
+            errors.append(.invalidRetryConfiguration(
+                reason: "retryMaxDelay must be >= retryBaseDelay"
+            ))
+        }
+
+        // Circuit breaker validation
+        if reliability.circuitBreakerEnabled {
+            if reliability.circuitBreakerThreshold <= 0 {
+                errors.append(.invalidCircuitBreakerConfiguration(
+                    reason: "threshold must be positive"
+                ))
+            }
+            if reliability.circuitBreakerResetTimeout <= 0 {
+                errors.append(.invalidCircuitBreakerConfiguration(
+                    reason: "resetTimeout must be positive"
+                ))
+            }
+        }
+
+        // Failover validation
+        if reliability.failoverEnabled {
+            if reliability.failoverMaxCostMultiplier <= 0 {
+                errors.append(.invalidFailoverConfiguration(
+                    reason: "maxCostMultiplier must be positive"
+                ))
+            }
+        }
+
+        return errors
+    }
+
     /// Validate a single provider configuration
-    private func validateProvider(_ config: AIProviderConfiguration) -> AISDKConfigurationError? {
+    private func validateProvider(_ config: AIProviderConfiguration) -> [AISDKConfigurationError] {
+        var errors: [AISDKConfigurationError] = []
+
+        // Check for missing API key on enabled providers that require it
+        if config.isEnabled && config.requiresAPIKey && !config.hasAPIKey {
+            errors.append(.missingAPIKey(provider: config.providerId))
+        }
+
         // Check API key format based on provider
         if let apiKey = config.resolveAPIKey() {
-            switch config.provider.lowercased() {
+            switch config.provider {
             case "openai":
                 if !apiKey.hasPrefix("sk-") {
-                    return .invalidAPIKey(
-                        provider: config.provider,
+                    errors.append(.invalidAPIKey(
+                        provider: config.providerId,
                         reason: "OpenAI API keys should start with 'sk-'"
-                    )
+                    ))
                 }
             case "anthropic":
                 if !apiKey.hasPrefix("sk-ant-") {
-                    return .invalidAPIKey(
-                        provider: config.provider,
+                    errors.append(.invalidAPIKey(
+                        provider: config.providerId,
                         reason: "Anthropic API keys should start with 'sk-ant-'"
-                    )
+                    ))
                 }
             default:
                 // No specific format validation for other providers
@@ -423,14 +565,22 @@ public struct AISDKConfiguration: Sendable {
             }
         }
 
-        return nil
+        // Validate default model if specified
+        if let model = config.defaultModel, model.trimmingCharacters(in: .whitespaces).isEmpty {
+            errors.append(.invalidProviderConfiguration(
+                provider: config.providerId,
+                reason: "defaultModel cannot be empty"
+            ))
+        }
+
+        return errors
     }
 
     // MARK: - Provider Access
 
     /// Get configuration for a specific provider
     public func provider(_ name: String) -> AIProviderConfiguration? {
-        providers[name.lowercased()] ?? providers[name]
+        providers[name.lowercased()]
     }
 
     /// Get all enabled providers
@@ -443,28 +593,74 @@ public struct AISDKConfiguration: Sendable {
         providers.values.filter { $0.trustedForPHI }
     }
 
+    /// Get names of providers trusted for PHI data
+    public var phiTrustedProviderNames: Set<String> {
+        Set(phiTrustedProviders.map { $0.provider })
+    }
+
     /// Check if a provider is configured
     public func hasProvider(_ name: String) -> Bool {
         provider(name) != nil
     }
 
-    // MARK: - Shared Instance
-
-    /// The shared SDK configuration
+    /// Check if a provider is allowed for a given data sensitivity level
     ///
-    /// This must be set before using the SDK. Use `configure(_:)` to set.
-    public private(set) static var shared: AISDKConfiguration?
-
-    /// Configure the shared SDK instance
+    /// This method enforces PHI protection rules based on `enforcePHIProtection`
+    /// and the provider's `trustedForPHI` setting.
     ///
-    /// - Parameter configuration: The configuration to use
-    /// - Throws: AISDKConfigurationError if validation fails
-    public static func configure(_ configuration: AISDKConfiguration) throws {
-        try configuration.validate()
-        shared = configuration
+    /// - Parameters:
+    ///   - providerName: The provider to check
+    ///   - sensitivity: The data sensitivity level
+    /// - Returns: true if the provider can handle data at the given sensitivity
+    public func isProviderAllowedForSensitivity(
+        _ providerName: String,
+        _ sensitivity: DataSensitivity
+    ) -> Bool {
+        guard let config = provider(providerName) else {
+            return false  // Unknown provider
+        }
+
+        switch sensitivity {
+        case .standard:
+            return config.isEnabled
+        case .sensitive, .phi:
+            if !enforcePHIProtection {
+                return config.isEnabled  // PHI enforcement disabled
+            }
+            return config.isEnabled && config.trustedForPHI
+        }
     }
 
-    /// Configure the shared SDK instance with a builder
+    // MARK: - Shared Instance
+
+    /// Lock for thread-safe access to shared instance
+    private static let lock = NSLock()
+
+    /// The shared SDK configuration (thread-safe)
+    ///
+    /// This must be set before using the SDK. Use `configure(_:)` to set.
+    /// Access is thread-safe via internal locking.
+    private static var _shared: AISDKConfiguration?
+
+    /// Get the shared SDK configuration
+    public static var shared: AISDKConfiguration? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _shared
+    }
+
+    /// Configure the shared SDK instance (thread-safe)
+    ///
+    /// - Parameter configuration: The configuration to use
+    /// - Throws: AISDKConfigurationError if validation fails or already configured
+    public static func configure(_ configuration: AISDKConfiguration) throws {
+        try configuration.validate()
+        lock.lock()
+        defer { lock.unlock() }
+        _shared = configuration
+    }
+
+    /// Configure the shared SDK instance with a builder (thread-safe)
     ///
     /// - Parameter builder: A closure that configures the builder
     /// - Throws: AISDKConfigurationError if validation fails
@@ -472,12 +668,19 @@ public struct AISDKConfiguration: Sendable {
         var b = Builder()
         builder(&b)
         let config = try b.build()
-        shared = config
+        lock.lock()
+        defer { lock.unlock() }
+        _shared = config
     }
 
-    /// Reset the shared configuration (primarily for testing)
-    public static func reset() {
-        shared = nil
+    /// Reset the shared configuration
+    ///
+    /// - Warning: This is intended for testing only. Do not call in production code.
+    @available(*, deprecated, message: "For testing only")
+    public static func _resetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        _shared = nil
     }
 }
 
@@ -487,6 +690,7 @@ extension AISDKConfiguration {
     /// Builder for AISDKConfiguration
     ///
     /// Provides a fluent API for constructing configuration.
+    /// Use with the `configure(_:)` closure-based API.
     public struct Builder {
         private var defaultModel: String?
         private var providers: [AIProviderConfiguration] = []
@@ -501,66 +705,48 @@ extension AISDKConfiguration {
         public init() {}
 
         /// Set the default model
-        @discardableResult
-        public mutating func defaultModel(_ model: String) -> Builder {
+        public mutating func defaultModel(_ model: String) {
             self.defaultModel = model
-            return self
         }
 
         /// Add a provider configuration
-        @discardableResult
-        public mutating func addProvider(_ provider: AIProviderConfiguration) -> Builder {
+        public mutating func addProvider(_ provider: AIProviderConfiguration) {
             self.providers.append(provider)
-            return self
         }
 
         /// Set the default buffer policy
-        @discardableResult
-        public mutating func defaultBufferPolicy(_ policy: StreamBufferPolicy) -> Builder {
+        public mutating func defaultBufferPolicy(_ policy: StreamBufferPolicy) {
             self.defaultBufferPolicy = policy
-            return self
         }
 
         /// Set the default sensitivity level
-        @discardableResult
-        public mutating func defaultSensitivity(_ sensitivity: DataSensitivity) -> Builder {
+        public mutating func defaultSensitivity(_ sensitivity: DataSensitivity) {
             self.defaultSensitivity = sensitivity
-            return self
         }
 
         /// Set the reliability configuration
-        @discardableResult
-        public mutating func reliability(_ config: AIReliabilityConfiguration) -> Builder {
+        public mutating func reliability(_ config: AIReliabilityConfiguration) {
             self.reliability = config
-            return self
         }
 
         /// Set the telemetry configuration
-        @discardableResult
-        public mutating func telemetry(_ config: AITelemetryConfiguration) -> Builder {
+        public mutating func telemetry(_ config: AITelemetryConfiguration) {
             self.telemetry = config
-            return self
         }
 
         /// Set whether to enforce PHI protection
-        @discardableResult
-        public mutating func enforcePHIProtection(_ enforce: Bool) -> Builder {
+        public mutating func enforcePHIProtection(_ enforce: Bool) {
             self.enforcePHIProtection = enforce
-            return self
         }
 
         /// Set the maximum concurrent requests
-        @discardableResult
-        public mutating func maxConcurrentRequests(_ max: Int) -> Builder {
+        public mutating func maxConcurrentRequests(_ max: Int) {
             self.maxConcurrentRequests = max
-            return self
         }
 
         /// Add a global header
-        @discardableResult
-        public mutating func addGlobalHeader(name: String, value: String) -> Builder {
+        public mutating func addGlobalHeader(name: String, value: String) {
             self.globalHeaders[name] = value
-            return self
         }
 
         /// Build the configuration
@@ -598,7 +784,7 @@ extension AIProviderConfiguration {
         AIProviderConfiguration(
             provider: "openai",
             apiKey: apiKey,
-            apiKeyEnvVar: "OPENAI_API_KEY",
+            apiKeyEnvVars: ["OPENAI_API_KEY"],
             organizationId: organizationId,
             projectId: projectId,
             defaultModel: defaultModel,
@@ -615,7 +801,7 @@ extension AIProviderConfiguration {
         AIProviderConfiguration(
             provider: "anthropic",
             apiKey: apiKey,
-            apiKeyEnvVar: "ANTHROPIC_API_KEY",
+            apiKeyEnvVars: ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
             defaultModel: defaultModel,
             trustedForPHI: trustedForPHI
         )
@@ -630,7 +816,7 @@ extension AIProviderConfiguration {
         AIProviderConfiguration(
             provider: "google",
             apiKey: apiKey,
-            apiKeyEnvVar: "GOOGLE_API_KEY",
+            apiKeyEnvVars: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
             defaultModel: defaultModel,
             trustedForPHI: trustedForPHI
         )
@@ -645,7 +831,7 @@ extension AIProviderConfiguration {
         AIProviderConfiguration(
             provider: "openrouter",
             apiKey: apiKey,
-            apiKeyEnvVar: "OPENROUTER_API_KEY",
+            apiKeyEnvVars: ["OPENROUTER_API_KEY"],
             baseURL: URL(string: "https://openrouter.ai/api/v1"),
             defaultModel: defaultModel,
             trustedForPHI: trustedForPHI
