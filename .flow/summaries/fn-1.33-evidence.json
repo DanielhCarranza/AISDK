@@ -1,0 +1,13 @@
+{
+  "task_id": "fn-1.33",
+  "commits": ["09d193ca03721505a20ac1fcc5ee69fcc37fd5dd"],
+  "tests": {
+    "command": "swift test --filter AIAgentActorStreamingTests",
+    "passed": 17,
+    "failed": 0
+  },
+  "files_changed": [
+    "Sources/AISDK/Agents/AIAgentActor.swift",
+    "Tests/AISDKTests/Agents/AIAgentActorTests.swift"
+  ]
+}

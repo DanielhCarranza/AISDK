@@ -1,20 +1,3 @@
-# fn-1.33 Task 4.1b: AIAgent Streaming
-
-## Description
-Implement streaming execution for AIAgentActor with step callbacks and bounded stream creation using SafeAsyncStream for memory safety.
-
-## Acceptance
-- [x] `streamExecute(messages:)` method implemented as `nonisolated` to return `AsyncThrowingStream<AIStreamEvent, Error>`
-- [x] Streaming uses SafeAsyncStream.make for bounded memory-safe streams (1000 element buffer)
-- [x] Emits all required stream events: start, stepStart, textDelta, toolCallStart, toolCallDelta, toolCall, toolResult, stepFinish, usage, finish, error
-- [x] Operation queue serializes streaming requests to prevent reentrancy
-- [x] Observable state updates during streaming (isProcessing, state, currentStep)
-- [x] Message and step history updated after streaming completes
-- [x] Cancellation handled properly with stream termination
-- [x] Multi-step agent loop works with tool calls during streaming
-- [x] 17 comprehensive streaming tests passing
-
-## Done summary
 # fn-1.33 Task 4.1b: AIAgent Streaming - Done Summary
 
 Implemented comprehensive streaming support for AIAgentActor:
@@ -37,7 +20,3 @@ Implemented comprehensive streaming support for AIAgentActor:
 5. **Observable State**: Updates `ObservableAgentState` properties (`isProcessing`, `state`, `currentStep`) for SwiftUI integration during streaming.
 
 6. **Testing**: Added 17 comprehensive tests covering all streaming functionality.
-## Evidence
-- Commits: 09d193ca03721505a20ac1fcc5ee69fcc37fd5dd
-- Tests: command, passed, failed
-- PRs:

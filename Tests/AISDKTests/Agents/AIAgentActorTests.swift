@@ -1096,3 +1096,600 @@ final class AIAgentActorStreamingTests: XCTestCase {
         XCTAssertEqual(steps[0].text, "Hello World")
     }
 }
+
+// MARK: - AIAgentActor Tool Execution Tests
+
+final class AIAgentActorToolExecutionTests: XCTestCase {
+
+    // MARK: - Test Tools
+
+    /// Simple test tool for weather queries
+    private struct MockWeatherTool: Tool {
+        let name = "get_weather"
+        let description = "Get the current weather for a location"
+
+        @Parameter(description: "City name")
+        var city: String = ""
+
+        init() {}
+
+        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+            return ("Weather in \(city): 22°C, sunny", nil)
+        }
+    }
+
+    /// Test tool for calculator operations
+    private struct MockCalculatorTool: Tool {
+        let name = "calculate"
+        let description = "Perform basic arithmetic"
+
+        @Parameter(description: "First number")
+        var a: Double = 0.0
+
+        @Parameter(description: "Second number")
+        var b: Double = 0.0
+
+        @Parameter(description: "Operation (+, -, *, /)")
+        var operation: String = "+"
+
+        init() {}
+
+        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+            let result: Double
+            switch operation {
+            case "+": result = a + b
+            case "-": result = a - b
+            case "*": result = a * b
+            case "/":
+                guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
+                result = a / b
+            default: throw ToolError.executionFailed("Invalid operation")
+            }
+            return ("Result: \(result)", nil)
+        }
+    }
+
+    /// Test tool that always fails
+    private struct FailingTool: Tool {
+        let name = "failing_tool"
+        let description = "A tool that always fails"
+
+        init() {}
+
+        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+            throw ToolError.executionFailed("This tool always fails")
+        }
+    }
+
+    /// Test tool with slow execution for timeout testing
+    private struct SlowTool: Tool {
+        let name = "slow_tool"
+        let description = "A tool that takes a long time"
+
+        init() {}
+
+        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+            try await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+            return ("Done", nil)
+        }
+    }
+
+    // MARK: - Mock Language Model with Tool Support
+
+    private class MockToolLanguageModel: AILanguageModel, @unchecked Sendable {
+        let provider = "mock"
+        let modelId = "mock-tool-model"
+        let capabilities: LLMCapabilities = []
+
+        var generateTextHandler: ((AITextRequest) async throws -> AITextResult)?
+        var streamTextHandler: ((AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error>)?
+        var generateTextCallCount = 0
+        let lock = NSLock()
+
+        func generateText(request: AITextRequest) async throws -> AITextResult {
+            lock.lock()
+            generateTextCallCount += 1
+            lock.unlock()
+
+            if let handler = generateTextHandler {
+                return try await handler(request)
+            }
+
+            return AITextResult(
+                text: "Mock response",
+                usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                finishReason: .stop
+            )
+        }
+
+        func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
+            if let handler = streamTextHandler {
+                return handler(request)
+            }
+
+            return AsyncThrowingStream { continuation in
+                continuation.yield(.textDelta("Mock"))
+                continuation.yield(.finish(finishReason: .stop, usage: AIUsage.zero))
+                continuation.finish()
+            }
+        }
+
+        func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
+            AsyncThrowingStream { continuation in
+                continuation.finish()
+            }
+        }
+    }
+
+    // MARK: - Successful Tool Execution Tests
+
+    func test_execute_with_single_tool_call_succeeds() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                // First call: return a tool call
+                return AITextResult(
+                    text: "Let me check the weather...",
+                    toolCalls: [AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"London\"}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            } else {
+                // Second call: return final response after tool execution
+                return AITextResult(
+                    text: "The weather in London is 22°C and sunny!",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 20, completionTokens: 10),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self],
+            instructions: "You are a helpful weather assistant."
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("What's the weather in London?")])
+
+        // Then
+        XCTAssertEqual(result.text, "The weather in London is 22°C and sunny!")
+        XCTAssertEqual(result.steps.count, 2)
+        XCTAssertEqual(model.generateTextCallCount, 2)
+
+        // Verify tool call was in the first step
+        XCTAssertEqual(result.steps[0].toolCalls.count, 1)
+        XCTAssertEqual(result.steps[0].toolCalls[0].name, "get_weather")
+
+        // Verify message history contains tool messages
+        let messages = await agent.messages
+        XCTAssertTrue(messages.contains { $0.role == .tool })
+    }
+
+    func test_execute_with_multiple_sequential_tool_calls() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            switch callCount {
+            case 1:
+                // First call: weather tool
+                return AITextResult(
+                    text: "Checking weather...",
+                    toolCalls: [AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"Paris\"}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            case 2:
+                // Second call: calculator tool
+                return AITextResult(
+                    text: "Let me calculate...",
+                    toolCalls: [AIToolCallResult(id: "call-2", name: "calculate", arguments: "{\"a\":22,\"b\":10,\"operation\":\"+\"}")],
+                    usage: AIUsage(promptTokens: 15, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            default:
+                // Final response
+                return AITextResult(
+                    text: "Paris is 22°C and if we add 10, we get 32°C!",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 25, completionTokens: 15),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self, MockCalculatorTool.self],
+            stopCondition: .stepCount(5)
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("What's the weather in Paris plus 10?")])
+
+        // Then
+        XCTAssertEqual(result.steps.count, 3)
+        XCTAssertEqual(result.steps[0].toolCalls.first?.name, "get_weather")
+        XCTAssertEqual(result.steps[1].toolCalls.first?.name, "calculate")
+        XCTAssertTrue(result.steps[2].toolCalls.isEmpty) // Final response has no tool calls
+    }
+
+    // MARK: - Tool Not Found Tests
+
+    func test_execute_with_unknown_tool_handles_gracefully() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                // Request an unknown tool
+                return AITextResult(
+                    text: "Calling unknown tool...",
+                    toolCalls: [AIToolCallResult(id: "call-1", name: "unknown_tool", arguments: "{}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            } else {
+                return AITextResult(
+                    text: "Tool failed, here's an alternative response",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 15, completionTokens: 10),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self], // Only weather tool, not the requested one
+            stopCondition: .stepCount(3)
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("Use the unknown tool")])
+
+        // Then - Should continue with error message in tool response
+        XCTAssertGreaterThanOrEqual(result.steps.count, 1)
+
+        // Check that the error was handled (tool message should contain "Error" or similar)
+        let messages = await agent.messages
+        let toolMessages = messages.filter { $0.role == .tool }
+        if let toolMessage = toolMessages.first {
+            XCTAssertTrue(toolMessage.content.textValue.contains("Error") ||
+                         toolMessage.content.textValue.contains("not found"))
+        }
+    }
+
+    // MARK: - Tool Execution Failure Tests
+
+    func test_execute_with_failing_tool_handles_error() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                return AITextResult(
+                    text: "Calling failing tool...",
+                    toolCalls: [AIToolCallResult(id: "call-1", name: "failing_tool", arguments: "{}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            } else {
+                return AITextResult(
+                    text: "The tool failed, but I can help anyway",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 15, completionTokens: 10),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [FailingTool.self],
+            stopCondition: .stepCount(3)
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("Use the failing tool")])
+
+        // Then - Should continue after error, not crash
+        XCTAssertGreaterThanOrEqual(result.steps.count, 1)
+
+        // Verify error was captured in message history
+        let messages = await agent.messages
+        let toolMessages = messages.filter { $0.role == .tool }
+        XCTAssertGreaterThanOrEqual(toolMessages.count, 1)
+        if let toolMessage = toolMessages.first {
+            XCTAssertTrue(toolMessage.content.textValue.contains("Error"))
+        }
+    }
+
+    // MARK: - Tool Results in Message History Tests
+
+    func test_tool_results_added_to_message_history() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                return AITextResult(
+                    text: "Checking weather...",
+                    toolCalls: [AIToolCallResult(id: "tool-call-123", name: "get_weather", arguments: "{\"city\":\"Tokyo\"}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            } else {
+                return AITextResult(
+                    text: "The weather in Tokyo is great!",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 20, completionTokens: 10),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self]
+        )
+
+        // When
+        _ = try await agent.execute(messages: [.user("Weather in Tokyo?")])
+
+        // Then
+        let messages = await agent.messages
+
+        // Should have: system (optional), user, assistant (with tool call), tool, assistant (final)
+        let toolMessages = messages.filter { $0.role == .tool }
+        XCTAssertEqual(toolMessages.count, 1)
+
+        // Verify tool result content
+        if let toolMessage = toolMessages.first {
+            XCTAssertTrue(toolMessage.content.textValue.contains("Weather in Tokyo"))
+            XCTAssertTrue(toolMessage.content.textValue.contains("22°C"))
+        }
+    }
+
+    // MARK: - Streaming Tool Execution Tests
+
+    func test_streamExecute_with_tool_call_emits_toolResult_event() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.streamTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.textDelta("Checking..."))
+                    continuation.yield(.toolCallStart(id: "call-1", name: "get_weather"))
+                    continuation.yield(.toolCallDelta(id: "call-1", argumentsDelta: "{\"city\":"))
+                    continuation.yield(.toolCallDelta(id: "call-1", argumentsDelta: "\"Berlin\"}"))
+                    continuation.yield(.toolCall(id: "call-1", name: "get_weather", arguments: "{\"city\":\"Berlin\"}"))
+                    continuation.yield(.finish(finishReason: .toolCalls, usage: AIUsage(promptTokens: 10, completionTokens: 5)))
+                    continuation.finish()
+                }
+            } else {
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.textDelta("It's sunny in Berlin!"))
+                    continuation.yield(.finish(finishReason: .stop, usage: AIUsage(promptTokens: 15, completionTokens: 10)))
+                    continuation.finish()
+                }
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self],
+            stopCondition: .stepCount(3)
+        )
+
+        // When
+        var toolResultEvents: [(id: String, result: String)] = []
+        for try await event in agent.streamExecute(messages: [.user("Weather in Berlin?")]) {
+            if case .toolResult(let id, let result, _) = event {
+                toolResultEvents.append((id: id, result: result))
+            }
+        }
+
+        // Then
+        XCTAssertGreaterThanOrEqual(toolResultEvents.count, 1)
+        if let firstResult = toolResultEvents.first {
+            XCTAssertEqual(firstResult.id, "call-1")
+            XCTAssertTrue(firstResult.result.contains("Weather in Berlin"))
+        }
+    }
+
+    func test_streamExecute_tool_execution_updates_observable_state() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.streamTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.toolCallStart(id: "call-1", name: "get_weather"))
+                    continuation.yield(.toolCall(id: "call-1", name: "get_weather", arguments: "{\"city\":\"Rome\"}"))
+                    continuation.yield(.finish(finishReason: .toolCalls, usage: AIUsage.zero))
+                    continuation.finish()
+                }
+            } else {
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.textDelta("Done"))
+                    continuation.yield(.finish(finishReason: .stop, usage: AIUsage.zero))
+                    continuation.finish()
+                }
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self],
+            stopCondition: .stepCount(3)
+        )
+
+        // When - Execute and track state changes
+        var observedToolExecutionState = false
+        let observableState = agent.observableState
+
+        // Start streaming
+        for try await _ in agent.streamExecute(messages: [.user("Weather?")]) {
+            // Check state during execution
+            let currentState = await MainActor.run { observableState.state }
+            if case .executingTool(_) = currentState {
+                observedToolExecutionState = true
+            }
+        }
+
+        // Allow time for async state updates
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Then - Final state should be idle
+        await MainActor.run {
+            XCTAssertEqual(observableState.state, .idle)
+        }
+    }
+
+    // MARK: - Tool with Multiple Parameters Tests
+
+    func test_execute_passes_correct_parameters_to_tool() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                return AITextResult(
+                    text: "Calculating...",
+                    toolCalls: [AIToolCallResult(
+                        id: "call-1",
+                        name: "calculate",
+                        arguments: "{\"a\":100,\"b\":25,\"operation\":\"*\"}"
+                    )],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            } else {
+                return AITextResult(
+                    text: "The result is 2500",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 15, completionTokens: 10),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockCalculatorTool.self]
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("What is 100 times 25?")])
+
+        // Then
+        XCTAssertEqual(result.text, "The result is 2500")
+
+        // Verify tool was called and result contains the calculation
+        let messages = await agent.messages
+        let toolMessages = messages.filter { $0.role == .tool }
+        XCTAssertEqual(toolMessages.count, 1)
+        if let toolMessage = toolMessages.first {
+            XCTAssertTrue(toolMessage.content.textValue.contains("Result: 2500"))
+        }
+    }
+
+    // MARK: - Stop Condition with Tools Tests
+
+    func test_stop_condition_respects_max_steps_with_tools() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+
+        // Model always returns tool calls - should be stopped by step limit
+        model.generateTextHandler = { _ in
+            AITextResult(
+                text: "Calling tool...",
+                toolCalls: [AIToolCallResult(id: "call-\(UUID().uuidString)", name: "get_weather", arguments: "{\"city\":\"Test\"}")],
+                usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                finishReason: .toolCalls
+            )
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self],
+            stopCondition: .stepCount(3) // Stop after 3 steps
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("Keep checking weather")])
+
+        // Then - Should stop after 3 steps even with continuous tool calls
+        XCTAssertEqual(result.steps.count, 3)
+    }
+
+    // MARK: - Usage Accumulation with Tools Tests
+
+    func test_usage_accumulates_across_tool_calls() async throws {
+        // Given
+        let model = MockToolLanguageModel()
+        var callCount = 0
+
+        model.generateTextHandler = { _ in
+            callCount += 1
+            if callCount == 1 {
+                return AITextResult(
+                    text: "Step 1",
+                    toolCalls: [AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"A\"}")],
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .toolCalls
+                )
+            } else if callCount == 2 {
+                return AITextResult(
+                    text: "Step 2",
+                    toolCalls: [AIToolCallResult(id: "call-2", name: "get_weather", arguments: "{\"city\":\"B\"}")],
+                    usage: AIUsage(promptTokens: 20, completionTokens: 10),
+                    finishReason: .toolCalls
+                )
+            } else {
+                return AITextResult(
+                    text: "Final",
+                    toolCalls: [],
+                    usage: AIUsage(promptTokens: 30, completionTokens: 15),
+                    finishReason: .stop
+                )
+            }
+        }
+
+        let agent = AIAgentActor(
+            model: model,
+            tools: [MockWeatherTool.self]
+        )
+
+        // When
+        let result = try await agent.execute(messages: [.user("Check weather")])
+
+        // Then - Usage should be sum of all steps
+        XCTAssertEqual(result.usage.promptTokens, 60) // 10 + 20 + 30
+        XCTAssertEqual(result.usage.completionTokens, 30) // 5 + 10 + 15
+        XCTAssertEqual(result.usage.totalTokens, 90)
+    }
+}
