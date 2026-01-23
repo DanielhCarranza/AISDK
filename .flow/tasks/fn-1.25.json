@@ -1,16 +1,26 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-23T19:00:00.000000Z",
   "created_at": "2026-01-23T03:05:46.806773Z",
   "depends_on": [
     "fn-1.17"
   ],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [],
+    "files": [
+      "Sources/AISDK/Core/Reliability/AdaptiveCircuitBreaker.swift",
+      "Tests/AISDKTests/Core/Reliability/AdaptiveCircuitBreakerTests.swift"
+    ],
+    "tests": [
+      "swift test --filter CircuitBreaker"
+    ]
+  },
   "id": "fn-1.25",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.25.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 3.1: AdaptiveCircuitBreaker",
-  "updated_at": "2026-01-23T03:06:22.846432Z"
+  "updated_at": "2026-01-23T19:00:00.000000Z"
 }

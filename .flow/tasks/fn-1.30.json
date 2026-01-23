@@ -1,14 +1,24 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-23T19:12:00.000000Z",
   "created_at": "2026-01-23T03:05:47.662495Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [],
+    "files": [
+      "Sources/AISDK/Core/Reliability/CapabilityAwareFailover.swift",
+      "Tests/AISDKTests/Core/Reliability/CapabilityAwareFailoverTests.swift"
+    ],
+    "tests": [
+      "swift test --filter CapabilityAwareFailover"
+    ]
+  },
   "id": "fn-1.30",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.30.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 3.6: CapabilityAwareFailover",
-  "updated_at": "2026-01-23T03:05:47.662669Z"
+  "updated_at": "2026-01-23T19:15:00.000000Z"
 }

@@ -15,7 +15,7 @@ import shlex
 import shutil
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -151,7 +151,7 @@ def error_exit(message: str, code: int = 1, use_json: bool = True) -> None:
 
 def now_iso() -> str:
     """Current timestamp in ISO format."""
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def require_rp_cli() -> str:
@@ -1310,9 +1310,7 @@ def cmd_memory_add(args: argparse.Namespace) -> None:
         )
 
     # Format entry
-    from datetime import datetime
-
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Normalize type name
     type_name = args.type.lower().rstrip("s")  # pitfalls -> pitfall
