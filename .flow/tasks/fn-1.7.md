@@ -12,13 +12,8 @@ Create dedicated AIObjectRequest and AIObjectResult models for structured object
 - [x] Remove duplicate definitions from AILanguageModel.swift
 
 ## Done summary
-Created AIObjectRequest and AIObjectResult as standalone models in Sources/AISDK/Core/Models/, mirroring the pattern from AITextRequest/AITextResult. Key features:
-- AIObjectRequest: Generic request for structured object generation with PHI protection (sensitivity, allowedProviders), streaming buffer policy, and transformation methods
-- AIObjectResult: Generic result with usage tracking, metadata (requestId, model, provider, rawJSON), helper properties, and a map() method for transforming the result object
-- Removed duplicate definitions from AILanguageModel.swift and updated the default implementation to use the new model fields
-- Added 15 comprehensive tests covering initialization, PHI protection, transformations, and helper properties
-
+Created AIObjectRequest and AIObjectResult as standalone models with PHI protection. Added transformation methods, helper properties, and 15 comprehensive tests. Removed duplicate definitions from AILanguageModel.swift.
 ## Evidence
-- Commits: (to be added after commit)
-- Tests: AIObjectRequestTests.swift (8 tests), AIObjectResultTests.swift (7 tests) - all passing
+- Commits: f0e0ac5
+- Tests: swift test --filter AIObjectRequestTests|AIObjectResultTests
 - PRs:

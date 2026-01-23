@@ -100,7 +100,7 @@ struct AIObjectResultTests {
 
     // MARK: - Map Transformation
 
-    @Test("map transforms object to new type")
+    @Test("map transforms object to new type and clears rawJSON")
     func testMap() throws {
         let person = TestPerson(name: "John", age: 30)
         let usage = AIUsage(promptTokens: 10, completionTokens: 20)
@@ -111,7 +111,7 @@ struct AIObjectResultTests {
             requestId: "req-123",
             model: "gpt-4",
             provider: "openai",
-            rawJSON: "{}"
+            rawJSON: "{\"name\":\"John\",\"age\":30}"
         )
 
         let mappedResult = originalResult.map { person in
@@ -120,12 +120,14 @@ struct AIObjectResultTests {
 
         #expect(mappedResult.object.street == "John Street")
         #expect(mappedResult.object.city == "Test City")
-        // Metadata should be preserved
+        // Metadata should be preserved (except rawJSON which is cleared)
         #expect(mappedResult.usage == usage)
         #expect(mappedResult.finishReason == .stop)
         #expect(mappedResult.requestId == "req-123")
         #expect(mappedResult.model == "gpt-4")
         #expect(mappedResult.provider == "openai")
+        // rawJSON is cleared since it no longer matches the transformed object
+        #expect(mappedResult.rawJSON == nil)
     }
 
     // MARK: - Equatable

@@ -136,11 +136,15 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
     public func generateObject<T: Codable & Sendable>(
         request: AIObjectRequest<T>
     ) async throws -> AIObjectResult<T> {
+        // Validate PHI/provider access before any provider I/O
+        try validateProviderAccess(request: request)
+
         // Convert to legacy request with JSON response format
         let messages = request.messages.map { convertToLegacyMessage($0) }
 
+        let effectiveModel = request.model ?? defaultModel
         let chatRequest = ChatCompletionRequest(
-            model: request.model ?? defaultModel,
+            model: effectiveModel,
             messages: messages,
             maxTokens: request.maxTokens,
             responseFormat: .jsonSchema(
@@ -153,10 +157,17 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         // Use the legacy generateObject method
         let object: T = try await llm.generateObject(request: chatRequest)
 
+        // Encode the object to get rawJSON for debugging
+        let encoder = JSONEncoder()
+        let rawJSON = try? String(data: encoder.encode(object), encoding: .utf8)
+
         return AIObjectResult(
             object: object,
             usage: .zero,  // Legacy API doesn't provide usage in generateObject
-            finishReason: .stop
+            finishReason: .stop,
+            model: effectiveModel,
+            provider: provider,
+            rawJSON: rawJSON
         )
     }
 
@@ -194,31 +205,46 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
 
     /// Validates that this provider can handle the request based on sensitivity and provider restrictions
     private func validateProviderAccess(request: AITextRequest) throws {
+        try validateProviderAccessInternal(
+            canUseProvider: request.canUseProvider(provider),
+            allowedProviders: request.allowedProviders,
+            sensitivity: request.sensitivity
+        )
+    }
+
+    /// Validates that this provider can handle the object request based on sensitivity and provider restrictions
+    private func validateProviderAccess<T>(request: AIObjectRequest<T>) throws {
+        try validateProviderAccessInternal(
+            canUseProvider: request.canUseProvider(provider),
+            allowedProviders: request.allowedProviders,
+            sensitivity: request.sensitivity
+        )
+    }
+
+    /// Internal helper for provider access validation
+    private func validateProviderAccessInternal(
+        canUseProvider: Bool,
+        allowedProviders: Set<String>?,
+        sensitivity: DataSensitivity
+    ) throws {
         // Check if this provider is in the allowlist (if specified)
-        if !request.canUseProvider(provider) {
+        if !canUseProvider {
             throw AIProviderAccessError.providerNotAllowed(
                 provider: provider,
-                allowedProviders: request.allowedProviders ?? []
+                allowedProviders: allowedProviders ?? []
             )
         }
 
         // Validate sensitivity requirements
-        switch request.sensitivity {
+        switch sensitivity {
         case .standard:
             // Standard data can use any provider
             break
-        case .sensitive:
-            // Sensitive data requires explicit provider allowlisting
-            if request.allowedProviders == nil {
+        case .sensitive, .phi:
+            // Sensitive and PHI data require explicit provider allowlisting
+            if allowedProviders == nil {
                 throw AIProviderAccessError.sensitiveDataRequiresAllowlist(
-                    sensitivity: request.sensitivity
-                )
-            }
-        case .phi:
-            // PHI requires explicit provider allowlisting
-            if request.allowedProviders == nil {
-                throw AIProviderAccessError.sensitiveDataRequiresAllowlist(
-                    sensitivity: request.sensitivity
+                    sensitivity: sensitivity
                 )
             }
         }
