@@ -298,77 +298,8 @@ public extension AILanguageModel {
 
 // MARK: - Request Types
 
-/// Request for text generation
-public struct AITextRequest: Sendable {
-    /// The messages to send to the model
-    public let messages: [AIMessage]
-
-    /// The model to use (optional, uses default if nil)
-    public let model: String?
-
-    /// Maximum tokens to generate
-    public let maxTokens: Int?
-
-    /// Temperature for generation (0-2)
-    public let temperature: Double?
-
-    /// Top-p sampling parameter
-    public let topP: Double?
-
-    /// Stop sequences
-    public let stop: [String]?
-
-    /// Tools available for the model to use
-    public let tools: [ToolSchema]?
-
-    /// Tool choice behavior
-    public let toolChoice: ToolChoice?
-
-    /// Response format specification
-    public let responseFormat: ResponseFormat?
-
-    /// Allowed providers for PHI protection (nil allows all)
-    public let allowedProviders: Set<String>?
-
-    /// Data sensitivity classification
-    public let sensitivity: DataSensitivity
-
-    /// Stream buffer policy for memory control
-    public let bufferPolicy: StreamBufferPolicy?
-
-    /// Request metadata for tracing
-    public let metadata: [String: String]?
-
-    public init(
-        messages: [AIMessage],
-        model: String? = nil,
-        maxTokens: Int? = nil,
-        temperature: Double? = nil,
-        topP: Double? = nil,
-        stop: [String]? = nil,
-        tools: [ToolSchema]? = nil,
-        toolChoice: ToolChoice? = nil,
-        responseFormat: ResponseFormat? = nil,
-        allowedProviders: Set<String>? = nil,
-        sensitivity: DataSensitivity = .standard,
-        bufferPolicy: StreamBufferPolicy? = nil,
-        metadata: [String: String]? = nil
-    ) {
-        self.messages = messages
-        self.model = model
-        self.maxTokens = maxTokens
-        self.temperature = temperature
-        self.topP = topP
-        self.stop = stop
-        self.tools = tools
-        self.toolChoice = toolChoice
-        self.responseFormat = responseFormat
-        self.allowedProviders = allowedProviders
-        self.sensitivity = sensitivity
-        self.bufferPolicy = bufferPolicy
-        self.metadata = metadata
-    }
-}
+// Note: AITextRequest, DataSensitivity, and StreamBufferPolicy are defined in
+// Sources/AISDK/Core/Models/AITextRequest.swift
 
 /// Request for structured object generation
 public struct AIObjectRequest<T: Codable & Sendable>: Sendable {
@@ -409,47 +340,7 @@ public struct AIObjectRequest<T: Codable & Sendable>: Sendable {
 
 // MARK: - Result Types
 
-/// Result from text generation
-public struct AITextResult: Sendable {
-    /// The generated text content
-    public let text: String
-
-    /// Tool calls made by the model
-    public let toolCalls: [AIToolCallResult]
-
-    /// Token usage information
-    public let usage: AIUsage
-
-    /// Reason for completion
-    public let finishReason: AIFinishReason
-
-    /// Request ID for tracing
-    public let requestId: String?
-
-    /// Model used for generation
-    public let model: String?
-
-    /// Provider that handled the request
-    public let provider: String?
-
-    public init(
-        text: String,
-        toolCalls: [AIToolCallResult] = [],
-        usage: AIUsage = .zero,
-        finishReason: AIFinishReason = .stop,
-        requestId: String? = nil,
-        model: String? = nil,
-        provider: String? = nil
-    ) {
-        self.text = text
-        self.toolCalls = toolCalls
-        self.usage = usage
-        self.finishReason = finishReason
-        self.requestId = requestId
-        self.model = model
-        self.provider = provider
-    }
-}
+// Note: AITextResult is defined in Sources/AISDK/Core/Models/AITextResult.swift
 
 /// Result from structured object generation
 public struct AIObjectResult<T: Codable & Sendable>: Sendable {
@@ -475,41 +366,5 @@ public struct AIObjectResult<T: Codable & Sendable>: Sendable {
 
 // MARK: - Supporting Types
 
-/// Data sensitivity classification for PHI protection
-public enum DataSensitivity: String, Sendable, Codable {
-    /// Standard data, can use any provider
-    case standard
-    /// Sensitive data, requires trusted providers
-    case sensitive
-    /// PHI data, requires HIPAA-compliant providers
-    case phi
-}
-
-/// Stream buffer policy for memory control
-public struct StreamBufferPolicy: Sendable {
-    /// Maximum number of events to buffer
-    public let capacity: Int
-
-    /// Action when buffer is full
-    public let overflowBehavior: OverflowBehavior
-
-    public enum OverflowBehavior: Sendable {
-        /// Drop oldest events when full
-        case dropOldest
-        /// Drop newest events when full
-        case dropNewest
-        /// Block until space available
-        case suspendProducer
-    }
-
-    public init(capacity: Int, overflowBehavior: OverflowBehavior = .suspendProducer) {
-        self.capacity = capacity
-        self.overflowBehavior = overflowBehavior
-    }
-
-    /// Default bounded policy with 1000 event capacity
-    public static let bounded = StreamBufferPolicy(capacity: 1000)
-
-    /// Unbounded policy (use with caution)
-    public static let unbounded = StreamBufferPolicy(capacity: Int.max)
-}
+// Note: DataSensitivity and StreamBufferPolicy are defined in
+// Sources/AISDK/Core/Models/AITextRequest.swift

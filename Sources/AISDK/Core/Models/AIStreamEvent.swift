@@ -216,7 +216,7 @@ public struct AIStepResult: Sendable {
 }
 
 /// Tool call result data
-public struct AIToolCallResult: Sendable, Codable {
+public struct AIToolCallResult: Sendable, Codable, Equatable {
     public let id: String
     public let name: String
     public let arguments: String
