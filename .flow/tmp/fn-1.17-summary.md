@@ -1,12 +1,3 @@
-# fn-1.17 Task 2.1: ProviderClient Protocol
-
-## Description
-TBD
-
-## Acceptance
-- [ ] TBD
-
-## Done summary
 # Task fn-1.17: ProviderClient Protocol
 
 ## Summary
@@ -45,7 +36,3 @@ Implemented the ProviderClient protocol for Phase 2 (Provider & Routing Layer) o
 
 - Build: `swift build` - Success
 - Tests: `swift test --filter ProviderClientTests` - 26 tests passed
-## Evidence
-- Commits:
-- Tests: swift test --filter ProviderClientTests (26 tests passed)
-- PRs:
