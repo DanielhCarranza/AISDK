@@ -31,35 +31,73 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public let modelId: String
     public let capabilities: LLMCapabilities
 
-    // MARK: - Configuration
+    // MARK: - Configuration (Thread-Safe)
+    // All configuration properties are private and accessed via thread-safe setters/getters
+
+    private var _responseText: String
+    private var _toolCalls: [AIToolCallResult]
+    private var _streamEvents: [AIStreamEvent]
+    private var _usage: AIUsage
+    private var _finishReason: AIFinishReason
+    private var _delay: Duration
+    private var _interEventDelay: Duration
+    private var _autoEmitStart: Bool
+    private var _errorToThrow: Error?
 
     /// The response text to return for generateText calls
-    public var responseText: String
+    public var responseText: String {
+        get { lock.lock(); defer { lock.unlock() }; return _responseText }
+        set { lock.lock(); defer { lock.unlock() }; _responseText = newValue }
+    }
 
     /// Tool calls to include in responses
-    public var toolCalls: [AIToolCallResult]
+    public var toolCalls: [AIToolCallResult] {
+        get { lock.lock(); defer { lock.unlock() }; return _toolCalls }
+        set { lock.lock(); defer { lock.unlock() }; _toolCalls = newValue }
+    }
 
     /// Stream events to emit for streaming calls
-    public var streamEvents: [AIStreamEvent]
+    public var streamEvents: [AIStreamEvent] {
+        get { lock.lock(); defer { lock.unlock() }; return _streamEvents }
+        set { lock.lock(); defer { lock.unlock() }; _streamEvents = newValue }
+    }
 
     /// Usage stats to return
-    public var usage: AIUsage
+    public var usage: AIUsage {
+        get { lock.lock(); defer { lock.unlock() }; return _usage }
+        set { lock.lock(); defer { lock.unlock() }; _usage = newValue }
+    }
 
     /// Finish reason to return
-    public var finishReason: AIFinishReason
+    public var finishReason: AIFinishReason {
+        get { lock.lock(); defer { lock.unlock() }; return _finishReason }
+        set { lock.lock(); defer { lock.unlock() }; _finishReason = newValue }
+    }
 
     /// Delay before responding (for timeout testing)
-    public var delay: Duration
+    public var delay: Duration {
+        get { lock.lock(); defer { lock.unlock() }; return _delay }
+        set { lock.lock(); defer { lock.unlock() }; _delay = newValue }
+    }
 
     /// Delay between stream events (default: zero for fast tests)
-    public var interEventDelay: Duration
+    public var interEventDelay: Duration {
+        get { lock.lock(); defer { lock.unlock() }; return _interEventDelay }
+        set { lock.lock(); defer { lock.unlock() }; _interEventDelay = newValue }
+    }
 
     /// Whether to auto-emit start event in streams (default: true)
     /// Set to false when using custom streamEvents that include .start
-    public var autoEmitStart: Bool
+    public var autoEmitStart: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _autoEmitStart }
+        set { lock.lock(); defer { lock.unlock() }; _autoEmitStart = newValue }
+    }
 
     /// Error to throw instead of returning a response
-    public var errorToThrow: Error?
+    public var errorToThrow: Error? {
+        get { lock.lock(); defer { lock.unlock() }; return _errorToThrow }
+        set { lock.lock(); defer { lock.unlock() }; _errorToThrow = newValue }
+    }
 
     // MARK: - Tracking
 
@@ -91,15 +129,15 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
         self.provider = providerId
         self.modelId = modelId
         self.capabilities = capabilities
-        self.responseText = "Mock response"
-        self.toolCalls = []
-        self.streamEvents = []
-        self.usage = AIUsage(promptTokens: 10, completionTokens: 20)
-        self.finishReason = .stop
-        self.delay = .zero
-        self.interEventDelay = .zero
-        self.autoEmitStart = true
-        self.errorToThrow = nil
+        self._responseText = "Mock response"
+        self._toolCalls = []
+        self._streamEvents = []
+        self._usage = AIUsage(promptTokens: 10, completionTokens: 20)
+        self._finishReason = .stop
+        self._delay = .zero
+        self._interEventDelay = .zero
+        self._autoEmitStart = true
+        self._errorToThrow = nil
     }
 
     // MARK: - Configuration Snapshot
@@ -122,15 +160,15 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return ConfigSnapshot(
-            responseText: responseText,
-            toolCalls: toolCalls,
-            streamEvents: streamEvents,
-            usage: usage,
-            finishReason: finishReason,
-            delay: delay,
-            interEventDelay: interEventDelay,
-            autoEmitStart: autoEmitStart,
-            errorToThrow: errorToThrow
+            responseText: _responseText,
+            toolCalls: _toolCalls,
+            streamEvents: _streamEvents,
+            usage: _usage,
+            finishReason: _finishReason,
+            delay: _delay,
+            interEventDelay: _interEventDelay,
+            autoEmitStart: _autoEmitStart,
+            errorToThrow: _errorToThrow
         )
     }
 
