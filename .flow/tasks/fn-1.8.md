@@ -42,8 +42,7 @@ Extracted and enhanced AIStepResult from AIStreamEvent.swift to its own dedicate
   - Equatable conformance
   - Finish reason handling
   - Empty result validation
-
 ## Evidence
-- Commits: (pending)
-- Tests: swift test --filter AIStepResultTests (19 tests pass)
+- Commits: d830ceacd6a36afd46aa175c48058c0e1c34cbfe
+- Tests:
 - PRs:

@@ -205,7 +205,11 @@ public struct AIToolCallResult: Sendable, Codable, Equatable {
 }
 
 /// Tool execution result data
-public struct AIToolResultData: Sendable {
+///
+/// Note: The `metadata` field is intentionally excluded from Codable and Equatable
+/// conformances because ToolMetadata may contain non-Codable/non-Equatable types.
+/// When encoding/decoding, metadata will be nil.
+public struct AIToolResultData: Sendable, Codable, Equatable {
     public let id: String
     public let result: String
     public let metadata: ToolMetadata?
@@ -214,5 +218,34 @@ public struct AIToolResultData: Sendable {
         self.id = id
         self.result = result
         self.metadata = metadata
+    }
+
+    // MARK: - Codable
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case result
+        // Note: metadata is intentionally not encoded as ToolMetadata is not Codable-safe
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.result = try container.decode(String.self, forKey: .result)
+        self.metadata = nil  // Metadata cannot be decoded
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(result, forKey: .result)
+        // Note: metadata is intentionally not encoded
+    }
+
+    // MARK: - Equatable
+
+    public static func == (lhs: AIToolResultData, rhs: AIToolResultData) -> Bool {
+        // Compare id and result only; metadata excluded as it may contain non-Equatable types
+        lhs.id == rhs.id && lhs.result == rhs.result
     }
 }
