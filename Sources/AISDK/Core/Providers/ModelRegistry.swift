@@ -8,6 +8,44 @@
 
 import Foundation
 
+// MARK: - ResolvedModel
+
+/// A resolved model with routing information
+///
+/// Contains all information needed to route a request to a specific model,
+/// including the canonical ID that can be used with provider clients.
+public struct ResolvedModel: Sendable {
+    /// The provider that serves this model
+    public let provider: LLMProvider
+
+    /// The model ID to use in API requests (e.g., "gpt-4o", "claude-3-opus")
+    public let modelId: String
+
+    /// The canonical registry ID (e.g., "openai/gpt-4o")
+    public let canonicalId: String
+
+    /// Model capabilities
+    public let capabilities: LLMCapabilities
+
+    /// Performance tier
+    public let tier: LLMPerformanceTier?
+
+    /// Expected latency
+    public let latency: LLMLatency?
+
+    /// Maximum input context window
+    public let maxContextTokens: Int?
+
+    /// Maximum output tokens
+    public let maxOutputTokens: Int?
+
+    /// Whether this model is currently available
+    public let isAvailable: Bool
+
+    /// Human-readable display name
+    public let displayName: String
+}
+
 // MARK: - ModelRegistry
 
 /// Centralized registry for AI models across all providers
@@ -20,7 +58,7 @@ import Foundation
 /// ## Features
 /// - Provider registration and discovery
 /// - Model lookup by ID, alias, or capabilities
-/// - Capability-aware model recommendations
+/// - Capability-aware model recommendations via `resolve()`
 /// - Thread-safe access via actor isolation
 ///
 /// ## Usage
@@ -28,13 +66,19 @@ import Foundation
 /// let registry = ModelRegistry.shared
 /// await registry.registerProvider(openRouterProvider)
 ///
+/// // Resolve a model for routing
+/// if let resolved = await registry.resolve(
+///     category: .chat,
+///     capabilities: [.vision, .tools],
+///     preferredProvider: .anthropic
+/// ) {
+///     print("Use \(resolved.modelId) via \(resolved.provider)")
+/// }
+///
 /// // Find a model by ID
 /// if let model = await registry.model(named: "anthropic/claude-3-opus") {
 ///     print(model.capabilities)
 /// }
-///
-/// // Find models with specific capabilities
-/// let visionModels = await registry.models(with: .vision)
 /// ```
 ///
 /// ## Design Note
@@ -53,94 +97,65 @@ public actor ModelRegistry {
     private var primaryIndex: [String: RegisteredModel] = [:]
     /// Lookup index: all names/aliases -> canonical ID
     private var lookupIndex: [String: String] = [:]
-    /// Alias-only index: alias -> canonical ID (excludes canonical IDs themselves)
+    /// Alias-only index: alias -> canonical ID (excludes canonical IDs and bare names)
     private var aliasIndex: [String: String] = [:]
+    /// Set of providers that have models registered (includes via register(model:) calls)
+    private var knownProviders: Set<LLMProvider> = []
 
     // MARK: - Initialization
 
     public init() {}
 
-    // MARK: - Provider Access
+    // MARK: - Model Resolution (Primary Routing API)
 
-    /// Get all registered providers
-    public var registeredProviders: [LLMProvider] {
-        Array(providerRegistry.keys)
-    }
-
-    /// Get all registered models (unique, deduplicated)
-    public var registeredModels: [LLMModelProtocol] {
-        primaryIndex.values.map { $0.model }
-    }
-
-    /// Get provider models container for a specific provider
-    public func providerModels(for provider: LLMProvider) -> (any LLMProviderModels)? {
-        providerRegistry[provider]
-    }
-
-    /// Register a provider with all its models
-    public func registerProvider(_ providerModels: any LLMProviderModels) {
-        let provider = providerModels.provider
-        providerRegistry[provider] = providerModels
-
-        // Index all models from this provider
-        for model in providerModels.allModels {
-            let canonicalId = "\(provider.rawValue.lowercased())/\(model.name)"
-            let registered = RegisteredModel(model: model, provider: provider, canonicalId: canonicalId)
-
-            // Primary index stores unique models by canonical ID
-            primaryIndex[canonicalId] = registered
-
-            // Lookup index allows finding by canonical ID
-            lookupIndex[canonicalId] = canonicalId
-
-            // Also index by bare model name for convenience lookup (if not taken)
-            if lookupIndex[model.name] == nil {
-                lookupIndex[model.name] = canonicalId
-            }
-
-            // Index aliases
-            for alias in model.aliases {
-                lookupIndex[alias] = canonicalId
-                aliasIndex[alias] = canonicalId
-            }
-        }
-    }
-
-    // MARK: - Model Lookup
-
-    /// Find a model by name, optionally scoped to a specific provider
-    public func model(named name: String, from provider: LLMProvider? = nil) -> LLMModelProtocol? {
-        // If provider specified, look in that provider's namespace
-        if let provider = provider {
-            let canonicalId = "\(provider.rawValue.lowercased())/\(name)"
-            if let registered = primaryIndex[canonicalId] {
-                return registered.model
-            }
-        }
-
-        // Try lookup index (handles canonical IDs, bare names, and aliases)
-        if let canonicalId = lookupIndex[name], let registered = primaryIndex[canonicalId] {
-            return registered.model
-        }
-
-        return nil
-    }
-
-    public func recommendedModel(
-        for category: LLMUsageCategory,
-        with capabilities: LLMCapabilities
-    ) -> LLMModelProtocol? {
+    /// Resolve the best model for a request with routing information
+    ///
+    /// This is the primary API for the routing layer. It returns a `ResolvedModel`
+    /// containing all information needed to route a request to the appropriate provider.
+    ///
+    /// - Parameters:
+    ///   - category: The usage category (e.g., .chat, .reasoning)
+    ///   - capabilities: Required capabilities the model must have
+    ///   - preferredProvider: Optional preferred provider
+    ///   - minimumTier: Optional minimum performance tier
+    ///   - minimumContext: Optional minimum context window size
+    /// - Returns: A resolved model ready for routing, or nil if no match found
+    public func resolve(
+        category: LLMUsageCategory,
+        capabilities: LLMCapabilities,
+        preferredProvider: LLMProvider? = nil,
+        minimumTier: LLMPerformanceTier? = nil,
+        minimumContext: Int? = nil
+    ) -> ResolvedModel? {
         // Find all models matching the criteria
         let candidates = primaryIndex.values.filter { registered in
             let model = registered.model
-            return model.category == category &&
-                   model.hasAllCapabilities(capabilities) &&
-                   model.isAvailable
+            // Category match
+            guard model.category == category else { return false }
+            // Capabilities match
+            guard model.hasAllCapabilities(capabilities) else { return false }
+            // Must be available
+            guard model.isAvailable else { return false }
+            // Minimum tier filter
+            if let minTier = minimumTier {
+                guard let modelTier = model.tier, modelTier >= minTier else { return false }
+            }
+            // Minimum context filter
+            if let minContext = minimumContext {
+                guard let limit = model.inputTokenLimit, limit >= minContext else { return false }
+            }
+            return true
         }
 
-        // Prefer higher tier models, then stable over preview
+        // Sort by preference
         let sorted = candidates.sorted { lhs, rhs in
-            // First by tier (higher is better)
+            // Preferred provider gets priority
+            if let preferred = preferredProvider {
+                if lhs.provider == preferred && rhs.provider != preferred { return true }
+                if rhs.provider == preferred && lhs.provider != preferred { return false }
+            }
+
+            // Then by tier (higher is better)
             if let lhsTier = lhs.model.tier, let rhsTier = rhs.model.tier {
                 if lhsTier != rhsTier {
                     return lhsTier > rhsTier
@@ -158,7 +173,130 @@ public actor ModelRegistry {
             return lhsOrder < rhsOrder
         }
 
-        return sorted.first?.model
+        guard let best = sorted.first else { return nil }
+
+        return ResolvedModel(
+            provider: best.provider,
+            modelId: best.model.name,
+            canonicalId: best.canonicalId,
+            capabilities: best.model.capabilities,
+            tier: best.model.tier,
+            latency: best.model.latency,
+            maxContextTokens: best.model.inputTokenLimit,
+            maxOutputTokens: best.model.outputTokenLimit,
+            isAvailable: best.model.isAvailable,
+            displayName: best.model.displayName
+        )
+    }
+
+    /// Get resolved model info by name or alias
+    ///
+    /// Returns routing information for a specific model, useful when the caller
+    /// already knows which model they want.
+    public func resolvedModel(named name: String, from provider: LLMProvider? = nil) -> ResolvedModel? {
+        guard let registered = lookupRegisteredModel(named: name, from: provider) else {
+            return nil
+        }
+
+        return ResolvedModel(
+            provider: registered.provider,
+            modelId: registered.model.name,
+            canonicalId: registered.canonicalId,
+            capabilities: registered.model.capabilities,
+            tier: registered.model.tier,
+            latency: registered.model.latency,
+            maxContextTokens: registered.model.inputTokenLimit,
+            maxOutputTokens: registered.model.outputTokenLimit,
+            isAvailable: registered.model.isAvailable,
+            displayName: registered.model.displayName
+        )
+    }
+
+    // MARK: - Provider Access
+
+    /// Get all providers that have models registered
+    public var registeredProviders: [LLMProvider] {
+        Array(knownProviders)
+    }
+
+    /// Get all registered models (unique, deduplicated)
+    public var registeredModels: [LLMModelProtocol] {
+        primaryIndex.values.map { $0.model }
+    }
+
+    /// Get provider models container for a specific provider
+    public func providerModels(for provider: LLMProvider) -> (any LLMProviderModels)? {
+        providerRegistry[provider]
+    }
+
+    /// Register a provider with all its models
+    ///
+    /// Note: Re-registering a provider will first remove all existing models
+    /// from that provider before adding the new ones.
+    public func registerProvider(_ providerModels: any LLMProviderModels) {
+        let provider = providerModels.provider
+
+        // Remove existing models from this provider first (handles re-registration)
+        removeModelsForProvider(provider)
+
+        providerRegistry[provider] = providerModels
+        knownProviders.insert(provider)
+
+        // Index all models from this provider
+        for model in providerModels.allModels {
+            let canonicalId = makeCanonicalId(name: model.name, provider: provider)
+            let registered = RegisteredModel(model: model, provider: provider, canonicalId: canonicalId)
+
+            // Primary index stores unique models by canonical ID
+            primaryIndex[canonicalId] = registered
+
+            // Lookup index allows finding by canonical ID
+            lookupIndex[canonicalId] = canonicalId
+
+            // Also index by bare model name for convenience lookup (if not taken)
+            let bareName = extractBareName(from: model.name)
+            if lookupIndex[bareName] == nil {
+                lookupIndex[bareName] = canonicalId
+            }
+
+            // Index aliases
+            for alias in model.aliases {
+                lookupIndex[alias] = canonicalId
+                aliasIndex[alias] = canonicalId
+            }
+        }
+    }
+
+    // MARK: - Model Lookup
+
+    /// Find a model by name, optionally scoped to a specific provider
+    public func model(named name: String, from provider: LLMProvider? = nil) -> LLMModelProtocol? {
+        lookupRegisteredModel(named: name, from: provider)?.model
+    }
+
+    /// Get the canonical model ID for any name or alias
+    ///
+    /// This resolves bare names, aliases, and already-canonical IDs to
+    /// the canonical form used in the registry.
+    public func canonicalId(forNameOrAlias name: String) -> String? {
+        lookupIndex[name]
+    }
+
+    /// Get the canonical model ID for an alias only (not bare names or canonical IDs)
+    public func canonicalId(forAlias alias: String) -> String? {
+        aliasIndex[alias]
+    }
+
+    /// Legacy compatibility - prefer recommendedModel or resolve()
+    @available(*, deprecated, renamed: "resolve(category:capabilities:)")
+    public func recommendedModel(
+        for category: LLMUsageCategory,
+        with capabilities: LLMCapabilities
+    ) -> LLMModelProtocol? {
+        resolve(category: category, capabilities: capabilities)
+            .map { resolved in
+                primaryIndex[resolved.canonicalId]?.model
+            } ?? nil
     }
 
     // MARK: - Extended Query Methods
@@ -195,10 +333,16 @@ public actor ModelRegistry {
     }
 
     /// Find models within a token limit
-    public func models(withMinimumContext tokens: Int) -> [LLMModelProtocol] {
+    ///
+    /// - Parameters:
+    ///   - tokens: Minimum context window size
+    ///   - includeUnknown: If true, includes models with unknown context limits
+    public func models(withMinimumContext tokens: Int, includeUnknown: Bool = false) -> [LLMModelProtocol] {
         primaryIndex.values
             .filter { registered in
-                guard let limit = registered.model.inputTokenLimit else { return true }
+                guard let limit = registered.model.inputTokenLimit else {
+                    return includeUnknown
+                }
                 return limit >= tokens
             }
             .map { $0.model }
@@ -209,11 +353,6 @@ public actor ModelRegistry {
         lookupIndex[modelId] != nil
     }
 
-    /// Get the canonical model ID for an alias
-    public func canonicalId(for alias: String) -> String? {
-        lookupIndex[alias]
-    }
-
     // MARK: - Model Registration
 
     /// Register a single model directly
@@ -222,8 +361,11 @@ public actor ModelRegistry {
         provider: LLMProvider,
         canonicalId: String? = nil
     ) {
-        let id = canonicalId ?? "\(provider.rawValue.lowercased())/\(model.name)"
+        let id = canonicalId ?? makeCanonicalId(name: model.name, provider: provider)
         let registered = RegisteredModel(model: model, provider: provider, canonicalId: id)
+
+        // Track this provider
+        knownProviders.insert(provider)
 
         // Primary index stores unique models
         primaryIndex[id] = registered
@@ -232,8 +374,9 @@ public actor ModelRegistry {
         lookupIndex[id] = id
 
         // Also index by bare name if not already taken
-        if lookupIndex[model.name] == nil {
-            lookupIndex[model.name] = id
+        let bareName = extractBareName(from: model.name)
+        if lookupIndex[bareName] == nil {
+            lookupIndex[bareName] = id
         }
 
         // Index aliases
@@ -244,15 +387,21 @@ public actor ModelRegistry {
     }
 
     /// Register an alias for an existing model
-    public func registerAlias(_ alias: String, for modelId: String) {
+    ///
+    /// - Parameters:
+    ///   - alias: The alias to register
+    ///   - modelId: The canonical model ID to point to
+    ///   - overwrite: If true, overwrites existing alias; if false, fails silently on collision
+    public func registerAlias(_ alias: String, for modelId: String, overwrite: Bool = false) {
         guard primaryIndex[modelId] != nil else { return }
+        guard overwrite || lookupIndex[alias] == nil else { return }
         lookupIndex[alias] = modelId
         aliasIndex[alias] = modelId
     }
 
     /// Remove a model from the registry
     public func unregister(modelId: String) {
-        guard let registered = primaryIndex[modelId] else { return }
+        guard primaryIndex[modelId] != nil else { return }
 
         // Remove from primary index
         primaryIndex.removeValue(forKey: modelId)
@@ -270,6 +419,7 @@ public actor ModelRegistry {
         primaryIndex.removeAll()
         lookupIndex.removeAll()
         aliasIndex.removeAll()
+        knownProviders.removeAll()
     }
 
     // MARK: - Batch Operations
@@ -296,9 +446,57 @@ public actor ModelRegistry {
         return RegistryStatistics(
             totalModels: primaryIndex.count,
             totalAliases: aliasIndex.count,
-            totalProviders: providerRegistry.count,
+            totalProviders: knownProviders.count,
             modelsByProvider: modelsByProvider.mapValues { $0.count }
         )
+    }
+
+    // MARK: - Private Helpers
+
+    private func lookupRegisteredModel(named name: String, from provider: LLMProvider?) -> RegisteredModel? {
+        // If provider specified, look in that provider's namespace
+        if let provider = provider {
+            let canonicalId = makeCanonicalId(name: name, provider: provider)
+            if let registered = primaryIndex[canonicalId] {
+                return registered
+            }
+        }
+
+        // Try lookup index (handles canonical IDs, bare names, and aliases)
+        if let canonicalId = lookupIndex[name], let registered = primaryIndex[canonicalId] {
+            return registered
+        }
+
+        return nil
+    }
+
+    /// Create a canonical ID from a model name and provider
+    ///
+    /// Handles the case where the name already contains a provider prefix.
+    private func makeCanonicalId(name: String, provider: LLMProvider) -> String {
+        // If name already contains a "/", treat it as canonical
+        if name.contains("/") {
+            return name.lowercased()
+        }
+        return "\(provider.rawValue.lowercased())/\(name)"
+    }
+
+    /// Extract the bare model name from a potentially-prefixed name
+    private func extractBareName(from name: String) -> String {
+        if let slashIndex = name.lastIndex(of: "/") {
+            return String(name[name.index(after: slashIndex)...])
+        }
+        return name
+    }
+
+    /// Remove all models for a given provider
+    private func removeModelsForProvider(_ provider: LLMProvider) {
+        let toRemove = primaryIndex.filter { $0.value.provider == provider }.map { $0.key }
+        for canonicalId in toRemove {
+            primaryIndex.removeValue(forKey: canonicalId)
+            lookupIndex = lookupIndex.filter { $0.value != canonicalId }
+            aliasIndex = aliasIndex.filter { $0.value != canonicalId }
+        }
     }
 }
 
