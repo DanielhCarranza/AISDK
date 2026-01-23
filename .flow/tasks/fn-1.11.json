@@ -7,7 +7,8 @@
   "epic": "fn-1",
   "evidence": {
     "commits": [
-      "ea436f7691e48eefdeff92d4ca5454bb013ddd97"
+      "ea436f7691e48eefdeff92d4ca5454bb013ddd97",
+      "47bb43d135ba3a730cfa2e99a4c2d41ca59202b5"
     ],
     "prs": [],
     "tests": [
