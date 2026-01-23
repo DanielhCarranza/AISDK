@@ -36,8 +36,7 @@ Created the AIAgent protocol and AIAgentAdapter that wraps the existing Agent cl
    - Handles streaming with proper event emission
    - State change forwarding via onStateChange callback
    - Factory methods: fromOpenAI, fromAnthropic, from(generic)
-
 ## Evidence
-- Commits: (pending)
+- Commits: 7a73c66f45a841f659001fb3c98d93a890b93d4c
 - Tests: swift build
 - PRs:
