@@ -104,37 +104,26 @@ public extension AIStepResult {
     static let empty = AIStepResult(stepIndex: 0, text: "")
 }
 
-// MARK: - Codable Conformance for AIToolResultData
+// MARK: - Custom Codable for schema evolution
 
-extension AIToolResultData: Codable {
+extension AIStepResult {
     enum CodingKeys: String, CodingKey {
-        case id
-        case result
-        // Note: metadata is not encoded as it may contain non-Codable types
+        case stepIndex
+        case text
+        case toolCalls
+        case toolResults
+        case usage
+        case finishReason
     }
 
+    /// Custom decoder that handles missing/optional keys for backwards compatibility
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(
-            id: try container.decode(String.self, forKey: .id),
-            result: try container.decode(String.self, forKey: .result),
-            metadata: nil
-        )
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(result, forKey: .result)
-        // Note: metadata is intentionally not encoded
-    }
-}
-
-// MARK: - Equatable Conformance for AIToolResultData
-
-extension AIToolResultData: Equatable {
-    public static func == (lhs: AIToolResultData, rhs: AIToolResultData) -> Bool {
-        // Compare id and result; metadata comparison is omitted as it may contain non-Equatable types
-        lhs.id == rhs.id && lhs.result == rhs.result
+        self.stepIndex = try container.decode(Int.self, forKey: .stepIndex)
+        self.text = try container.decode(String.self, forKey: .text)
+        self.toolCalls = try container.decodeIfPresent([AIToolCallResult].self, forKey: .toolCalls) ?? []
+        self.toolResults = try container.decodeIfPresent([AIToolResultData].self, forKey: .toolResults) ?? []
+        self.usage = try container.decodeIfPresent(AIUsage.self, forKey: .usage) ?? .zero
+        self.finishReason = try container.decodeIfPresent(AIFinishReason.self, forKey: .finishReason) ?? .stop
     }
 }

@@ -276,6 +276,57 @@ struct AIStepResultTests {
         #expect(decoded.finishReason == original.finishReason)
     }
 
+    @Test("Tool results round-trip with metadata excluded")
+    func testToolResultsRoundTrip() throws {
+        let toolResults = [
+            AIToolResultData(id: "result-1", result: "Weather is sunny", metadata: nil),
+            AIToolResultData(id: "result-2", result: "Temperature is 72F", metadata: nil)
+        ]
+        let original = AIStepResult(
+            stepIndex: 1,
+            text: "Got weather data",
+            toolCalls: [AIToolCallResult(id: "result-1", name: "get_weather", arguments: "{}")],
+            toolResults: toolResults,
+            usage: AIUsage(promptTokens: 30, completionTokens: 15),
+            finishReason: .stop
+        )
+
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+
+        let data = try encoder.encode(original)
+        let decoded = try decoder.decode(AIStepResult.self, from: data)
+
+        // Verify toolResults are preserved
+        #expect(decoded.toolResults.count == 2)
+        #expect(decoded.toolResults[0].id == "result-1")
+        #expect(decoded.toolResults[0].result == "Weather is sunny")
+        #expect(decoded.toolResults[0].metadata == nil)  // Metadata is intentionally excluded
+        #expect(decoded.toolResults[1].id == "result-2")
+        #expect(decoded.toolResults[1].result == "Temperature is 72F")
+    }
+
+    @Test("Decoding with missing optional fields uses defaults")
+    func testDecodingWithMissingFields() throws {
+        // JSON with only required fields
+        let json = """
+        {
+            "stepIndex": 0,
+            "text": "Minimal"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let result = try decoder.decode(AIStepResult.self, from: json.data(using: .utf8)!)
+
+        #expect(result.stepIndex == 0)
+        #expect(result.text == "Minimal")
+        #expect(result.toolCalls.isEmpty)  // Default empty array
+        #expect(result.toolResults.isEmpty)  // Default empty array
+        #expect(result.usage == .zero)  // Default zero usage
+        #expect(result.finishReason == .stop)  // Default stop
+    }
+
     // MARK: - Equatable
 
     @Test("Results are equatable")
