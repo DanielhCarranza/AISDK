@@ -205,6 +205,11 @@ public actor OpenAIClientAdapter: ProviderClient {
         httpRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         httpRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        // Accept header for streaming (improves compatibility with some proxies)
+        if streaming {
+            httpRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        }
+
         // Optional organization header
         if let organization = organization {
             httpRequest.setValue(organization, forHTTPHeaderField: "OpenAI-Organization")
@@ -304,7 +309,7 @@ public actor OpenAIClientAdapter: ProviderClient {
             }
         }
 
-        // Tools from providerOptions - validate all tools convert successfully
+        // Tools - validate all tools convert successfully
         if let tools = request.tools {
             var convertedTools: [OpenAITool] = []
             for (index, toolValue) in tools.enumerated() {
@@ -525,9 +530,9 @@ public actor OpenAIClientAdapter: ProviderClient {
         }
 
         var responseId: String?
-        // Key by index for accumulation; store (id, name, arguments, pendingDeltas)
-        // pendingDeltas holds argument fragments before we can emit start
-        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool, pendingDeltas: [String])] = [:]
+        // Key by index for accumulation; store (id, name, arguments, startEmitted)
+        // Use simpler pattern like LiteLLMClient - accumulate args as string, not separate deltas
+        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool)] = [:]
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
         var decodeErrorCount = 0
@@ -569,52 +574,66 @@ public actor OpenAIClientAdapter: ProviderClient {
                     continuation.yield(.start(id: chunk.id, model: chunk.model))
                 }
 
-                guard let delta = chunk.choices.first?.delta else { continue }
-
-                // Text content
-                if let content = delta.content, !content.isEmpty {
-                    continuation.yield(.textDelta(content))
+                // Process usage first (can come in chunks without choices/delta)
+                if let usage = chunk.usage {
+                    totalUsage = ProviderUsage(
+                        promptTokens: usage.promptTokens,
+                        completionTokens: usage.completionTokens,
+                        cachedTokens: usage.cachedTokens,
+                        reasoningTokens: usage.reasoningTokens
+                    )
+                    continuation.yield(.usage(totalUsage!))
                 }
 
-                // Tool calls - key by index to handle multiple concurrent tool calls
-                // Use stable index-based IDs until we can emit start with real ID
-                if let toolCalls = delta.toolCalls {
-                    for toolCall in toolCalls {
-                        let index = toolCall.index ?? 0
-                        // Use real ID if provided, else use existing or generate stable one
-                        let stableId = toolCall.id ?? accumulatedToolCalls[index]?.id ?? "tool_call_\(index)"
-                        let newName = toolCall.function?.name
-                        let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
-                        let existingName = accumulatedToolCalls[index]?.name ?? ""
-                        let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
-                        let pendingDeltas = accumulatedToolCalls[index]?.pendingDeltas ?? []
-                        let name = newName ?? existingName
+                // Handle delta content (may be nil for usage-only chunks)
+                if let delta = chunk.choices.first?.delta {
+                    // Text content
+                    if let content = delta.content, !content.isEmpty {
+                        continuation.yield(.textDelta(content))
+                    }
 
-                        // Collect argument delta
-                        var newPendingDeltas = pendingDeltas
-                        if let argsDelta = toolCall.function?.arguments, !argsDelta.isEmpty {
-                            newPendingDeltas.append(argsDelta)
-                        }
+                    // Tool calls - key by index to handle multiple concurrent tool calls
+                    // Follow LiteLLMClient pattern for correct event sequencing
+                    if let toolCalls = delta.toolCalls {
+                        for toolCall in toolCalls {
+                            let index = toolCall.index ?? 0
+                            // Use real ID if provided, else use existing or generate stable one
+                            let stableId = toolCall.id ?? accumulatedToolCalls[index]?.id ?? "tool_call_\(index)"
+                            let newName = toolCall.function?.name
+                            let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
+                            let existingName = accumulatedToolCalls[index]?.name ?? ""
+                            let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
+                            let name = newName ?? existingName
 
-                        // Can we emit start? Need a name
-                        if !startEmitted && !name.isEmpty {
-                            continuation.yield(.toolCallStart(id: stableId, name: name))
-                            // Now flush all pending deltas
-                            var allArgs = existingArgs
-                            for delta in newPendingDeltas {
-                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: delta))
-                                allArgs += delta
+                            // Get new argument delta (may be empty)
+                            let argsDelta = toolCall.function?.arguments ?? ""
+
+                            // Can we emit start? Need a name
+                            if !startEmitted && !name.isEmpty {
+                                continuation.yield(.toolCallStart(id: stableId, name: name))
+                                // Now flush all buffered args as a single delta, then the new delta
+                                if !existingArgs.isEmpty {
+                                    continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: existingArgs))
+                                }
+                                if !argsDelta.isEmpty {
+                                    continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                                }
+                                accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: true)
+                            } else if startEmitted {
+                                // Already emitted start, emit delta directly
+                                if !argsDelta.isEmpty {
+                                    continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                                }
+                                accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: true)
+                            } else {
+                                // Buffer until we can emit start (no name yet)
+                                accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: false)
                             }
-                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: true, pendingDeltas: [])
-                        } else {
-                            // Buffer until we can emit start
-                            let allArgs = existingArgs + newPendingDeltas.joined()
-                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: false, pendingDeltas: newPendingDeltas)
                         }
                     }
                 }
 
-                // Check for finish reason
+                // Check for finish reason (can be on a chunk with or without delta)
                 if let finishReason = chunk.choices.first?.finishReason {
                     let reason = ProviderFinishReason(providerReason: finishReason)
                     lastFinishReason = reason
@@ -626,17 +645,6 @@ public actor OpenAIClientAdapter: ProviderClient {
                         }
                     }
                     accumulatedToolCalls.removeAll()
-
-                    // Parse usage if present
-                    if let usage = chunk.usage {
-                        totalUsage = ProviderUsage(
-                            promptTokens: usage.promptTokens,
-                            completionTokens: usage.completionTokens,
-                            cachedTokens: usage.cachedTokens,
-                            reasoningTokens: usage.reasoningTokens
-                        )
-                        continuation.yield(.usage(totalUsage!))
-                    }
 
                     continuation.yield(.finish(reason: reason, usage: totalUsage))
                     continuation.finish()
