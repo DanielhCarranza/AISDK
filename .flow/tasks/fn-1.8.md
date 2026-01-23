@@ -46,6 +46,6 @@ Extracted and enhanced AIStepResult from AIStreamEvent.swift to its own dedicate
   - Finish reason handling
   - Empty result validation
 ## Evidence
-- Commits: d830ceacd6a36afd46aa175c48058c0e1c34cbfe, 63a15e4cb75ce2d6bd8bdacf921442f88abf200d
+- Commits: d830ceacd6a36afd46aa175c48058c0e1c34cbfe, 63a15e4cb75ce2d6bd8bdacf921442f88abf200d, 7b8869e409604acfcc7656e7251a7c77571dfa6b
 - Tests:
 - PRs:
