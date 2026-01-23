@@ -159,15 +159,21 @@ final class MockAILanguageModelTests: XCTestCase {
 
         let request = AITextRequest(messages: [.user("Hi")])
 
+        var errorThrown = false
         do {
-            for try await _ in mock.streamText(request: request) {
-                XCTFail("Expected stream to fail immediately")
+            for try await event in mock.streamText(request: request) {
+                // Should emit error event then throw
+                if case .error = event {
+                    // This is expected before the throw
+                    continue
+                }
             }
-            XCTFail("Expected error to be thrown")
         } catch {
-            // Expected
+            errorThrown = true
             XCTAssertTrue(error is AISDKError)
         }
+
+        XCTAssertTrue(errorThrown, "Expected error to be thrown after emitting error event")
     }
 
     // MARK: - Delay Tests
@@ -279,5 +285,149 @@ final class MockAILanguageModelTests: XCTestCase {
         }
 
         XCTAssertEqual(mock.requestCount, 10)
+    }
+
+    // MARK: - streamObject Tests
+
+    func test_streamObject_emitsEvents() async throws {
+        let mock = MockAILanguageModel()
+        mock.responseText = "{\"name\":\"stream-test\",\"count\":99}"
+
+        let request = AIObjectRequest<SimpleTestOutput>(
+            messages: [.user("Generate output")],
+            schema: SimpleTestSchema()
+        )
+
+        var events: [AIStreamEvent] = []
+        for try await event in mock.streamObject(request: request) {
+            events.append(event)
+        }
+
+        // Should have start, objectDelta, usage, and finish events
+        XCTAssertTrue(events.contains { if case .start = $0 { return true }; return false })
+        XCTAssertTrue(events.contains { if case .objectDelta = $0 { return true }; return false })
+        XCTAssertTrue(events.contains { if case .usage = $0 { return true }; return false })
+        XCTAssertTrue(events.contains { if case .finish = $0 { return true }; return false })
+    }
+
+    func test_streamObject_reassemblesJSON() async throws {
+        let mock = MockAILanguageModel()
+        let expectedJSON = "{\"name\":\"reassembly-test\",\"count\":123}"
+        mock.responseText = expectedJSON
+
+        let request = AIObjectRequest<SimpleTestOutput>(
+            messages: [.user("Generate output")],
+            schema: SimpleTestSchema()
+        )
+
+        var collectedData = Data()
+        for try await event in mock.streamObject(request: request) {
+            if case .objectDelta(let chunk) = event {
+                collectedData.append(chunk)
+            }
+        }
+
+        let reassembledJSON = String(data: collectedData, encoding: .utf8)
+        XCTAssertEqual(reassembledJSON, expectedJSON)
+    }
+
+    // MARK: - Empty Sequence Tests
+
+    func test_withSequence_emptyReturnsEmptyString() async throws {
+        let mock = MockAILanguageModel.withSequence([])
+
+        let request = AITextRequest(messages: [.user("Hi")])
+        let result = try await mock.generateText(request: request)
+
+        // Should return empty string rather than crash
+        XCTAssertEqual(result.text, "")
+    }
+
+    // MARK: - Error Event Tests
+
+    func test_failing_streamEmitsErrorEvent() async throws {
+        let expectedError = AISDKError.custom("Stream error")
+        let mock = MockAILanguageModel.failing(with: expectedError)
+
+        let request = AITextRequest(messages: [.user("Hi")])
+
+        var errorEventReceived = false
+        do {
+            for try await event in mock.streamText(request: request) {
+                if case .error = event {
+                    errorEventReceived = true
+                }
+            }
+        } catch {
+            // Expected to throw after emitting error event
+        }
+
+        XCTAssertTrue(errorEventReceived, "Stream should emit .error event before throwing")
+    }
+
+    func test_failing_streamObjectEmitsErrorEvent() async throws {
+        let expectedError = AISDKError.custom("Object stream error")
+        let mock = MockAILanguageModel.failing(with: expectedError)
+
+        let request = AIObjectRequest<SimpleTestOutput>(
+            messages: [.user("Generate output")],
+            schema: SimpleTestSchema()
+        )
+
+        var errorEventReceived = false
+        do {
+            for try await event in mock.streamObject(request: request) {
+                if case .error = event {
+                    errorEventReceived = true
+                }
+            }
+        } catch {
+            // Expected to throw after emitting error event
+        }
+
+        XCTAssertTrue(errorEventReceived, "Stream should emit .error event before throwing")
+    }
+
+    // MARK: - Tool Call Stream Tests
+
+    func test_withToolCall_streamDoesNotEmitEmptyTextCompletion() async throws {
+        let mock = MockAILanguageModel.withToolCall("get_weather", arguments: "{}")
+
+        let request = AITextRequest(messages: [.user("Get weather")])
+
+        var hasTextCompletion = false
+        for try await event in mock.streamText(request: request) {
+            if case .textCompletion(let text) = event {
+                hasTextCompletion = true
+                // If we get a text completion, it should not be empty
+                XCTAssertFalse(text.isEmpty, "Text completion should not be empty for tool-call-only responses")
+            }
+        }
+
+        // For tool-call-only responses with empty text, no text completion should be emitted
+        XCTAssertFalse(hasTextCompletion, "Should not emit text completion for tool-call-only responses")
+    }
+
+    // MARK: - Custom Stream Events with Start
+
+    func test_withStreamEvents_includesStartDoesNotDuplicate() async throws {
+        let customEvents: [AIStreamEvent] = [
+            .start(metadata: AIStreamMetadata(requestId: "custom-start", model: "custom-model", provider: "custom")),
+            .textDelta("Hello"),
+            .textCompletion("Hello"),
+            .finish(finishReason: .stop, usage: .zero)
+        ]
+        let mock = MockAILanguageModel.withStreamEvents(customEvents)
+
+        let request = AITextRequest(messages: [.user("Hi")])
+
+        var startCount = 0
+        for try await event in mock.streamText(request: request) {
+            if case .start = event {
+                startCount += 1
+            }
+        }
+
+        XCTAssertEqual(startCount, 1, "Should not duplicate .start event when custom events include it")
     }
 }

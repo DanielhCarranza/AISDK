@@ -13,7 +13,11 @@ Implement MockAILanguageModel - a comprehensive mock implementation of the AILan
 - [x] All tests pass
 
 ## Done summary
-Created MockAILanguageModel at Tests/AISDKTests/Mocks/MockAILanguageModel.swift implementing the AILanguageModel protocol for testing. Features include:
+# fn-1.15 Summary
+
+Created MockAILanguageModel at Tests/AISDKTests/Mocks/MockAILanguageModel.swift implementing the AILanguageModel protocol for testing.
+
+## Features
 - Factory methods: withResponse, withToolCall, withToolCalls, withSlowResponse, failing, withStreamEvents, withObject, withProvider, withSequence
 - Configurable: responseText, toolCalls, streamEvents, usage, finishReason, delay, errorToThrow
 - Tracking: requestCount, lastTextRequest, lastObjectRequestType
@@ -21,7 +25,9 @@ Created MockAILanguageModel at Tests/AISDKTests/Mocks/MockAILanguageModel.swift 
 - SafeAsyncStream for memory-safe streaming
 - SequentialMockAILanguageModel for different responses per call
 
+## Tests
+15 tests pass in MockAILanguageModelTests validating all functionality.
 ## Evidence
-- Commits: Added MockAILanguageModel and MockAILanguageModelTests
-- Tests: 15 tests pass in MockAILanguageModelTests
+- Commits: 3023cd9
+- Tests: command, passed, failed
 - PRs:
