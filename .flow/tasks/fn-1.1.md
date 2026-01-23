@@ -30,8 +30,7 @@ Created the AILanguageModel protocol and AILanguageModelAdapter that wraps the e
    - Converts AIMessage to legacy Message enum
    - Handles streaming with proper event emission
    - Factory methods: fromOpenAI, fromAnthropic, from(generic)
-
 ## Evidence
-- Commits: (pending)
-- Tests: Build passes
-- PRs: (pending)
+- Commits: 27b11abb47461d373d196eb3ac880c7f1bce2e5e
+- Tests: swift build
+- PRs:
