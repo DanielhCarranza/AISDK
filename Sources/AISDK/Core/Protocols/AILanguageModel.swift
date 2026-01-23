@@ -270,9 +270,17 @@ public extension AILanguageModel {
         var collectedData = Data()
         var usage = AIUsage.zero
         var finishReason: AIFinishReason = .unknown
+        var requestId: String?
+        var effectiveModel: String?
+        var effectiveProvider: String?
 
         for try await event in streamObject(request: request) {
             switch event {
+            case .start(let metadata):
+                // Capture metadata from stream start
+                requestId = metadata?.requestId
+                effectiveModel = metadata?.model
+                effectiveProvider = metadata?.provider
             case .objectDelta(let data):
                 collectedData.append(data)
             case .usage(let eventUsage):
@@ -293,8 +301,9 @@ public extension AILanguageModel {
             object: object,
             usage: usage,
             finishReason: finishReason,
-            model: modelId,
-            provider: provider,
+            requestId: requestId,
+            model: effectiveModel ?? request.model ?? modelId,
+            provider: effectiveProvider ?? provider,
             rawJSON: rawJSON
         )
     }

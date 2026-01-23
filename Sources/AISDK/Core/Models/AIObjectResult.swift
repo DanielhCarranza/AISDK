@@ -69,6 +69,7 @@ public extension AIObjectResult {
     }
 
     /// Map the result object to a different type
+    /// Note: rawJSON is cleared since it no longer matches the transformed object
     func map<U: Codable & Sendable>(_ transform: (T) throws -> U) rethrows -> AIObjectResult<U> {
         AIObjectResult<U>(
             object: try transform(object),
@@ -77,7 +78,7 @@ public extension AIObjectResult {
             requestId: requestId,
             model: model,
             provider: provider,
-            rawJSON: rawJSON
+            rawJSON: nil  // Cleared since it no longer matches the transformed object
         )
     }
 }
