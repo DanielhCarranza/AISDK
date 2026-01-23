@@ -11,30 +11,46 @@ import XCTest
 // MARK: - Test Delegate
 
 /// Test delegate for tracking fault injection events.
-actor TestFaultInjectorDelegate: FaultInjectorDelegate {
-    var willInjectCalls: [(fault: FaultType, providerId: String?, modelId: String?)] = []
-    var didInjectCalls: [(fault: FaultType, result: FaultInjectionResult)] = []
+/// Uses thread-safe storage for nonisolated callbacks.
+final class TestFaultInjectorDelegate: FaultInjectorDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _willInjectCalls: [(fault: FaultType, providerId: String?, modelId: String?)] = []
+    private var _didInjectCalls: [(fault: FaultType, result: FaultInjectionResult, providerId: String?, modelId: String?)] = []
 
-    func faultInjector(
-        _ injector: FaultInjector,
-        willInject fault: FaultType,
-        for providerId: String?,
-        modelId: String?
-    ) async {
-        willInjectCalls.append((fault: fault, providerId: providerId, modelId: modelId))
+    var willInjectCalls: [(fault: FaultType, providerId: String?, modelId: String?)] {
+        lock.withLock { _willInjectCalls }
     }
 
-    func faultInjector(
-        _ injector: FaultInjector,
-        didInject fault: FaultType,
-        result: FaultInjectionResult
-    ) async {
-        didInjectCalls.append((fault: fault, result: result))
+    var didInjectCalls: [(fault: FaultType, result: FaultInjectionResult, providerId: String?, modelId: String?)] {
+        lock.withLock { _didInjectCalls }
+    }
+
+    nonisolated func faultInjectorWillInject(
+        fault: FaultType,
+        providerId: String?,
+        modelId: String?
+    ) {
+        lock.withLock {
+            _willInjectCalls.append((fault: fault, providerId: providerId, modelId: modelId))
+        }
+    }
+
+    nonisolated func faultInjectorDidInject(
+        fault: FaultType,
+        result: FaultInjectionResult,
+        providerId: String?,
+        modelId: String?
+    ) {
+        lock.withLock {
+            _didInjectCalls.append((fault: fault, result: result, providerId: providerId, modelId: modelId))
+        }
     }
 
     func reset() {
-        willInjectCalls.removeAll()
-        didInjectCalls.removeAll()
+        lock.withLock {
+            _willInjectCalls.removeAll()
+            _didInjectCalls.removeAll()
+        }
     }
 }
 
@@ -53,8 +69,9 @@ final class FaultTypeTests: XCTestCase {
     }
 
     func testFaultType_timeoutDescription() {
-        let fault = FaultType.timeout
-        XCTAssertEqual(fault.description, "timeout")
+        let fault = FaultType.timeout(30)
+        XCTAssertTrue(fault.description.contains("timeout"))
+        XCTAssertTrue(fault.description.contains("30"))
     }
 
     func testFaultType_randomFailureDescription() {
@@ -86,13 +103,14 @@ final class FaultTypeTests: XCTestCase {
     }
 
     func testFaultType_corruptResponseDescription() {
-        let fault = FaultType.corruptResponse
+        let fault = FaultType.corruptResponse(message: "Test corrupt response")
         XCTAssertEqual(fault.description, "corruptResponse")
     }
 
     func testFaultType_equality() {
-        XCTAssertEqual(FaultType.timeout, FaultType.timeout)
-        XCTAssertEqual(FaultType.corruptResponse, FaultType.corruptResponse)
+        XCTAssertEqual(FaultType.timeout(30), FaultType.timeout(30))
+        XCTAssertNotEqual(FaultType.timeout(30), FaultType.timeout(60))
+        XCTAssertEqual(FaultType.corruptResponse(message: "test"), FaultType.corruptResponse(message: "test"))
         XCTAssertEqual(
             FaultType.delay(.seconds(5)),
             FaultType.delay(.seconds(5))
@@ -109,7 +127,7 @@ final class FaultTypeTests: XCTestCase {
 final class FaultRuleTests: XCTestCase {
 
     func testFaultRule_matchesAnyWhenNoFilters() {
-        let rule = FaultRule(faultType: .timeout)
+        let rule = FaultRule(faultType: .timeout(30))
 
         XCTAssertTrue(rule.matches(providerId: "openai", modelId: "gpt-4"))
         XCTAssertTrue(rule.matches(providerId: "anthropic", modelId: "claude-3"))
@@ -117,7 +135,7 @@ final class FaultRuleTests: XCTestCase {
     }
 
     func testFaultRule_matchesProviderFilter() {
-        let rule = FaultRule(faultType: .timeout, providerId: "openai")
+        let rule = FaultRule(faultType: .timeout(30), providerId: "openai")
 
         XCTAssertTrue(rule.matches(providerId: "openai", modelId: "gpt-4"))
         XCTAssertTrue(rule.matches(providerId: "openai", modelId: nil))
@@ -126,7 +144,7 @@ final class FaultRuleTests: XCTestCase {
     }
 
     func testFaultRule_matchesModelFilter() {
-        let rule = FaultRule(faultType: .timeout, modelId: "gpt-4")
+        let rule = FaultRule(faultType: .timeout(30), modelId: "gpt-4")
 
         XCTAssertTrue(rule.matches(providerId: "openai", modelId: "gpt-4"))
         XCTAssertTrue(rule.matches(providerId: nil, modelId: "gpt-4"))
@@ -135,7 +153,7 @@ final class FaultRuleTests: XCTestCase {
     }
 
     func testFaultRule_matchesBothFilters() {
-        let rule = FaultRule(faultType: .timeout, providerId: "openai", modelId: "gpt-4")
+        let rule = FaultRule(faultType: .timeout(30), providerId: "openai", modelId: "gpt-4")
 
         XCTAssertTrue(rule.matches(providerId: "openai", modelId: "gpt-4"))
         XCTAssertFalse(rule.matches(providerId: "openai", modelId: "gpt-3.5"))
@@ -143,7 +161,7 @@ final class FaultRuleTests: XCTestCase {
     }
 
     func testFaultRule_inactiveRuleDoesNotMatch() {
-        let rule = FaultRule(faultType: .timeout, isActive: false)
+        let rule = FaultRule(faultType: .timeout(30), isActive: false)
 
         XCTAssertFalse(rule.matches(providerId: "openai", modelId: "gpt-4"))
         XCTAssertFalse(rule.matches(providerId: nil, modelId: nil))
@@ -190,7 +208,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testAddRule_addsToActiveRules() async {
         let injector = FaultInjector()
-        let rule = FaultRule(id: "test-rule", faultType: .timeout)
+        let rule = FaultRule(id: "test-rule", faultType: .timeout(30))
 
         await injector.addRule(rule)
 
@@ -201,7 +219,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testRemoveRule_removesFromActiveRules() async {
         let injector = FaultInjector()
-        let rule = FaultRule(id: "test-rule", faultType: .timeout)
+        let rule = FaultRule(id: "test-rule", faultType: .timeout(30))
 
         await injector.addRule(rule)
         let removed = await injector.removeRule(id: "test-rule")
@@ -224,8 +242,8 @@ final class FaultInjectorTests: XCTestCase {
     func testRemoveAllRules_clearsAllRules() async {
         let injector = FaultInjector()
 
-        await injector.addRule(FaultRule(id: "rule1", faultType: .timeout))
-        await injector.addRule(FaultRule(id: "rule2", faultType: .corruptResponse))
+        await injector.addRule(FaultRule(id: "rule1", faultType: .timeout(30)))
+        await injector.addRule(FaultRule(id: "rule2", faultType: .corruptResponse(message: "test")))
 
         await injector.removeAllRules()
 
@@ -235,7 +253,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testGetRule_returnsRuleById() async {
         let injector = FaultInjector()
-        let rule = FaultRule(id: "test-rule", faultType: .timeout)
+        let rule = FaultRule(id: "test-rule", faultType: .timeout(30))
 
         await injector.addRule(rule)
 
@@ -246,7 +264,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testSetRuleEnabled_enablesAndDisablesRule() async {
         let injector = FaultInjector()
-        let rule = FaultRule(id: "test-rule", faultType: .timeout, isActive: true)
+        let rule = FaultRule(id: "test-rule", faultType: .timeout(30), isActive: true)
 
         await injector.addRule(rule)
 
@@ -263,9 +281,9 @@ final class FaultInjectorTests: XCTestCase {
 
     // MARK: - Fault Evaluation
 
-    func testEvaluate_returnsProceesWhenDisabled() async {
+    func testEvaluate_returnsProceedWhenDisabled() async {
         let injector = FaultInjector(enabled: false)
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         let result = await injector.evaluate()
 
@@ -276,7 +294,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testEvaluate_returnsProceedWhenNoMatchingRules() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout, providerId: "openai"))
+        await injector.addRule(FaultRule(faultType: .timeout(30), providerId: "openai"))
 
         let result = await injector.evaluate(providerId: "anthropic")
 
@@ -293,7 +311,7 @@ final class FaultInjectorTests: XCTestCase {
         let result = await injector.evaluate()
 
         if case .fail(let injectedError) = result {
-            XCTAssertEqual(injectedError as? ProviderError, error)
+            XCTAssertEqual(injectedError, error)
         } else {
             XCTFail("Expected .fail result")
         }
@@ -314,15 +332,19 @@ final class FaultInjectorTests: XCTestCase {
 
     func testEvaluate_injectsTimeout() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         let result = await injector.evaluate()
 
-        if case .delayed(let duration) = result {
-            // Timeout should inject a very long delay (at least 30 minutes = 1800 seconds)
-            XCTAssertGreaterThan(duration, .seconds(1800))
+        // Timeout should throw a ProviderError.timeout immediately
+        if case .fail(let error) = result {
+            if case .timeout(let seconds) = error {
+                XCTAssertEqual(seconds, 30)
+            } else {
+                XCTFail("Expected timeout error, got: \(error)")
+            }
         } else {
-            XCTFail("Expected .delayed result for timeout")
+            XCTFail("Expected .fail result for timeout, got: \(result)")
         }
     }
 
@@ -333,7 +355,7 @@ final class FaultInjectorTests: XCTestCase {
         let result = await injector.evaluate()
 
         if case .fail(let error) = result {
-            if case .rateLimited(let retryAfter) = error as? ProviderError {
+            if case .rateLimited(let retryAfter) = error {
                 XCTAssertEqual(retryAfter, 30)
             } else {
                 XCTFail("Expected rateLimited error")
@@ -350,7 +372,7 @@ final class FaultInjectorTests: XCTestCase {
         let result = await injector.evaluate()
 
         if case .fail(let error) = result {
-            if case .serverError(let statusCode, let message) = error as? ProviderError {
+            if case .serverError(let statusCode, let message) = error {
                 XCTAssertEqual(statusCode, 503)
                 XCTAssertEqual(message, "Test")
             } else {
@@ -363,12 +385,18 @@ final class FaultInjectorTests: XCTestCase {
 
     func testEvaluate_injectsCorruptResponse() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .corruptResponse))
+        await injector.addRule(FaultRule(faultType: .corruptResponse(message: "Test corrupt response")))
 
         let result = await injector.evaluate()
 
-        if case .corrupt = result {} else {
-            XCTFail("Expected .corrupt result")
+        if case .fail(let error) = result {
+            if case .parseError(let message) = error {
+                XCTAssertEqual(message, "Test corrupt response")
+            } else {
+                XCTFail("Expected parseError, got: \(error)")
+            }
+        } else {
+            XCTFail("Expected .fail result for corruptResponse")
         }
     }
 
@@ -536,7 +564,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testMetrics_tracksFaultsInjected() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate()
         _ = await injector.evaluate()
@@ -547,8 +575,8 @@ final class FaultInjectorTests: XCTestCase {
 
     func testMetrics_tracksActiveRules() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(id: "rule1", faultType: .timeout))
-        await injector.addRule(FaultRule(id: "rule2", faultType: .corruptResponse))
+        await injector.addRule(FaultRule(id: "rule1", faultType: .timeout(30)))
+        await injector.addRule(FaultRule(id: "rule2", faultType: .corruptResponse(message: "test")))
         await injector.addRule(FaultRule(id: "rule3", faultType: .delay(.seconds(1)), isActive: false))
 
         let metrics = await injector.metrics
@@ -557,7 +585,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testResetMetrics_clearsAllMetrics() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate()
         _ = await injector.evaluate()
@@ -574,11 +602,11 @@ final class FaultInjectorTests: XCTestCase {
     func testDelegate_receivesWillInjectNotification() async {
         let delegate = TestFaultInjectorDelegate()
         let injector = FaultInjector(delegate: delegate)
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate(providerId: "openai", modelId: "gpt-4")
 
-        let calls = await delegate.willInjectCalls
+        let calls = delegate.willInjectCalls
         XCTAssertEqual(calls.count, 1)
         XCTAssertEqual(calls.first?.providerId, "openai")
         XCTAssertEqual(calls.first?.modelId, "gpt-4")
@@ -587,12 +615,25 @@ final class FaultInjectorTests: XCTestCase {
     func testDelegate_receivesDidInjectNotification() async {
         let delegate = TestFaultInjectorDelegate()
         let injector = FaultInjector(delegate: delegate)
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate()
 
-        let calls = await delegate.didInjectCalls
+        let calls = delegate.didInjectCalls
         XCTAssertEqual(calls.count, 1)
+    }
+
+    func testDelegate_didInjectIncludesProviderAndModelId() async {
+        let delegate = TestFaultInjectorDelegate()
+        let injector = FaultInjector(delegate: delegate)
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
+
+        _ = await injector.evaluate(providerId: "anthropic", modelId: "claude-3")
+
+        let calls = delegate.didInjectCalls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.providerId, "anthropic")
+        XCTAssertEqual(calls.first?.modelId, "claude-3")
     }
 
     // MARK: - Convenience Builder Tests
@@ -646,7 +687,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testAssertFaultsInjected_succeedsWhenFaultsInjected() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate()
 
@@ -659,7 +700,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testAssertFaultCount_throwsWhenCountDoesNotMatch() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate()
         _ = await injector.evaluate()
@@ -677,7 +718,7 @@ final class FaultInjectorTests: XCTestCase {
 
     func testAssertFaultCount_succeedsWhenCountMatches() async {
         let injector = FaultInjector()
-        await injector.addRule(FaultRule(faultType: .timeout))
+        await injector.addRule(FaultRule(faultType: .timeout(30)))
 
         _ = await injector.evaluate()
         _ = await injector.evaluate()
@@ -706,6 +747,40 @@ final class FaultInjectorTests: XCTestCase {
 
         let metrics = await injector.metrics
         XCTAssertEqual(metrics.totalEvaluations, 100)
+    }
+
+    // MARK: - Input Validation Tests
+
+    func testEvaluate_clampsNegativeDelayToZero() async {
+        let injector = FaultInjector()
+        // This shouldn't crash even with a negative duration
+        await injector.addRule(FaultRule(faultType: .delay(.zero)))
+
+        let result = await injector.evaluate()
+
+        if case .delayed(let duration) = result {
+            XCTAssertGreaterThanOrEqual(duration, .zero)
+        } else {
+            XCTFail("Expected .delayed result")
+        }
+    }
+
+    func testEvaluate_clampsProbabilityToValidRange() async {
+        let injector = FaultInjector()
+        // Probability > 1 should be clamped to 1 (always fail)
+        await injector.addRule(FaultRule(
+            faultType: .randomFailure(probability: 2.0, error: .timeout(30))
+        ))
+
+        var failCount = 0
+        for _ in 0..<10 {
+            let result = await injector.evaluate()
+            if case .fail = result {
+                failCount += 1
+            }
+        }
+
+        XCTAssertEqual(failCount, 10, "Probability clamped to 1 should always fail")
     }
 }
 
