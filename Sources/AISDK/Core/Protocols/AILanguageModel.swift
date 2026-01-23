@@ -287,84 +287,23 @@ public extension AILanguageModel {
 
         let decoder = JSONDecoder()
         let object = try decoder.decode(T.self, from: collectedData)
+        let rawJSON = String(data: collectedData, encoding: .utf8)
 
         return AIObjectResult(
             object: object,
             usage: usage,
-            finishReason: finishReason
+            finishReason: finishReason,
+            model: modelId,
+            provider: provider,
+            rawJSON: rawJSON
         )
     }
 }
 
-// MARK: - Request Types
+// MARK: - Request & Result Types
 
-// Note: AITextRequest, DataSensitivity, and StreamBufferPolicy are defined in
-// Sources/AISDK/Core/Models/AITextRequest.swift
-
-/// Request for structured object generation
-public struct AIObjectRequest<T: Codable & Sendable>: Sendable {
-    /// The messages to send to the model
-    public let messages: [AIMessage]
-
-    /// The schema for the expected output
-    public let schema: SchemaBuilding
-
-    /// The model to use (optional, uses default if nil)
-    public let model: String?
-
-    /// Maximum tokens to generate
-    public let maxTokens: Int?
-
-    /// Temperature for generation (0-2)
-    public let temperature: Double?
-
-    /// Request metadata for tracing
-    public let metadata: [String: String]?
-
-    public init(
-        messages: [AIMessage],
-        schema: SchemaBuilding,
-        model: String? = nil,
-        maxTokens: Int? = nil,
-        temperature: Double? = nil,
-        metadata: [String: String]? = nil
-    ) {
-        self.messages = messages
-        self.schema = schema
-        self.model = model
-        self.maxTokens = maxTokens
-        self.temperature = temperature
-        self.metadata = metadata
-    }
-}
-
-// MARK: - Result Types
-
-// Note: AITextResult is defined in Sources/AISDK/Core/Models/AITextResult.swift
-
-/// Result from structured object generation
-public struct AIObjectResult<T: Codable & Sendable>: Sendable {
-    /// The generated object
-    public let object: T
-
-    /// Token usage information
-    public let usage: AIUsage
-
-    /// Reason for completion
-    public let finishReason: AIFinishReason
-
-    public init(
-        object: T,
-        usage: AIUsage = .zero,
-        finishReason: AIFinishReason = .stop
-    ) {
-        self.object = object
-        self.usage = usage
-        self.finishReason = finishReason
-    }
-}
-
-// MARK: - Supporting Types
-
-// Note: DataSensitivity and StreamBufferPolicy are defined in
-// Sources/AISDK/Core/Models/AITextRequest.swift
+// Note: Request and result types are defined in their respective files:
+// - AITextRequest, DataSensitivity, StreamBufferPolicy: Sources/AISDK/Core/Models/AITextRequest.swift
+// - AITextResult: Sources/AISDK/Core/Models/AITextResult.swift
+// - AIObjectRequest: Sources/AISDK/Core/Models/AIObjectRequest.swift
+// - AIObjectResult: Sources/AISDK/Core/Models/AIObjectResult.swift
