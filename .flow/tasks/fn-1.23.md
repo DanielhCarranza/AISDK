@@ -15,16 +15,19 @@ Implement GeminiClientAdapter for direct access to Google's Gemini API as part o
 - [x] Comprehensive test coverage (36 tests)
 
 ## Done summary
-Implemented GeminiClientAdapter following the same actor-based pattern as OpenAIClientAdapter and AnthropicClientAdapter. Key features:
+Implemented GeminiClientAdapter for direct access to Google's Gemini API as part of the Phase 2 routing layer. 
 
-1. **Direct API Access**: Connects to `generativelanguage.googleapis.com/v1beta` with API key authentication via query parameter
-2. **Request Handling**: Converts ProviderRequest to Gemini's `contents[]` format with proper role mapping (user/model)
-3. **Tool Calling**: Full support for functionDeclarations with AUTO/ANY/NONE modes via toolConfig
-4. **Streaming**: SSE parsing with `?alt=sse` parameter, handles incremental text and function call events
-5. **Error Handling**: Maps Gemini error responses to ProviderError types including content filtering detection
-6. **Model Support**: Known models list includes Gemini 1.5, 2.0, and 2.5 families with capability detection
-
+Key features:
+- Actor-based implementation conforming to ProviderClient protocol  
+- Support for generateContent endpoint (non-streaming)
+- Support for streamGenerateContent endpoint with SSE parsing
+- Function calling (tools) support with functionDeclarations format
+- System instruction support (systemInstruction field)
+- JSON mode and JSON schema response formats
+- Health status tracking via models endpoint
+- Model capabilities lookup for Gemini model families (1.5, 2.0, 2.5)
+- Comprehensive test coverage (36 tests)
 ## Evidence
-- Commits: (pending)
-- Tests: GeminiClientAdapterTests (16), GeminiResponseParsingTests (6), GeminiRequestEncodingTests (7), GeminiErrorMappingTests (3), GeminiMultipartContentTests (4) - 36 total
+- Commits: 29e0b813ff2cc8adf9d95d0ccb3a48d1c2a78ae7
+- Tests: swift test --filter Gemini
 - PRs:
