@@ -1,21 +1,3 @@
-# fn-1.34 Task 4.1c: AIAgent Tool Execution
-
-## Description
-Comprehensive tool execution tests for AIAgentActor including successful execution, error handling, message history tracking, streaming with tools, and usage accumulation.
-
-## Acceptance
-- [x] Successful single tool call execution test
-- [x] Multiple sequential tool calls test
-- [x] Unknown tool handling test
-- [x] Tool execution failure handling test
-- [x] Tool results added to message history test
-- [x] Streaming tool execution emits toolResult events test
-- [x] Streaming tool execution updates observable state test
-- [x] Tool parameter passing test
-- [x] Stop condition respects max steps with tools test
-- [x] Usage accumulates across tool calls test
-
-## Done summary
 # fn-1.34 Task 4.1c: AIAgent Tool Execution - Summary
 
 ## What Changed
@@ -42,7 +24,3 @@ Added comprehensive test coverage for AIAgentActor tool execution functionality.
 - Parameter validation
 - Stop condition integration
 - Usage accumulation
-## Evidence
-- Commits: 672de53af76d8c0ab2a41f2f25cd9565dee17dac
-- Tests: Tests/AISDKTests/Agents/AIAgentActorTests.swift
-- PRs:

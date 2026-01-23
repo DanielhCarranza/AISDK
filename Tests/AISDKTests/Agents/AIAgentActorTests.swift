@@ -1161,19 +1161,6 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
         }
     }
 
-    /// Test tool with slow execution for timeout testing
-    private struct SlowTool: Tool {
-        let name = "slow_tool"
-        let description = "A tool that takes a long time"
-
-        init() {}
-
-        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-            try await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
-            return ("Done", nil)
-        }
-    }
-
     // MARK: - Mock Language Model with Tool Support
 
     private class MockToolLanguageModel: AILanguageModel, @unchecked Sendable {
@@ -1362,12 +1349,21 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
         // Then - Should continue with error message in tool response
         XCTAssertGreaterThanOrEqual(result.steps.count, 1)
 
+        // Verify model was called twice (initial call + response after error)
+        XCTAssertEqual(model.generateTextCallCount, 2, "Model should be called twice: once for tool call, once after error")
+
+        // Verify final response matches expected fallback
+        XCTAssertEqual(result.text, "Tool failed, here's an alternative response")
+
         // Check that the error was handled (tool message should contain "Error" or similar)
         let messages = await agent.messages
         let toolMessages = messages.filter { $0.role == .tool }
+        XCTAssertEqual(toolMessages.count, 1, "Should have exactly one tool message with error")
         if let toolMessage = toolMessages.first {
             XCTAssertTrue(toolMessage.content.textValue.contains("Error") ||
                          toolMessage.content.textValue.contains("not found"))
+            // Verify tool call ID matches
+            XCTAssertEqual(toolMessage.toolCallId, "call-1")
         }
     }
 
@@ -1383,7 +1379,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             if callCount == 1 {
                 return AITextResult(
                     text: "Calling failing tool...",
-                    toolCalls: [AIToolCallResult(id: "call-1", name: "failing_tool", arguments: "{}")],
+                    toolCalls: [AIToolCallResult(id: "fail-call-1", name: "failing_tool", arguments: "{}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1409,12 +1405,20 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
         // Then - Should continue after error, not crash
         XCTAssertGreaterThanOrEqual(result.steps.count, 1)
 
+        // Verify model was called twice
+        XCTAssertEqual(model.generateTextCallCount, 2, "Model should be called twice: once for tool call, once after error")
+
+        // Verify final response
+        XCTAssertEqual(result.text, "The tool failed, but I can help anyway")
+
         // Verify error was captured in message history
         let messages = await agent.messages
         let toolMessages = messages.filter { $0.role == .tool }
-        XCTAssertGreaterThanOrEqual(toolMessages.count, 1)
+        XCTAssertEqual(toolMessages.count, 1, "Should have exactly one tool message with error")
         if let toolMessage = toolMessages.first {
             XCTAssertTrue(toolMessage.content.textValue.contains("Error"))
+            // Verify tool call ID matches
+            XCTAssertEqual(toolMessage.toolCallId, "fail-call-1")
         }
     }
 
@@ -1545,23 +1549,22 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             stopCondition: .stepCount(3)
         )
 
-        // When - Execute and track state changes
-        var observedToolExecutionState = false
+        // When - Execute and track toolResult events (which indicate tool was executed)
+        var toolResultCount = 0
         let observableState = agent.observableState
 
         // Start streaming
-        for try await _ in agent.streamExecute(messages: [.user("Weather?")]) {
-            // Check state during execution
-            let currentState = await MainActor.run { observableState.state }
-            if case .executingTool(_) = currentState {
-                observedToolExecutionState = true
+        for try await event in agent.streamExecute(messages: [.user("Weather?")]) {
+            // Track tool results as evidence that tools were executed
+            if case .toolResult = event {
+                toolResultCount += 1
             }
         }
 
-        // Allow time for async state updates
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // Then - Tool should have been executed at least once
+        XCTAssertGreaterThanOrEqual(toolResultCount, 1, "Expected at least one tool to be executed")
 
-        // Then - Final state should be idle
+        // Final state should be idle
         await MainActor.run {
             XCTAssertEqual(observableState.state, .idle)
         }
