@@ -9,7 +9,12 @@
 import Foundation
 
 /// Request for text generation
-public struct AITextRequest: Sendable {
+///
+/// Note: Marked as `@unchecked Sendable` because it contains legacy types
+/// (`ToolSchema`, `ToolChoice`, `ResponseFormat`) that don't have `Sendable` conformance.
+/// These are immutable value types used only within a single request context.
+/// Making these types Sendable is tracked for Phase 2 (Provider & Routing Layer).
+public struct AITextRequest: @unchecked Sendable {
     /// The messages to send to the model
     public let messages: [AIMessage]
 
@@ -43,7 +48,8 @@ public struct AITextRequest: Sendable {
     /// Data sensitivity classification
     public let sensitivity: DataSensitivity
 
-    /// Stream buffer policy for memory control
+    /// Stream buffer policy for memory control.
+    /// Note: Currently metadata-only. Will be plumbed through streaming in Phase 3 (Reliability Layer).
     public let bufferPolicy: StreamBufferPolicy?
 
     /// Request metadata for tracing
@@ -98,13 +104,14 @@ public enum DataSensitivity: String, Sendable, Codable, Equatable {
 /// Maps to Swift's AsyncStream/AsyncThrowingStream buffering policies.
 ///
 /// Note: Swift's built-in streams support unbounded, dropOldest, and dropNewest behaviors.
-/// The capacity is validated to be > 0 for bounded policies.
+/// Use the `bounded(capacity:dropOldest:)` factory method for validated capacity (> 0).
+/// Direct enum case initialization does not validate capacity.
 public enum StreamBufferPolicy: Sendable, Equatable {
     /// Unbounded buffer - no limit on events (use with caution for memory)
     case unbounded
-    /// Bounded buffer that drops oldest events when full
+    /// Bounded buffer that drops oldest events when full. Use factory for validation.
     case dropOldest(capacity: Int)
-    /// Bounded buffer that drops newest events when full
+    /// Bounded buffer that drops newest events when full. Use factory for validation.
     case dropNewest(capacity: Int)
 
     /// The effective capacity of the buffer (Int.max for unbounded)
