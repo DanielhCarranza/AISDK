@@ -423,8 +423,8 @@ public actor AIAgentActor {
             stepHistory.append(stepResult)
             continuation.yield(.stepFinish(stepIndex: stepIndex, result: stepResult))
 
-            // Check stop conditions
-            if shouldStop(stepResult) {
+            // Check stop conditions (pass accumulated tokens for O(1) budget check)
+            if shouldStop(stepResult, accumulatedTokens: totalUsage.totalTokens) {
                 currentState = .idle
                 await setObservableState(.idle)
                 break
@@ -552,48 +552,58 @@ public actor AIAgentActor {
             workingMessages.append(assistantMessage)
             messageHistory = workingMessages
 
-            // Build step result
-            let stepResult = AIStepResult(
-                stepIndex: stepIndex,
-                text: result.text,
-                toolCalls: toolCalls,
-                toolResults: [],
-                usage: result.usage,
-                finishReason: result.finishReason
-            )
-            stepHistory.append(stepResult)
-
             // Check if we should stop (no tool calls)
             guard !toolCalls.isEmpty else {
-                // No tool calls, we're done
+                // No tool calls - build step result and we're done
+                let stepResult = AIStepResult(
+                    stepIndex: stepIndex,
+                    text: result.text,
+                    toolCalls: toolCalls,
+                    toolResults: [],
+                    usage: result.usage,
+                    finishReason: result.finishReason
+                )
+                stepHistory.append(stepResult)
                 currentState = .idle
                 await setObservableState(.idle)
                 break
             }
 
-            // Execute tool calls
+            // Execute tool calls and collect results
             let firstToolName = toolCalls.first?.name ?? "unknown"
             currentState = .executingTool(firstToolName)
             await setObservableState(.executingTool(firstToolName))
 
+            var toolResults: [AIToolResultData] = []
             for toolCall in toolCalls {
                 do {
                     let toolResult = try await executeToolCall(toolCall)
+                    toolResults.append(AIToolResultData(id: toolCall.id, result: toolResult, metadata: nil))
                     let toolMessage = AIMessage.tool(toolResult, toolCallId: toolCall.id)
                     workingMessages.append(toolMessage)
                 } catch {
                     // Tool failed, add error message
-                    let errorMessage = AIMessage.tool(
-                        "Error: \(error.localizedDescription)",
-                        toolCallId: toolCall.id
-                    )
+                    let errorResult = "Error: \(error.localizedDescription)"
+                    toolResults.append(AIToolResultData(id: toolCall.id, result: errorResult, metadata: nil))
+                    let errorMessage = AIMessage.tool(errorResult, toolCallId: toolCall.id)
                     workingMessages.append(errorMessage)
                 }
             }
             messageHistory = workingMessages
 
-            // Check stop conditions
-            if shouldStop(stepResult) {
+            // Build step result with tool results (matching streaming path)
+            let stepResult = AIStepResult(
+                stepIndex: stepIndex,
+                text: result.text,
+                toolCalls: toolCalls,
+                toolResults: toolResults,
+                usage: result.usage,
+                finishReason: result.finishReason
+            )
+            stepHistory.append(stepResult)
+
+            // Check stop conditions (pass accumulated tokens for O(1) budget check)
+            if shouldStop(stepResult, accumulatedTokens: totalUsage.totalTokens) {
                 currentState = .idle
                 await setObservableState(.idle)
                 break
@@ -652,17 +662,21 @@ public actor AIAgentActor {
 
     /// Check if the agent should stop based on the current step result
     ///
-    /// - Parameter result: The current step result
+    /// - Parameters:
+    ///   - result: The current step result
+    ///   - accumulatedTokens: Total tokens used so far (for O(1) token budget check)
     /// - Returns: Whether to stop the agent loop
-    private func shouldStop(_ result: AIStepResult) -> Bool {
+    private func shouldStop(_ result: AIStepResult, accumulatedTokens: Int) -> Bool {
         switch stopCondition {
         case .stepCount(let max):
-            return result.stepIndex >= max - 1
+            // Safe comparison avoiding overflow with max - 1
+            // stepHistory.count is the number of steps completed (1-indexed after append)
+            return max <= 0 || stepHistory.count >= max
         case .noToolCalls:
             return result.toolCalls.isEmpty
         case .tokenBudget(let maxTokens):
-            let totalTokens = stepHistory.reduce(0) { $0 + $1.usage.totalTokens }
-            return totalTokens >= maxTokens
+            // Use pre-computed accumulated tokens for O(1) check
+            return accumulatedTokens >= maxTokens
         case .custom(let predicate):
             return predicate(result)
         }
