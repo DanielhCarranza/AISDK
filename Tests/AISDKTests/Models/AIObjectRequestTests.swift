@@ -62,6 +62,8 @@ struct AIObjectRequestTests {
         let request = AIObjectRequest<TestUserProfile>(
             messages: messages,
             schema: schema,
+            schemaName: "UserProfile",
+            strict: false,
             model: "gpt-4",
             maxTokens: 1000,
             temperature: 0.7,
@@ -81,6 +83,19 @@ struct AIObjectRequestTests {
         #expect(request.allowedProviders == allowedProviders)
         #expect(request.bufferPolicy?.capacity == 500)
         #expect(request.metadata?["requestId"] == "test-123")
+        #expect(request.schemaName == "UserProfile")
+        #expect(request.strict == false)
+    }
+
+    @Test("strict defaults to true")
+    func testStrictDefault() {
+        let schema = TestUserProfile.schema()
+        let request = AIObjectRequest<TestUserProfile>(
+            messages: [.user("Create a user profile")],
+            schema: schema
+        )
+
+        #expect(request.strict == true)
     }
 
     // MARK: - PHI Protection
@@ -164,5 +179,67 @@ struct AIObjectRequestTests {
         #expect(updated.bufferPolicy?.capacity == 2000)
         #expect(updated.bufferPolicy == .dropNewest(capacity: 2000))
         #expect(original.bufferPolicy == nil) // Original unchanged
+    }
+
+    // MARK: - Schema Name Sanitization
+
+    @Test("effectiveSchemaName uses custom name when provided")
+    func testEffectiveSchemaNameCustom() {
+        let schema = TestUserProfile.schema()
+        let request = AIObjectRequest<TestUserProfile>(
+            messages: [.user("Test")],
+            schema: schema,
+            schemaName: "MyCustomSchema"
+        )
+
+        #expect(request.effectiveSchemaName == "MyCustomSchema")
+    }
+
+    @Test("effectiveSchemaName sanitizes type name")
+    func testEffectiveSchemaNameFromType() {
+        let schema = TestUserProfile.schema()
+        let request = AIObjectRequest<TestUserProfile>(
+            messages: [.user("Test")],
+            schema: schema
+        )
+
+        // Should remove generic syntax and module prefixes
+        let schemaName = request.effectiveSchemaName
+        #expect(!schemaName.contains("<"))
+        #expect(!schemaName.contains(">"))
+        #expect(!schemaName.contains("."))
+        #expect(!schemaName.isEmpty)
+    }
+
+    @Test("effectiveSchemaName sanitizes invalid characters")
+    func testEffectiveSchemaNameSanitization() {
+        let schema = TestUserProfile.schema()
+        let request = AIObjectRequest<TestUserProfile>(
+            messages: [.user("Test")],
+            schema: schema,
+            schemaName: "My<Generic>.Type With Spaces"
+        )
+
+        let schemaName = request.effectiveSchemaName
+        #expect(!schemaName.contains("<"))
+        #expect(!schemaName.contains(">"))
+        #expect(!schemaName.contains("."))
+        #expect(!schemaName.contains(" "))
+        // After sanitization, invalid chars are removed and only last component after dot is kept
+        // "Type With Spaces" becomes "Type_With_Spaces"
+        #expect(schemaName.contains("Type"))
+    }
+
+    @Test("effectiveSchemaName truncates to 64 characters")
+    func testEffectiveSchemaNameTruncation() {
+        let schema = TestUserProfile.schema()
+        let longName = String(repeating: "A", count: 100)
+        let request = AIObjectRequest<TestUserProfile>(
+            messages: [.user("Test")],
+            schema: schema,
+            schemaName: longName
+        )
+
+        #expect(request.effectiveSchemaName.count <= 64)
     }
 }

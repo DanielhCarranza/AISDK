@@ -143,14 +143,16 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         let messages = request.messages.map { convertToLegacyMessage($0) }
 
         let effectiveModel = request.model ?? defaultModel
+        let requestId = UUID().uuidString
         let chatRequest = ChatCompletionRequest(
             model: effectiveModel,
             messages: messages,
             metadata: request.metadata,
             maxTokens: request.maxTokens,
             responseFormat: .jsonSchema(
-                name: String(describing: T.self),
-                schemaBuilder: request.schema
+                name: request.effectiveSchemaName,
+                schemaBuilder: request.schema,
+                strict: request.strict
             ),
             temperature: request.temperature,
             topP: request.topP
@@ -167,6 +169,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
             object: object,
             usage: .zero,  // Legacy API doesn't provide usage in generateObject
             finishReason: .stop,
+            requestId: requestId,
             model: effectiveModel,
             provider: provider,
             rawJSON: rawJSON

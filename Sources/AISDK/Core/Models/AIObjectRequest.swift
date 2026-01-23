@@ -11,14 +11,25 @@ import Foundation
 /// Request for structured object generation
 ///
 /// Note: Marked as `@unchecked Sendable` because it contains `SchemaBuilding`
-/// which doesn't have `Sendable` conformance. The schema is an immutable value
-/// used only within a single request context.
+/// which doesn't have `Sendable` conformance. The schema is expected to be
+/// an immutable value type (like `SchemaBuilder`) used only within a single
+/// request context. Custom implementations of `SchemaBuilding` must ensure
+/// thread-safety if sharing state across concurrent requests.
 public struct AIObjectRequest<T: Codable & Sendable>: @unchecked Sendable {
     /// The messages to send to the model
     public let messages: [AIMessage]
 
     /// The schema for the expected output
-    public let schema: SchemaBuilding
+    public let schema: any SchemaBuilding
+
+    /// Custom schema name for API compliance.
+    /// If nil, defaults to a sanitized version of the type name.
+    /// OpenAI requires names matching `[A-Za-z0-9_-]+` with max 64 chars.
+    public let schemaName: String?
+
+    /// Whether to enable strict mode for JSON schema validation.
+    /// When true (default), the provider enforces exact schema compliance.
+    public let strict: Bool
 
     /// The model to use (optional, uses default if nil)
     public let model: String?
@@ -47,7 +58,9 @@ public struct AIObjectRequest<T: Codable & Sendable>: @unchecked Sendable {
 
     public init(
         messages: [AIMessage],
-        schema: SchemaBuilding,
+        schema: any SchemaBuilding,
+        schemaName: String? = nil,
+        strict: Bool = true,
         model: String? = nil,
         maxTokens: Int? = nil,
         temperature: Double? = nil,
@@ -59,6 +72,8 @@ public struct AIObjectRequest<T: Codable & Sendable>: @unchecked Sendable {
     ) {
         self.messages = messages
         self.schema = schema
+        self.schemaName = schemaName
+        self.strict = strict
         self.model = model
         self.maxTokens = maxTokens
         self.temperature = temperature
@@ -67,6 +82,38 @@ public struct AIObjectRequest<T: Codable & Sendable>: @unchecked Sendable {
         self.sensitivity = sensitivity
         self.bufferPolicy = bufferPolicy
         self.metadata = metadata
+    }
+
+    /// Compute a sanitized schema name for API compliance.
+    /// OpenAI requires names matching `[A-Za-z0-9_-]+` with max 64 chars.
+    public var effectiveSchemaName: String {
+        if let name = schemaName {
+            return sanitizeSchemaName(name)
+        }
+        // Use type name, removing module prefix and generic syntax
+        let typeName = String(describing: T.self)
+        return sanitizeSchemaName(typeName)
+    }
+
+    /// Sanitize a name to match OpenAI's schema name requirements
+    private func sanitizeSchemaName(_ name: String) -> String {
+        // Remove module prefix (everything before last dot)
+        var sanitized = name.components(separatedBy: ".").last ?? name
+        // Replace invalid characters with underscores
+        sanitized = sanitized.replacingOccurrences(of: "<", with: "_")
+        sanitized = sanitized.replacingOccurrences(of: ">", with: "_")
+        sanitized = sanitized.replacingOccurrences(of: " ", with: "_")
+        // Keep only valid chars: A-Za-z0-9_-
+        sanitized = sanitized.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+        // Truncate to 64 chars
+        if sanitized.count > 64 {
+            sanitized = String(sanitized.prefix(64))
+        }
+        // Ensure not empty
+        if sanitized.isEmpty {
+            sanitized = "Object"
+        }
+        return sanitized
     }
 }
 
@@ -92,6 +139,8 @@ public extension AIObjectRequest {
         AIObjectRequest(
             messages: messages,
             schema: schema,
+            schemaName: schemaName,
+            strict: strict,
             model: model,
             maxTokens: maxTokens,
             temperature: temperature,
@@ -108,6 +157,8 @@ public extension AIObjectRequest {
         AIObjectRequest(
             messages: messages,
             schema: schema,
+            schemaName: schemaName,
+            strict: strict,
             model: model,
             maxTokens: maxTokens,
             temperature: temperature,
@@ -124,6 +175,8 @@ public extension AIObjectRequest {
         AIObjectRequest(
             messages: messages,
             schema: schema,
+            schemaName: schemaName,
+            strict: strict,
             model: model,
             maxTokens: maxTokens,
             temperature: temperature,
