@@ -92,61 +92,7 @@ public enum AIStreamEvent: Sendable {
 }
 
 // MARK: - Supporting Types
-
-/// Reason why the model stopped generating
-public enum AIFinishReason: String, Sendable, Codable {
-    case stop = "stop"
-    case length = "length"
-    case toolCalls = "tool_calls"
-    case contentFilter = "content_filter"
-    case error = "error"
-    case cancelled = "cancelled"
-    case unknown = "unknown"
-
-    /// Convert from legacy finish_reason strings
-    public init(legacyReason: String?) {
-        switch legacyReason {
-        case "stop": self = .stop
-        case "length": self = .length
-        case "tool_calls", "function_call": self = .toolCalls
-        case "content_filter": self = .contentFilter
-        case "error": self = .error
-        case "cancelled", "canceled": self = .cancelled
-        default: self = .unknown
-        }
-    }
-}
-
-/// Token usage information
-public struct AIUsage: Sendable, Codable, Equatable {
-    public let promptTokens: Int
-    public let completionTokens: Int
-    public let totalTokens: Int
-    public let reasoningTokens: Int?
-
-    public init(
-        promptTokens: Int,
-        completionTokens: Int,
-        totalTokens: Int? = nil,
-        reasoningTokens: Int? = nil
-    ) {
-        self.promptTokens = promptTokens
-        self.completionTokens = completionTokens
-        self.totalTokens = totalTokens ?? (promptTokens + completionTokens)
-        self.reasoningTokens = reasoningTokens
-    }
-
-    /// Zero usage for initialization
-    public static let zero = AIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
-
-    /// Create from legacy ChatCompletionResponse.Usage
-    public init(legacy: ChatCompletionResponse.Usage?) {
-        self.promptTokens = legacy?.promptTokens ?? 0
-        self.completionTokens = legacy?.completionTokens ?? 0
-        self.totalTokens = legacy?.totalTokens ?? (promptTokens + completionTokens)
-        self.reasoningTokens = legacy?.completionTokensDetails?.reasoningTokens
-    }
-}
+// Note: AIUsage and AIFinishReason are defined in AIUsage.swift
 
 /// Source/citation information
 public struct AISource: Sendable, Codable {
