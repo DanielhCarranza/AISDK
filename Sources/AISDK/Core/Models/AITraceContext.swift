@@ -315,9 +315,15 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
         }
 
         // Fallback: use UUID-based generation if SecRandom fails
-        let uuid = UUID()
-        let uuidHex = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        return String(uuidHex.prefix(16))
+        // Loop to ensure non-zero result (extremely unlikely to loop more than once)
+        while true {
+            let uuid = UUID()
+            let uuidHex = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            let result = String(uuidHex.prefix(16))
+            if result != invalidSpanId {
+                return result
+            }
+        }
     }
 
     // MARK: - Utilities
