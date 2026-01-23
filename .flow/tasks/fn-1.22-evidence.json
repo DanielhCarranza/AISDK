@@ -1,0 +1,13 @@
+{
+  "commit_sha": ["a0ed847", "d40715d"],
+  "branch": "ralph-20260123T125202Z-Mac-jmush16@gmail.com-14318-f1c9",
+  "build_command": "swift build",
+  "build_status": "success",
+  "test_command": "swift test --filter ProviderClient",
+  "test_status": "success",
+  "files_changed": [
+    "Sources/AISDK/Core/Providers/AnthropicClientAdapter.swift"
+  ],
+  "review_verdict": "NEEDS_WORK",
+  "review_fixes_applied": true
+}
