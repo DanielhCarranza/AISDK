@@ -10,6 +10,17 @@ import XCTest
 
 final class AITraceContextTests: XCTestCase {
 
+    // MARK: - Test Helper Constants
+
+    /// Valid 32-char hex trace ID for testing
+    private let validTraceId = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    /// Valid 16-char hex span ID for testing
+    private let validSpanId = "00f067aa0ba902b7"
+
+    /// Another valid span ID for parent testing
+    private let validParentSpanId = "b7ad6b7169203331"
+
     // MARK: - Trace ID Generation
 
     func test_trace_id_generation() {
@@ -22,6 +33,9 @@ final class AITraceContextTests: XCTestCase {
         // Trace ID should be 32 hex characters
         XCTAssertEqual(trace1.traceId.count, 32)
         XCTAssertTrue(trace1.traceId.allSatisfy { $0.isHexDigit })
+
+        // Trace ID should be lowercase
+        XCTAssertEqual(trace1.traceId, trace1.traceId.lowercased())
     }
 
     func test_span_id_generation() {
@@ -34,6 +48,17 @@ final class AITraceContextTests: XCTestCase {
         // Span ID should be 16 hex characters
         XCTAssertEqual(trace1.spanId.count, 16)
         XCTAssertTrue(trace1.spanId.allSatisfy { $0.isHexDigit })
+
+        // Span ID should be lowercase
+        XCTAssertEqual(trace1.spanId, trace1.spanId.lowercased())
+    }
+
+    func test_span_id_not_all_zeros() {
+        // Generate many span IDs and verify none are all-zeros
+        for _ in 0..<100 {
+            let trace = AITraceContext()
+            XCTAssertNotEqual(trace.spanId, String(repeating: "0", count: 16))
+        }
     }
 
     func test_root_trace_has_no_parent() {
@@ -41,6 +66,100 @@ final class AITraceContextTests: XCTestCase {
 
         XCTAssertNil(trace.parentSpanId)
         XCTAssertTrue(trace.isRoot)
+    }
+
+    // MARK: - Validated Factory
+
+    func test_validated_factory_with_valid_ids() {
+        let trace = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            operation: "test"
+        )
+
+        XCTAssertNotNil(trace)
+        XCTAssertEqual(trace?.traceId, validTraceId)
+        XCTAssertEqual(trace?.spanId, validSpanId)
+    }
+
+    func test_validated_factory_normalizes_to_lowercase() {
+        let uppercase = AITraceContext.validated(
+            traceId: validTraceId.uppercased(),
+            spanId: validSpanId.uppercased()
+        )
+
+        XCTAssertNotNil(uppercase)
+        XCTAssertEqual(uppercase?.traceId, validTraceId.lowercased())
+        XCTAssertEqual(uppercase?.spanId, validSpanId.lowercased())
+    }
+
+    func test_validated_factory_rejects_invalid_trace_id_length() {
+        let shortTraceId = AITraceContext.validated(
+            traceId: "4bf92f3577b34da6",  // 16 chars instead of 32
+            spanId: validSpanId
+        )
+        XCTAssertNil(shortTraceId)
+
+        let longTraceId = AITraceContext.validated(
+            traceId: validTraceId + "extra",
+            spanId: validSpanId
+        )
+        XCTAssertNil(longTraceId)
+    }
+
+    func test_validated_factory_rejects_invalid_span_id_length() {
+        let shortSpanId = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: "00f067aa"  // 8 chars instead of 16
+        )
+        XCTAssertNil(shortSpanId)
+    }
+
+    func test_validated_factory_rejects_non_hex_characters() {
+        let nonHexTraceId = AITraceContext.validated(
+            traceId: "4bf92f3577b34da6a3ce929d0e0e473g",  // 'g' is not hex
+            spanId: validSpanId
+        )
+        XCTAssertNil(nonHexTraceId)
+
+        let nonHexSpanId = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: "00f067aa0ba902bz"  // 'z' is not hex
+        )
+        XCTAssertNil(nonHexSpanId)
+    }
+
+    func test_validated_factory_rejects_all_zeros_trace_id() {
+        let allZerosTraceId = AITraceContext.validated(
+            traceId: String(repeating: "0", count: 32),
+            spanId: validSpanId
+        )
+        XCTAssertNil(allZerosTraceId)
+    }
+
+    func test_validated_factory_rejects_all_zeros_span_id() {
+        let allZerosSpanId = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: String(repeating: "0", count: 16)
+        )
+        XCTAssertNil(allZerosSpanId)
+    }
+
+    func test_validated_factory_validates_parent_span_id() {
+        let invalidParent = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            parentSpanId: "invalid"
+        )
+        XCTAssertNil(invalidParent)
+
+        let validParent = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            parentSpanId: validParentSpanId
+        )
+        XCTAssertNotNil(validParent)
+        XCTAssertEqual(validParent?.parentSpanId, validParentSpanId)
     }
 
     // MARK: - Parent Span Linking
@@ -152,25 +271,6 @@ final class AITraceContextTests: XCTestCase {
         XCTAssertTrue(trace.traceparent.hasSuffix("-00"))
     }
 
-    func test_tracestate_with_baggage() {
-        let trace = AITraceContext(baggage: ["provider": "openai", "version": "1"])
-
-        guard let tracestate = trace.tracestate else {
-            XCTFail("tracestate should be present when baggage is set")
-            return
-        }
-
-        // Should contain both key=value pairs
-        XCTAssertTrue(tracestate.contains("provider=openai"))
-        XCTAssertTrue(tracestate.contains("version=1"))
-    }
-
-    func test_tracestate_nil_when_no_baggage() {
-        let trace = AITraceContext()
-
-        XCTAssertNil(trace.tracestate)
-    }
-
     func test_parse_traceparent() {
         let original = AITraceContext()
         let traceparent = original.traceparent
@@ -190,21 +290,67 @@ final class AITraceContextTests: XCTestCase {
         XCTAssertEqual(parsed.sampled, original.sampled)
     }
 
-    func test_parse_traceparent_invalid_version() {
-        let invalid = "99-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    func test_parse_traceparent_sampled_flag_bit() {
+        // Test that any odd flag value (low bit = 1) is treated as sampled
+        let sampled01 = AITraceContext.from(traceparent: "00-\(validTraceId)-\(validSpanId)-01")
+        XCTAssertTrue(sampled01?.sampled == true)
 
+        let sampled03 = AITraceContext.from(traceparent: "00-\(validTraceId)-\(validSpanId)-03")
+        XCTAssertTrue(sampled03?.sampled == true)
+
+        let sampledFF = AITraceContext.from(traceparent: "00-\(validTraceId)-\(validSpanId)-ff")
+        XCTAssertTrue(sampledFF?.sampled == true)
+
+        // Even flag values (low bit = 0) are not sampled
+        let unsampled00 = AITraceContext.from(traceparent: "00-\(validTraceId)-\(validSpanId)-00")
+        XCTAssertTrue(unsampled00?.sampled == false)
+
+        let unsampled02 = AITraceContext.from(traceparent: "00-\(validTraceId)-\(validSpanId)-02")
+        XCTAssertTrue(unsampled02?.sampled == false)
+    }
+
+    func test_parse_traceparent_invalid_version() {
+        let invalid = "99-\(validTraceId)-\(validSpanId)-01"
         XCTAssertNil(AITraceContext.from(traceparent: invalid))
     }
 
     func test_parse_traceparent_invalid_trace_id_length() {
-        let invalid = "00-4bf92f3577b34da6-00f067aa0ba902b7-01"
-
+        let invalid = "00-4bf92f3577b34da6-\(validSpanId)-01"
         XCTAssertNil(AITraceContext.from(traceparent: invalid))
+    }
+
+    func test_parse_traceparent_all_zeros_trace_id() {
+        let allZerosTraceId = String(repeating: "0", count: 32)
+        let invalid = "00-\(allZerosTraceId)-\(validSpanId)-01"
+        XCTAssertNil(AITraceContext.from(traceparent: invalid))
+    }
+
+    func test_parse_traceparent_all_zeros_parent_id() {
+        let allZerosParentId = String(repeating: "0", count: 16)
+        let invalid = "00-\(validTraceId)-\(allZerosParentId)-01"
+        XCTAssertNil(AITraceContext.from(traceparent: invalid))
+    }
+
+    func test_parse_traceparent_normalizes_to_lowercase() {
+        let uppercase = "00-\(validTraceId.uppercased())-\(validSpanId.uppercased())-01"
+        let parsed = AITraceContext.from(traceparent: uppercase)
+
+        XCTAssertNotNil(parsed)
+        XCTAssertEqual(parsed?.traceId, validTraceId.lowercased())
+        XCTAssertEqual(parsed?.parentSpanId, validSpanId.lowercased())
+    }
+
+    func test_parse_traceparent_invalid_flags_length() {
+        // Flags must be exactly 2 hex digits
+        let oneDigit = "00-\(validTraceId)-\(validSpanId)-1"
+        XCTAssertNil(AITraceContext.from(traceparent: oneDigit))
+
+        let threeDigits = "00-\(validTraceId)-\(validSpanId)-001"
+        XCTAssertNil(AITraceContext.from(traceparent: threeDigits))
     }
 
     func test_parse_traceparent_invalid_format() {
         let invalid = "not-a-valid-traceparent"
-
         XCTAssertNil(AITraceContext.from(traceparent: invalid))
     }
 
@@ -236,16 +382,16 @@ final class AITraceContextTests: XCTestCase {
     func test_decoding_with_missing_optional_fields() throws {
         let json = """
         {
-            "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
-            "span_id": "00f067aa0ba902b7"
+            "trace_id": "\(validTraceId)",
+            "span_id": "\(validSpanId)"
         }
         """
 
         let data = json.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AITraceContext.self, from: data)
 
-        XCTAssertEqual(decoded.traceId, "4bf92f3577b34da6a3ce929d0e0e4736")
-        XCTAssertEqual(decoded.spanId, "00f067aa0ba902b7")
+        XCTAssertEqual(decoded.traceId, validTraceId)
+        XCTAssertEqual(decoded.spanId, validSpanId)
         XCTAssertNil(decoded.parentSpanId)
         XCTAssertNil(decoded.operation)
         XCTAssertTrue(decoded.sampled)  // Default
@@ -270,25 +416,36 @@ final class AITraceContextTests: XCTestCase {
 
     // MARK: - Equatable / Hashable
 
-    func test_equatable() {
-        let trace1 = AITraceContext(
-            traceId: "abc123",
-            spanId: "def456",
-            operation: "test"
-        )
+    func test_equatable_with_explicit_start_times() {
+        let time1 = Date(timeIntervalSince1970: 1000)
+        let time2 = Date(timeIntervalSince1970: 1000)
 
-        let trace2 = AITraceContext(
-            traceId: "abc123",
-            spanId: "def456",
-            operation: "test"
-        )
+        // Same values should be equal when using validated factory
+        guard let trace1 = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            operation: "test",
+            startTime: time1
+        ),
+        let trace2 = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            operation: "test",
+            startTime: time2
+        ) else {
+            XCTFail("Should create valid traces")
+            return
+        }
 
-        // Note: startTime will differ, so they won't be equal
-        // This is intentional - each trace context is unique
+        XCTAssertEqual(trace1, trace2)
+    }
+
+    func test_equatable_different_traces_not_equal() {
+        let trace1 = AITraceContext()
+        let trace2 = AITraceContext()
+
+        // Different traces should not be equal
         XCTAssertNotEqual(trace1, trace2)
-
-        // Same instance should equal itself
-        XCTAssertEqual(trace1, trace1)
     }
 
     func test_hashable() {
@@ -316,23 +473,43 @@ final class AITraceContextTests: XCTestCase {
         XCTAssertLessThan(trace.elapsed, 1)  // Should be less than 1 second
     }
 
-    func test_to_log_dictionary() {
-        let trace = AITraceContext(
-            traceId: "traceid123",
-            spanId: "spanid456",
-            parentSpanId: "parentid789",
+    func test_to_log_dictionary_excludes_baggage_by_default() {
+        guard let trace = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            parentSpanId: validParentSpanId,
             operation: "test_op",
             sampled: true,
             baggage: ["key": "value"]
-        )
+        ) else {
+            XCTFail("Should create valid trace")
+            return
+        }
 
         let dict = trace.toLogDictionary()
 
-        XCTAssertEqual(dict["trace_id"] as? String, "traceid123")
-        XCTAssertEqual(dict["span_id"] as? String, "spanid456")
-        XCTAssertEqual(dict["parent_span_id"] as? String, "parentid789")
+        XCTAssertEqual(dict["trace_id"] as? String, validTraceId)
+        XCTAssertEqual(dict["span_id"] as? String, validSpanId)
+        XCTAssertEqual(dict["parent_span_id"] as? String, validParentSpanId)
         XCTAssertEqual(dict["operation"] as? String, "test_op")
         XCTAssertEqual(dict["sampled"] as? Bool, true)
+
+        // Baggage should NOT be included by default (PHI safety)
+        XCTAssertNil(dict["baggage"])
+    }
+
+    func test_to_log_dictionary_includes_baggage_when_requested() {
+        guard let trace = AITraceContext.validated(
+            traceId: validTraceId,
+            spanId: validSpanId,
+            baggage: ["key": "value"]
+        ) else {
+            XCTFail("Should create valid trace")
+            return
+        }
+
+        let dict = trace.toLogDictionary(includeBaggage: true)
+
         XCTAssertEqual(dict["baggage"] as? [String: String], ["key": "value"])
     }
 

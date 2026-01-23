@@ -3,10 +3,11 @@
 //  AISDK
 //
 //  Request tracing context for debugging and observability
-//  Based on W3C Trace Context and OpenTelemetry patterns
+//  Based on W3C Trace Context specification
 //
 
 import Foundation
+import Security
 
 /// Request tracing context for debugging and observability
 ///
@@ -17,6 +18,10 @@ import Foundation
 ///
 /// **PHI Safety**: Trace IDs are generated UUIDs, never derived from
 /// user data, patient IDs, or other PII. Safe to include in logs.
+///
+/// **Note on baggage**: The `baggage` property is for operational metadata only.
+/// Callers must ensure baggage values do not contain PHI. Baggage is excluded
+/// from `toLogDictionary()` by default for safety.
 ///
 /// Example:
 /// ```swift
@@ -31,11 +36,11 @@ import Foundation
 /// ```
 public struct AITraceContext: Sendable, Equatable, Hashable {
     /// Unique identifier for the entire trace (request chain)
-    /// Format: 32 hex characters (128 bits) per W3C Trace Context
+    /// Format: 32 lowercase hex characters (128 bits) per W3C Trace Context
     public let traceId: String
 
     /// Unique identifier for this specific span (operation)
-    /// Format: 16 hex characters (64 bits) per W3C Trace Context
+    /// Format: 16 lowercase hex characters (64 bits) per W3C Trace Context
     public let spanId: String
 
     /// Parent span ID if this is a child span
@@ -54,6 +59,14 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     /// Sampling decision for this trace
     public let sampled: Bool
 
+    // MARK: - Validation Constants
+
+    /// All-zeros trace ID (invalid per W3C)
+    private static let invalidTraceId = String(repeating: "0", count: 32)
+
+    /// All-zeros span ID (invalid per W3C)
+    private static let invalidSpanId = String(repeating: "0", count: 16)
+
     // MARK: - Initialization
 
     /// Create a new root trace context
@@ -61,7 +74,7 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     /// - Parameters:
     ///   - operation: Optional operation name for the root span
     ///   - sampled: Whether this trace should be sampled (default: true)
-    ///   - baggage: Optional baggage items for context propagation
+    ///   - baggage: Optional baggage items for context propagation (must not contain PHI)
     public init(
         operation: String? = nil,
         sampled: Bool = true,
@@ -76,17 +89,12 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
         self.sampled = sampled
     }
 
-    /// Create a trace context with explicit IDs (for deserialization or testing)
+    /// Create a trace context with explicit IDs (internal, for child spans and parsing)
     ///
-    /// - Parameters:
-    ///   - traceId: The trace ID (must be 32 hex characters)
-    ///   - spanId: The span ID (must be 16 hex characters)
-    ///   - parentSpanId: Optional parent span ID
-    ///   - operation: Optional operation name
-    ///   - startTime: Span start time
-    ///   - sampled: Sampling decision
-    ///   - baggage: Baggage items
-    public init(
+    /// This initializer is internal to prevent construction of invalid W3C contexts.
+    /// Use `init(operation:sampled:baggage:)` for new traces, `childSpan(operation:)`
+    /// for child spans, or `from(traceparent:)` for parsing.
+    internal init(
         traceId: String,
         spanId: String,
         parentSpanId: String? = nil,
@@ -102,6 +110,69 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
         self.startTime = startTime
         self.sampled = sampled
         self.baggage = baggage
+    }
+
+    /// Create a trace context with explicit IDs, with validation
+    ///
+    /// Returns nil if IDs are invalid (wrong length, not hex, all-zeros).
+    ///
+    /// - Parameters:
+    ///   - traceId: The trace ID (must be 32 lowercase hex characters, not all-zeros)
+    ///   - spanId: The span ID (must be 16 lowercase hex characters, not all-zeros)
+    ///   - parentSpanId: Optional parent span ID (must be 16 hex chars if provided)
+    ///   - operation: Optional operation name
+    ///   - startTime: Span start time
+    ///   - sampled: Sampling decision
+    ///   - baggage: Baggage items (must not contain PHI)
+    public static func validated(
+        traceId: String,
+        spanId: String,
+        parentSpanId: String? = nil,
+        operation: String? = nil,
+        startTime: Date = Date(),
+        sampled: Bool = true,
+        baggage: [String: String] = [:]
+    ) -> AITraceContext? {
+        // Validate trace ID
+        guard Self.isValidTraceId(traceId) else { return nil }
+
+        // Validate span ID
+        guard Self.isValidSpanId(spanId) else { return nil }
+
+        // Validate parent span ID if provided
+        if let parentSpanId = parentSpanId {
+            guard Self.isValidSpanId(parentSpanId) else { return nil }
+        }
+
+        return AITraceContext(
+            traceId: traceId.lowercased(),
+            spanId: spanId.lowercased(),
+            parentSpanId: parentSpanId?.lowercased(),
+            operation: operation,
+            startTime: startTime,
+            sampled: sampled,
+            baggage: baggage
+        )
+    }
+
+    // MARK: - Validation Helpers
+
+    /// Check if a trace ID is valid per W3C spec
+    private static func isValidTraceId(_ id: String) -> Bool {
+        guard id.count == 32 else { return false }
+        let lowercased = id.lowercased()
+        guard lowercased.allSatisfy({ $0.isHexDigit }) else { return false }
+        guard lowercased != invalidTraceId else { return false }
+        return true
+    }
+
+    /// Check if a span ID is valid per W3C spec
+    private static func isValidSpanId(_ id: String) -> Bool {
+        guard id.count == 16 else { return false }
+        let lowercased = id.lowercased()
+        guard lowercased.allSatisfy({ $0.isHexDigit }) else { return false }
+        guard lowercased != invalidSpanId else { return false }
+        return true
     }
 
     // MARK: - Child Span Creation
@@ -129,7 +200,7 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     ///
     /// - Parameters:
     ///   - operation: Name of the operation
-    ///   - additionalBaggage: Additional baggage to merge (never include PHI)
+    ///   - additionalBaggage: Additional baggage to merge (must not contain PHI)
     /// - Returns: A new trace context for the child span
     public func childSpan(
         operation: String,
@@ -155,19 +226,11 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
 
     /// Generate W3C traceparent header value
     ///
-    /// Format: `{version}-{trace-id}-{parent-id}-{flags}`
+    /// Format: `{version}-{trace-id}-{span-id}-{flags}`
     /// Example: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`
     public var traceparent: String {
         let flags = sampled ? "01" : "00"
         return "00-\(traceId)-\(spanId)-\(flags)"
-    }
-
-    /// Generate W3C tracestate header value (baggage as key=value pairs)
-    ///
-    /// Note: Only includes safe operational data, never PHI
-    public var tracestate: String? {
-        guard !baggage.isEmpty else { return nil }
-        return baggage.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
     }
 
     /// Parse a W3C traceparent header
@@ -179,27 +242,34 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
         guard parts.count == 4 else { return nil }
 
         let version = String(parts[0])
-        let traceId = String(parts[1])
-        let parentId = String(parts[2])
-        let flags = String(parts[3])
+        let traceIdRaw = String(parts[1])
+        let parentIdRaw = String(parts[2])
+        let flagsRaw = String(parts[3])
 
-        // Validate version
+        // Validate version (only 00 is currently supported)
         guard version == "00" else { return nil }
 
-        // Validate trace ID (32 hex chars)
-        guard traceId.count == 32,
-              traceId.allSatisfy({ $0.isHexDigit }) else { return nil }
+        // Validate and normalize trace ID
+        guard isValidTraceId(traceIdRaw) else { return nil }
+        let traceId = traceIdRaw.lowercased()
 
-        // Validate parent ID (16 hex chars)
-        guard parentId.count == 16,
-              parentId.allSatisfy({ $0.isHexDigit }) else { return nil }
+        // Validate and normalize parent ID (becomes our parentSpanId)
+        guard isValidSpanId(parentIdRaw) else { return nil }
+        let parentId = parentIdRaw.lowercased()
 
-        // Parse sampled flag
-        let sampled = flags.hasSuffix("1")
+        // Validate flags (must be 2 hex digits)
+        guard flagsRaw.count == 2,
+              flagsRaw.allSatisfy({ $0.isHexDigit }),
+              let flagByte = UInt8(flagsRaw, radix: 16) else {
+            return nil
+        }
+
+        // Sampled is the low bit of flags
+        let sampled = (flagByte & 0x01) == 0x01
 
         return AITraceContext(
             traceId: traceId,
-            spanId: Self.generateSpanId(),
+            spanId: generateSpanId(),
             parentSpanId: parentId,
             operation: nil,
             startTime: Date(),
@@ -217,10 +287,27 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     }
 
     /// Generate a span ID (16 hex characters, 64 bits)
+    /// Retries on failure and ensures non-zero result
     private static func generateSpanId() -> String {
-        var bytes = [UInt8](repeating: 0, count: 8)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return bytes.map { String(format: "%02x", $0) }.joined()
+        var attempts = 0
+        while attempts < 3 {
+            var bytes = [UInt8](repeating: 0, count: 8)
+            let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+
+            if status == errSecSuccess {
+                let hexString = bytes.map { String(format: "%02x", $0) }.joined()
+                // Ensure not all-zeros
+                if hexString != invalidSpanId {
+                    return hexString
+                }
+            }
+            attempts += 1
+        }
+
+        // Fallback: use UUID-based generation if SecRandom fails
+        let uuid = UUID()
+        let uuidHex = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        return String(uuidHex.prefix(16))
     }
 
     // MARK: - Utilities
@@ -236,7 +323,18 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     }
 
     /// Create a dictionary for logging (PHI-safe)
+    ///
+    /// Note: Baggage is excluded by default as it may contain sensitive data.
+    /// Use `toLogDictionary(includeBaggage:)` if you've verified baggage is safe.
     public func toLogDictionary() -> [String: Any] {
+        toLogDictionary(includeBaggage: false)
+    }
+
+    /// Create a dictionary for logging with optional baggage inclusion
+    ///
+    /// - Parameter includeBaggage: Whether to include baggage (default: false for PHI safety)
+    /// - Returns: Dictionary suitable for logging
+    public func toLogDictionary(includeBaggage: Bool) -> [String: Any] {
         var dict: [String: Any] = [
             "trace_id": traceId,
             "span_id": spanId,
@@ -251,7 +349,7 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
             dict["operation"] = operation
         }
 
-        if !baggage.isEmpty {
+        if includeBaggage && !baggage.isEmpty {
             dict["baggage"] = baggage
         }
 
