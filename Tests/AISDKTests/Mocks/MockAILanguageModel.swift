@@ -51,6 +51,13 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     /// Delay before responding (for timeout testing)
     public var delay: Duration
 
+    /// Delay between stream events (default: zero for fast tests)
+    public var interEventDelay: Duration
+
+    /// Whether to auto-emit start event in streams (default: true)
+    /// Set to false when using custom streamEvents that include .start
+    public var autoEmitStart: Bool
+
     /// Error to throw instead of returning a response
     public var errorToThrow: Error?
 
@@ -90,6 +97,8 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
         self.usage = AIUsage(promptTokens: 10, completionTokens: 20)
         self.finishReason = .stop
         self.delay = .zero
+        self.interEventDelay = .zero
+        self.autoEmitStart = true
         self.errorToThrow = nil
     }
 
@@ -141,9 +150,12 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
         recordTextRequest(request)
 
-        // If error is configured, return a failing stream
+        // If error is configured, emit error event then fail
         if let error = errorToThrow {
-            return SafeAsyncStream.fail(with: error)
+            return SafeAsyncStream.makeSync { continuation in
+                continuation.yield(.error(error))
+                continuation.finish(throwing: error)
+            }
         }
 
         // Use custom stream events if provided, otherwise generate from responseText
@@ -155,6 +167,8 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
         }
 
         let capturedDelay = delay
+        let capturedInterEventDelay = interEventDelay
+        let capturedAutoEmitStart = autoEmitStart
 
         return SafeAsyncStream.make { continuation in
             // Apply delay if configured
@@ -162,19 +176,24 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
                 try await Task.sleep(for: capturedDelay)
             }
 
-            // Emit stream start
-            continuation.yield(.start(metadata: AIStreamMetadata(
-                requestId: "mock-stream-\(UUID().uuidString.prefix(8))",
-                model: request.model ?? self.modelId,
-                provider: self.provider
-            )))
+            // Emit stream start (unless disabled or custom events already include it)
+            let hasStartEvent = events.contains { if case .start = $0 { return true }; return false }
+            if capturedAutoEmitStart && !hasStartEvent {
+                continuation.yield(.start(metadata: AIStreamMetadata(
+                    requestId: "mock-stream-\(UUID().uuidString.prefix(8))",
+                    model: request.model ?? self.modelId,
+                    provider: self.provider
+                )))
+            }
 
             // Emit events
             for event in events {
                 guard !continuation.isTerminated else { break }
                 continuation.yield(event)
-                // Small delay between events to simulate streaming
-                try await Task.sleep(for: .milliseconds(1))
+                // Apply inter-event delay if configured
+                if capturedInterEventDelay > .zero {
+                    try await Task.sleep(for: capturedInterEventDelay)
+                }
             }
 
             continuation.finish()
@@ -218,12 +237,16 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
         recordObjectRequest(T.self)
 
-        // If error is configured, return a failing stream
+        // If error is configured, emit error event then fail
         if let error = errorToThrow {
-            return SafeAsyncStream.fail(with: error)
+            return SafeAsyncStream.makeSync { continuation in
+                continuation.yield(.error(error))
+                continuation.finish(throwing: error)
+            }
         }
 
         let capturedDelay = delay
+        let capturedInterEventDelay = interEventDelay
         let capturedResponse = responseText
         let capturedUsage = usage
         let capturedFinishReason = finishReason
@@ -251,7 +274,10 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
                     let chunk = data.subdata(in: offset..<end)
                     continuation.yield(.objectDelta(chunk))
                     offset = end
-                    try await Task.sleep(for: .milliseconds(1))
+                    // Apply inter-event delay if configured
+                    if capturedInterEventDelay > .zero {
+                        try await Task.sleep(for: capturedInterEventDelay)
+                    }
                 }
             }
 
@@ -272,15 +298,18 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     ) -> [AIStreamEvent] {
         var events: [AIStreamEvent] = []
 
-        // Split text into words for streaming simulation
-        let words = text.split(separator: " ", omittingEmptySubsequences: false)
-        for (index, word) in words.enumerated() {
-            let delta = index == 0 ? String(word) : " " + String(word)
-            events.append(.textDelta(delta))
-        }
+        // Only emit text events if there's actual text content
+        if !text.isEmpty {
+            // Split text into words for streaming simulation
+            let words = text.split(separator: " ", omittingEmptySubsequences: false)
+            for (index, word) in words.enumerated() {
+                let delta = index == 0 ? String(word) : " " + String(word)
+                events.append(.textDelta(delta))
+            }
 
-        // Add text completion
-        events.append(.textCompletion(text))
+            // Add text completion
+            events.append(.textCompletion(text))
+        }
 
         // Add tool calls if present
         for toolCall in toolCalls {
@@ -436,10 +465,13 @@ extension MockAILanguageModel {
 }
 
 /// Mock that returns different responses for sequential calls
+///
+/// Note: Requires at least one response. If initialized with an empty array,
+/// methods will throw/fail with appropriate errors.
 public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Sendable {
     public let provider: String = "mock-sequential"
     public let modelId: String = "mock-sequential-model"
-    public let capabilities: LLMCapabilities = [.text, .tools, .streaming]
+    public let capabilities: LLMCapabilities = [.text, .tools, .streaming, .structuredOutputs]
 
     private var responses: [String]
     private var currentIndex: Int = 0
@@ -447,6 +479,10 @@ public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Se
 
     public private(set) var requestCount: Int = 0
 
+    /// Creates a sequential mock with the given responses
+    ///
+    /// - Parameter responses: Array of responses to return sequentially.
+    ///   If empty, methods will return an empty string or throw.
     init(responses: [String]) {
         self.responses = responses
     }
@@ -455,6 +491,10 @@ public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Se
         lock.lock()
         defer { lock.unlock() }
         requestCount += 1
+        // Handle empty responses array gracefully
+        guard !responses.isEmpty else {
+            return ""
+        }
         let response = responses[min(currentIndex, responses.count - 1)]
         currentIndex += 1
         return response
