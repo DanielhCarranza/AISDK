@@ -38,8 +38,7 @@ Supporting types already present and verified:
 - AISource, AIFileEvent, AIStreamMetadata, AIStepResult, AIToolCallResult, AIToolResultData
 
 Note: ToolMetadata Sendable warnings are pre-existing and will be addressed in Task 4.4 (AITool Protocol Redesigned) per the spec.
-
 ## Evidence
-- Commits: (pending)
-- Tests: swift build passes
+- Commits: 1ab7cc0e22064cfb339ef2361008fa4b859a41b9
+- Tests: swift build
 - PRs:

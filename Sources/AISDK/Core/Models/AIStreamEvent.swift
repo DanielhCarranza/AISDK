@@ -9,7 +9,7 @@
 import Foundation
 
 /// All possible events emitted during AI streaming operations
-/// Supports 17 distinct event types for comprehensive stream handling
+/// Supports 20 distinct event types for comprehensive stream handling
 /// Based on Vercel AI SDK 6.x event semantics
 public enum AIStreamEvent: Sendable {
     // MARK: - Text Events
@@ -110,6 +110,8 @@ public enum AIFinishReason: String, Sendable, Codable {
         case "length": self = .length
         case "tool_calls", "function_call": self = .toolCalls
         case "content_filter": self = .contentFilter
+        case "error": self = .error
+        case "cancelled", "canceled": self = .cancelled
         default: self = .unknown
         }
     }
