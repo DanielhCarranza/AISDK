@@ -117,6 +117,8 @@ extension AIStepResult {
     }
 
     /// Custom decoder that handles missing/optional keys for backwards compatibility
+    /// - Missing keys use sensible defaults (empty arrays, .zero usage, .stop finishReason)
+    /// - Unknown finishReason values map to .unknown
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.stepIndex = try container.decode(Int.self, forKey: .stepIndex)
@@ -124,6 +126,12 @@ extension AIStepResult {
         self.toolCalls = try container.decodeIfPresent([AIToolCallResult].self, forKey: .toolCalls) ?? []
         self.toolResults = try container.decodeIfPresent([AIToolResultData].self, forKey: .toolResults) ?? []
         self.usage = try container.decodeIfPresent(AIUsage.self, forKey: .usage) ?? .zero
-        self.finishReason = try container.decodeIfPresent(AIFinishReason.self, forKey: .finishReason) ?? .stop
+
+        // Handle unknown finish reasons gracefully
+        if let rawReason = try container.decodeIfPresent(String.self, forKey: .finishReason) {
+            self.finishReason = AIFinishReason(rawValue: rawReason) ?? .unknown
+        } else {
+            self.finishReason = .stop
+        }
     }
 }
