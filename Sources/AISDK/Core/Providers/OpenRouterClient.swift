@@ -130,7 +130,7 @@ public actor OpenRouterClient: ProviderClient {
         // Update health status on successful request
         _healthStatus = .healthy
 
-        return buildProviderResponse(from: completionResponse, latencyMs: latencyMs)
+        return try buildProviderResponse(from: completionResponse, latencyMs: latencyMs)
     }
 
     public nonisolated func stream(request: ProviderRequest) -> AsyncThrowingStream<ProviderStreamEvent, Error> {
@@ -293,16 +293,22 @@ public actor OpenRouterClient: ProviderClient {
             }
         }
 
-        // Tools from providerOptions
+        // Tools from providerOptions - validate all tools convert successfully
         if let tools = request.tools {
-            body.tools = tools.compactMap { toolValue -> OpenRouterTool? in
+            var convertedTools: [OpenRouterTool] = []
+            for (index, toolValue) in tools.enumerated() {
                 // Convert ProviderJSONValue to OpenRouterTool
-                guard case .object(let toolDict) = toolValue,
-                      case .string(let type)? = toolDict["type"],
-                      type == "function",
-                      case .object(let functionDict)? = toolDict["function"],
-                      case .string(let name)? = functionDict["name"] else {
-                    return nil
+                guard case .object(let toolDict) = toolValue else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) is not an object")
+                }
+                guard case .string(let type)? = toolDict["type"], type == "function" else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) missing type:'function'")
+                }
+                guard case .object(let functionDict)? = toolDict["function"] else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) missing function definition")
+                }
+                guard case .string(let name)? = functionDict["name"], !name.isEmpty else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) missing function name")
                 }
 
                 let description: String?
@@ -320,15 +326,16 @@ public actor OpenRouterClient: ProviderClient {
                     parameters = nil
                 }
 
-                return OpenRouterTool(
+                convertedTools.append(OpenRouterTool(
                     type: "function",
                     function: OpenRouterFunctionDefinition(
                         name: name,
                         description: description,
                         parameters: parameters
                     )
-                )
+                ))
             }
+            body.tools = convertedTools
         }
 
         return body
@@ -359,9 +366,11 @@ public actor OpenRouterClient: ProviderClient {
             let errorMessage = parseErrorMessage(from: data) ?? "Bad request"
             throw ProviderError.invalidRequest(errorMessage)
         case 401:
-            throw ProviderError.authenticationFailed("Invalid API key")
+            let errorMessage = parseErrorMessage(from: data) ?? "Invalid API key"
+            throw ProviderError.authenticationFailed(errorMessage)
         case 403:
-            throw ProviderError.authenticationFailed("Access forbidden")
+            let errorMessage = parseErrorMessage(from: data) ?? "Access forbidden"
+            throw ProviderError.authenticationFailed(errorMessage)
         case 404:
             let errorMessage = parseErrorMessage(from: data) ?? "Resource not found"
             // Check if it's a model not found error vs endpoint error
@@ -389,11 +398,49 @@ public actor OpenRouterClient: ProviderClient {
         struct ErrorResponse: Decodable {
             struct ErrorDetail: Decodable {
                 let message: String?
+                let code: String?
+                let type: String?
             }
             let error: ErrorDetail?
         }
 
-        return try? JSONDecoder().decode(ErrorResponse.self, from: data).error?.message
+        guard let response = try? JSONDecoder().decode(ErrorResponse.self, from: data),
+              let error = response.error else {
+            return nil
+        }
+
+        var message = error.message ?? "Unknown error"
+        if let code = error.code {
+            message += " (code: \(code))"
+        }
+        if let type = error.type {
+            message += " [type: \(type)]"
+        }
+        return message
+    }
+
+    /// Parse SSE error frame (OpenAI/OpenRouter style)
+    private func parseSSEErrorFrame(from data: Data) throws -> String? {
+        struct SSEErrorFrame: Decodable {
+            struct ErrorDetail: Decodable {
+                let message: String?
+                let code: String?
+                let type: String?
+            }
+            let error: ErrorDetail?
+        }
+
+        let frame = try JSONDecoder().decode(SSEErrorFrame.self, from: data)
+        guard let error = frame.error else { return nil }
+
+        var message = error.message ?? "Stream error"
+        if let code = error.code {
+            message += " (code: \(code))"
+        }
+        if let type = error.type {
+            message += " [type: \(type)]"
+        }
+        return message
     }
 
     private func parseCompletionResponse(_ data: Data) throws -> OpenRouterCompletionResponse {
@@ -404,11 +451,14 @@ public actor OpenRouterClient: ProviderClient {
         }
     }
 
-    private func buildProviderResponse(from response: OpenRouterCompletionResponse, latencyMs: Int) -> ProviderResponse {
-        let choice = response.choices.first
-        let content = choice?.message.content ?? ""
+    private func buildProviderResponse(from response: OpenRouterCompletionResponse, latencyMs: Int) throws -> ProviderResponse {
+        guard let choice = response.choices.first else {
+            throw ProviderError.parseError("Response has no choices")
+        }
 
-        let toolCalls = choice?.message.toolCalls?.map { tc in
+        let content = choice.message.content ?? ""
+
+        let toolCalls = choice.message.toolCalls?.map { tc in
             ProviderToolCall(
                 id: tc.id,
                 name: tc.function.name,
@@ -425,7 +475,7 @@ public actor OpenRouterClient: ProviderClient {
             )
         }
 
-        let finishReason = ProviderFinishReason(providerReason: choice?.finishReason)
+        let finishReason = ProviderFinishReason(providerReason: choice.finishReason)
 
         return ProviderResponse(
             id: response.id,
@@ -464,21 +514,24 @@ public actor OpenRouterClient: ProviderClient {
         }
 
         var responseId: String?
-        // Key by index for accumulation; store (id, name, arguments, startEmitted)
-        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool)] = [:]
+        // Key by index for accumulation; store (id, name, arguments, pendingDeltas)
+        // pendingDeltas holds argument fragments before we can emit start
+        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool, pendingDeltas: [String])] = [:]
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
+        var decodeErrorCount = 0
+        let maxDecodeErrors = 5
 
         for try await line in bytes.lines {
             // Skip empty lines and comments
             guard !line.isEmpty, !line.hasPrefix(":") else { continue }
 
-            // Parse SSE data line
-            guard line.hasPrefix("data: ") else { continue }
-            let jsonString = String(line.dropFirst(6))
+            // Parse SSE data line - accept "data:" with optional whitespace
+            guard line.hasPrefix("data:") else { continue }
+            let jsonString = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
 
-            // Check for stream end
-            if jsonString == "[DONE]" {
+            // Check for stream end - trim and compare
+            if jsonString.trimmingCharacters(in: .whitespaces) == "[DONE]" {
                 // Emit pending tool call finish events
                 for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
                     if toolCall.startEmitted {
@@ -513,39 +566,39 @@ public actor OpenRouterClient: ProviderClient {
                 }
 
                 // Tool calls - key by index to handle multiple concurrent tool calls
+                // Use stable index-based IDs until we can emit start with real ID
                 if let toolCalls = delta.toolCalls {
                     for toolCall in toolCalls {
                         let index = toolCall.index ?? 0
-                        let id = toolCall.id ?? accumulatedToolCalls[index]?.id ?? "tool_\(index)"
-                        let name = toolCall.function?.name ?? accumulatedToolCalls[index]?.name ?? ""
+                        // Use real ID if provided, else use existing or generate stable one
+                        let stableId = toolCall.id ?? accumulatedToolCalls[index]?.id ?? "tool_call_\(index)"
+                        let newName = toolCall.function?.name
                         let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
+                        let existingName = accumulatedToolCalls[index]?.name ?? ""
                         let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
+                        let pendingDeltas = accumulatedToolCalls[index]?.pendingDeltas ?? []
+                        let name = newName ?? existingName
 
-                        // Only emit start once per tool call
-                        if !startEmitted && !name.isEmpty {
-                            continuation.yield(.toolCallStart(id: id, name: name))
-                            accumulatedToolCalls[index] = (id: id, name: name, arguments: existingArgs, startEmitted: true)
-                        } else if accumulatedToolCalls[index] == nil {
-                            // First delta for this index, but no name yet - just store it
-                            accumulatedToolCalls[index] = (id: id, name: name, arguments: existingArgs, startEmitted: false)
-                        }
-
-                        // Tool call arguments delta
+                        // Collect argument delta
+                        var newPendingDeltas = pendingDeltas
                         if let argsDelta = toolCall.function?.arguments, !argsDelta.isEmpty {
-                            continuation.yield(.toolCallDelta(id: id, argumentsDelta: argsDelta))
-                            var existing = accumulatedToolCalls[index] ?? (id: id, name: name, arguments: "", startEmitted: false)
-                            existing.arguments += argsDelta
-                            if !existing.name.isEmpty {
-                                existing.name = name.isEmpty ? existing.name : name
-                            }
-                            accumulatedToolCalls[index] = existing
+                            newPendingDeltas.append(argsDelta)
                         }
 
-                        // Update id if we got a real one
-                        if toolCall.id != nil {
-                            var existing = accumulatedToolCalls[index]!
-                            existing.id = id
-                            accumulatedToolCalls[index] = existing
+                        // Can we emit start? Need a name
+                        if !startEmitted && !name.isEmpty {
+                            continuation.yield(.toolCallStart(id: stableId, name: name))
+                            // Now flush all pending deltas
+                            var allArgs = existingArgs
+                            for delta in newPendingDeltas {
+                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: delta))
+                                allArgs += delta
+                            }
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: true, pendingDeltas: [])
+                        } else {
+                            // Buffer until we can emit start
+                            let allArgs = existingArgs + newPendingDeltas.joined()
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: false, pendingDeltas: newPendingDeltas)
                         }
                     }
                 }
@@ -579,8 +632,17 @@ public actor OpenRouterClient: ProviderClient {
                     return
                 }
             } catch {
-                // Log but continue - some SSE lines may be comments or malformed
-                // Only fail on repeated errors
+                // Check if this is an error frame from the provider
+                if let errorFrame = try? parseSSEErrorFrame(from: chunkData) {
+                    throw ProviderError.serverError(statusCode: 0, message: errorFrame)
+                }
+
+                // Track decode failures - fail after threshold
+                decodeErrorCount += 1
+                if decodeErrorCount >= maxDecodeErrors {
+                    throw ProviderError.parseError("Too many SSE decode failures (\(decodeErrorCount)). Last line: \(jsonString.prefix(200))")
+                }
+                // Continue for occasional malformed lines
                 continue
             }
         }
