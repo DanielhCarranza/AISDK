@@ -1,0 +1,5 @@
+{
+  "commits": [],
+  "tests": "AIAgentActorTests.swift - 15 test cases",
+  "verification": "AIAgentActor.swift implements actor isolation, operation queue, observable state, non-streaming execute, stop conditions, timeout policies, tool execution, and conversation management"
+}

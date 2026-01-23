@@ -1,20 +1,3 @@
-# fn-1.32 Task 4.1a: AIAgent Core Shell
-
-## Description
-Create the core AIAgentActor with actor-based isolation, operation queue for reentrancy protection, observable state for SwiftUI binding, and non-streaming execute method.
-
-## Acceptance
-- [x] AIAgentActor is an `actor` with full isolation
-- [x] Operation queue prevents reentrancy issues
-- [x] ObservableAgentState bridges actor state to SwiftUI (MainActor-isolated)
-- [x] `execute(messages:)` performs non-streaming agent loop
-- [x] Configurable stop conditions (stepCount, noToolCalls, tokenBudget, custom)
-- [x] TimeoutPolicy integration for operations
-- [x] Tool execution with schema lookup and parameter validation
-- [x] Reset and setMessages methods for conversation management
-- [x] Test coverage for initialization, observable state, operation queue, execution, stop conditions
-
-## Done summary
 ## Done Summary
 
 AIAgentActor implemented as a full Swift actor with:
@@ -41,7 +24,3 @@ AIAgentActor implemented as a full Swift actor with:
 - Stop condition behaviors
 - Reset clears state
 - setMessages updates history
-## Evidence
-- Commits:
-- Tests: AIAgentActorTests.swift - 15 test cases
-- PRs:
