@@ -51,8 +51,8 @@ public actor OpenRouterClient: ProviderClient {
     // MARK: - Constants
 
     private static let defaultBaseURL = URL(string: "https://openrouter.ai/api/v1")!
-    private static let modelsEndpoint = "/models"
-    private static let chatCompletionsEndpoint = "/chat/completions"
+    private static let modelsEndpoint = "models"
+    private static let chatCompletionsEndpoint = "chat/completions"
 
     // MARK: - Initialization
 
@@ -135,12 +135,17 @@ public actor OpenRouterClient: ProviderClient {
 
     public nonisolated func stream(request: ProviderRequest) -> AsyncThrowingStream<ProviderStreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     try await self.performStreaming(request: request, continuation: continuation)
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+
+            // Cancel the producer task when the consumer cancels
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }
@@ -279,9 +284,11 @@ public actor OpenRouterClient: ProviderClient {
             case .json:
                 body.responseFormat = OpenRouterResponseFormat(type: "json_object")
             case .jsonSchema(let name, let schema):
+                // Parse schema string into JSON object
+                let jsonSchema = try OpenRouterJSONSchema(name: name, schemaString: schema)
                 body.responseFormat = OpenRouterResponseFormat(
                     type: "json_schema",
-                    jsonSchema: OpenRouterJSONSchema(name: name, schema: schema)
+                    jsonSchema: jsonSchema
                 )
             }
         }
@@ -348,13 +355,23 @@ public actor OpenRouterClient: ProviderClient {
         switch response.statusCode {
         case 200..<300:
             return
+        case 400:
+            let errorMessage = parseErrorMessage(from: data) ?? "Bad request"
+            throw ProviderError.invalidRequest(errorMessage)
         case 401:
             throw ProviderError.authenticationFailed("Invalid API key")
         case 403:
             throw ProviderError.authenticationFailed("Access forbidden")
         case 404:
-            let errorMessage = parseErrorMessage(from: data) ?? "Model not found"
-            throw ProviderError.modelNotFound(errorMessage)
+            let errorMessage = parseErrorMessage(from: data) ?? "Resource not found"
+            // Check if it's a model not found error vs endpoint error
+            if errorMessage.lowercased().contains("model") {
+                throw ProviderError.modelNotFound(errorMessage)
+            }
+            throw ProviderError.invalidRequest("Not found: \(errorMessage)")
+        case 422:
+            let errorMessage = parseErrorMessage(from: data) ?? "Unprocessable entity"
+            throw ProviderError.invalidRequest(errorMessage)
         case 429:
             let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
                 .flatMap { TimeInterval($0) }
@@ -447,8 +464,10 @@ public actor OpenRouterClient: ProviderClient {
         }
 
         var responseId: String?
-        var accumulatedToolCalls: [String: (name: String, arguments: String)] = [:]
+        // Key by index for accumulation; store (id, name, arguments, startEmitted)
+        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool)] = [:]
         var totalUsage: ProviderUsage?
+        var lastFinishReason: ProviderFinishReason?
 
         for try await line in bytes.lines {
             // Skip empty lines and comments
@@ -460,8 +479,16 @@ public actor OpenRouterClient: ProviderClient {
 
             // Check for stream end
             if jsonString == "[DONE]" {
-                // Emit finish event
-                continuation.yield(.finish(reason: .stop, usage: totalUsage))
+                // Emit pending tool call finish events
+                for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
+                    if toolCall.startEmitted {
+                        continuation.yield(.toolCallFinish(id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments))
+                    }
+                }
+
+                // Use last observed finish reason or default to .stop
+                let reason = lastFinishReason ?? .stop
+                continuation.yield(.finish(reason: reason, usage: totalUsage))
                 continuation.finish()
                 return
             }
@@ -485,24 +512,40 @@ public actor OpenRouterClient: ProviderClient {
                     continuation.yield(.textDelta(content))
                 }
 
-                // Tool calls
+                // Tool calls - key by index to handle multiple concurrent tool calls
                 if let toolCalls = delta.toolCalls {
                     for toolCall in toolCalls {
-                        let id = toolCall.id ?? ""
+                        let index = toolCall.index ?? 0
+                        let id = toolCall.id ?? accumulatedToolCalls[index]?.id ?? "tool_\(index)"
+                        let name = toolCall.function?.name ?? accumulatedToolCalls[index]?.name ?? ""
+                        let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
+                        let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
 
-                        // Tool call start
-                        if let name = toolCall.function?.name, !name.isEmpty {
+                        // Only emit start once per tool call
+                        if !startEmitted && !name.isEmpty {
                             continuation.yield(.toolCallStart(id: id, name: name))
-                            accumulatedToolCalls[id] = (name: name, arguments: "")
+                            accumulatedToolCalls[index] = (id: id, name: name, arguments: existingArgs, startEmitted: true)
+                        } else if accumulatedToolCalls[index] == nil {
+                            // First delta for this index, but no name yet - just store it
+                            accumulatedToolCalls[index] = (id: id, name: name, arguments: existingArgs, startEmitted: false)
                         }
 
                         // Tool call arguments delta
                         if let argsDelta = toolCall.function?.arguments, !argsDelta.isEmpty {
                             continuation.yield(.toolCallDelta(id: id, argumentsDelta: argsDelta))
-                            if var existing = accumulatedToolCalls[id] {
-                                existing.arguments += argsDelta
-                                accumulatedToolCalls[id] = existing
+                            var existing = accumulatedToolCalls[index] ?? (id: id, name: name, arguments: "", startEmitted: false)
+                            existing.arguments += argsDelta
+                            if !existing.name.isEmpty {
+                                existing.name = name.isEmpty ? existing.name : name
                             }
+                            accumulatedToolCalls[index] = existing
+                        }
+
+                        // Update id if we got a real one
+                        if toolCall.id != nil {
+                            var existing = accumulatedToolCalls[index]!
+                            existing.id = id
+                            accumulatedToolCalls[index] = existing
                         }
                     }
                 }
@@ -510,11 +553,15 @@ public actor OpenRouterClient: ProviderClient {
                 // Check for finish reason
                 if let finishReason = chunk.choices.first?.finishReason {
                     let reason = ProviderFinishReason(providerReason: finishReason)
+                    lastFinishReason = reason
 
                     // Emit tool call finish events
-                    for (id, toolCall) in accumulatedToolCalls {
-                        continuation.yield(.toolCallFinish(id: id, name: toolCall.name, arguments: toolCall.arguments))
+                    for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
+                        if toolCall.startEmitted {
+                            continuation.yield(.toolCallFinish(id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments))
+                        }
                     }
+                    accumulatedToolCalls.removeAll()
 
                     // Parse usage if present
                     if let usage = chunk.usage {
@@ -532,13 +579,21 @@ public actor OpenRouterClient: ProviderClient {
                     return
                 }
             } catch {
-                // Skip malformed chunks, continue processing
+                // Log but continue - some SSE lines may be comments or malformed
+                // Only fail on repeated errors
                 continue
             }
         }
 
-        // Stream ended without [DONE] - emit finish
-        continuation.yield(.finish(reason: .unknown, usage: totalUsage))
+        // Stream ended without [DONE] or finish_reason
+        // Flush pending tool calls
+        for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
+            if toolCall.startEmitted {
+                continuation.yield(.toolCallFinish(id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments))
+            }
+        }
+
+        continuation.yield(.finish(reason: lastFinishReason ?? .unknown, usage: totalUsage))
         continuation.finish()
     }
 
@@ -726,7 +781,22 @@ private struct OpenRouterResponseFormat: Encodable {
 
 private struct OpenRouterJSONSchema: Encodable {
     let name: String
-    let schema: String
+    let schema: ProviderJSONValue  // Must be a JSON object, not a string
+
+    /// Create from a JSON schema string (parses into ProviderJSONValue)
+    init(name: String, schemaString: String) throws {
+        self.name = name
+        guard let data = schemaString.data(using: .utf8) else {
+            throw ProviderError.invalidRequest("Invalid JSON schema encoding")
+        }
+        self.schema = try JSONDecoder().decode(ProviderJSONValue.self, from: data)
+    }
+
+    /// Create directly from ProviderJSONValue
+    init(name: String, schema: ProviderJSONValue) {
+        self.name = name
+        self.schema = schema
+    }
 }
 
 // MARK: - Response Types
