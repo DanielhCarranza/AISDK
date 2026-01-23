@@ -376,7 +376,112 @@ final class AITraceContextTests: XCTestCase {
         XCTAssertEqual(decoded.parentSpanId, original.parentSpanId)
         XCTAssertEqual(decoded.operation, original.operation)
         XCTAssertEqual(decoded.sampled, original.sampled)
-        XCTAssertEqual(decoded.baggage, original.baggage)
+        // Baggage is intentionally NOT encoded for PHI safety
+        XCTAssertTrue(decoded.baggage.isEmpty)
+    }
+
+    func test_decoding_validates_trace_id() throws {
+        // Invalid trace ID (wrong length)
+        let shortTraceId = """
+        {
+            "trace_id": "4bf92f3577b34da6",
+            "span_id": "\(validSpanId)"
+        }
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(AITraceContext.self, from: shortTraceId.data(using: .utf8)!)) { error in
+            guard case AITraceContextDecodingError.invalidTraceId = error else {
+                XCTFail("Expected invalidTraceId error, got \(error)")
+                return
+            }
+        }
+
+        // Invalid trace ID (all zeros)
+        let allZerosTraceId = """
+        {
+            "trace_id": "\(String(repeating: "0", count: 32))",
+            "span_id": "\(validSpanId)"
+        }
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(AITraceContext.self, from: allZerosTraceId.data(using: .utf8)!)) { error in
+            guard case AITraceContextDecodingError.invalidTraceId = error else {
+                XCTFail("Expected invalidTraceId error, got \(error)")
+                return
+            }
+        }
+
+        // Invalid trace ID (non-hex)
+        let nonHexTraceId = """
+        {
+            "trace_id": "4bf92f3577b34da6a3ce929d0e0e473g",
+            "span_id": "\(validSpanId)"
+        }
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(AITraceContext.self, from: nonHexTraceId.data(using: .utf8)!)) { error in
+            guard case AITraceContextDecodingError.invalidTraceId = error else {
+                XCTFail("Expected invalidTraceId error, got \(error)")
+                return
+            }
+        }
+    }
+
+    func test_decoding_validates_span_id() throws {
+        // Invalid span ID (wrong length)
+        let shortSpanId = """
+        {
+            "trace_id": "\(validTraceId)",
+            "span_id": "00f067aa"
+        }
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(AITraceContext.self, from: shortSpanId.data(using: .utf8)!)) { error in
+            guard case AITraceContextDecodingError.invalidSpanId = error else {
+                XCTFail("Expected invalidSpanId error, got \(error)")
+                return
+            }
+        }
+
+        // Invalid span ID (all zeros)
+        let allZerosSpanId = """
+        {
+            "trace_id": "\(validTraceId)",
+            "span_id": "\(String(repeating: "0", count: 16))"
+        }
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(AITraceContext.self, from: allZerosSpanId.data(using: .utf8)!)) { error in
+            guard case AITraceContextDecodingError.invalidSpanId = error else {
+                XCTFail("Expected invalidSpanId error, got \(error)")
+                return
+            }
+        }
+    }
+
+    func test_decoding_validates_parent_span_id() throws {
+        // Invalid parent span ID
+        let invalidParentSpanId = """
+        {
+            "trace_id": "\(validTraceId)",
+            "span_id": "\(validSpanId)",
+            "parent_span_id": "invalid"
+        }
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(AITraceContext.self, from: invalidParentSpanId.data(using: .utf8)!)) { error in
+            guard case AITraceContextDecodingError.invalidParentSpanId = error else {
+                XCTFail("Expected invalidParentSpanId error, got \(error)")
+                return
+            }
+        }
+    }
+
+    func test_decoding_normalizes_to_lowercase() throws {
+        let uppercaseJson = """
+        {
+            "trace_id": "\(validTraceId.uppercased())",
+            "span_id": "\(validSpanId.uppercased())"
+        }
+        """
+        let decoded = try JSONDecoder().decode(AITraceContext.self, from: uppercaseJson.data(using: .utf8)!)
+
+        XCTAssertEqual(decoded.traceId, validTraceId.lowercased())
+        XCTAssertEqual(decoded.spanId, validSpanId.lowercased())
     }
 
     func test_decoding_with_missing_optional_fields() throws {
