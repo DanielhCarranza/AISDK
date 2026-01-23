@@ -1,14 +1,28 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-23T17:27:24.820127Z",
   "created_at": "2026-01-23T03:05:39.733413Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "645faf22d70fb7f93e20dff86ffc370ca9a3e90f"
+    ],
+    "files": [
+      "Tests/AISDKTests/Core/Providers/ProviderContractTests.swift"
+    ],
+    "tests": [
+      "swift test --filter ProviderContractTests",
+      "swift test --filter OpenAIContractTests",
+      "swift test --filter AnthropicContractTests",
+      "swift test --filter GeminiContractTests"
+    ]
+  },
   "id": "fn-1.24",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.24.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 2.8: ProviderContractTests",
-  "updated_at": "2026-01-23T03:05:39.733574Z"
+  "updated_at": "2026-01-23T18:55:00.000000Z"
 }
