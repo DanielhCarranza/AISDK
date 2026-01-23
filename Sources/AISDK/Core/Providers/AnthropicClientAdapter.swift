@@ -20,8 +20,8 @@ import Foundation
 /// - Direct Anthropic API access
 /// - Full streaming support with SSE parsing
 /// - Tool calling support
-/// - Extended thinking support for Claude models
 /// - Health status tracking
+/// - Thinking delta passthrough (when enabled via beta headers externally)
 ///
 /// ## Usage
 /// ```swift
@@ -45,9 +45,6 @@ public actor AnthropicClientAdapter: ProviderClient {
     // MARK: - State
 
     private var _healthStatus: ProviderHealthStatus = .unknown
-    private var cachedModels: [String]?
-    private var lastModelsFetch: Date?
-    private let modelsCacheDuration: TimeInterval = 300 // 5 minutes
 
     // MARK: - Constants
 
@@ -263,23 +260,26 @@ public actor AnthropicClientAdapter: ProviderClient {
         }
 
         // Convert messages to Anthropic format
-        let messages = nonSystemMessages.map { message -> ACAMessage in
+        let messages = try nonSystemMessages.map { message -> ACAMessage in
             let content: [ACAContentBlock]
 
             switch message.content {
             case .text(let text):
                 if message.role == .tool {
-                    // Tool results use tool_result content type
+                    // Tool results use tool_result content type - require toolCallId
+                    guard let toolCallId = message.toolCallId, !toolCallId.isEmpty else {
+                        throw ProviderError.invalidRequest("Tool message requires non-empty toolCallId")
+                    }
                     content = [.toolResult(ACAToolResultContent(
                         type: "tool_result",
-                        toolUseId: message.toolCallId ?? "",
+                        toolUseId: toolCallId,
                         content: text
                     ))]
                 } else {
                     content = [.text(ACATextContent(type: "text", text: text))]
                 }
             case .parts(let parts):
-                content = parts.compactMap { part -> ACAContentBlock? in
+                content = try parts.map { part -> ACAContentBlock in
                     switch part {
                     case .text(let text):
                         return .text(ACATextContent(type: "text", text: text))
@@ -293,19 +293,13 @@ public actor AnthropicClientAdapter: ProviderClient {
                                 data: base64
                             )
                         ))
-                    case .imageURL(let url):
-                        // Anthropic requires base64, but we can try URL source
-                        return .image(ACAImageContent(
-                            type: "image",
-                            source: ACAImageSource(
-                                type: "url",
-                                mediaType: "image/jpeg", // Assume JPEG for URL
-                                data: url
-                            )
-                        ))
-                    case .audio, .file:
-                        // Not directly supported by Anthropic
-                        return nil
+                    case .imageURL:
+                        // Anthropic requires base64 images, URLs not supported
+                        throw ProviderError.invalidRequest("Anthropic does not support image URLs - provide base64 image data instead")
+                    case .audio:
+                        throw ProviderError.invalidRequest("Anthropic does not support audio content")
+                    case .file:
+                        throw ProviderError.invalidRequest("Anthropic does not support file content in this format")
                     }
                 }
             }
@@ -349,14 +343,15 @@ public actor AnthropicClientAdapter: ProviderClient {
         body.stopSequences = request.stop
         body.stream = streaming
 
-        // Tool choice
+        // Tool choice - handle before tools conversion
+        var shouldOmitTools = false
         if let toolChoice = request.toolChoice {
             switch toolChoice {
             case .auto:
                 body.toolChoice = ACAToolChoice(type: "auto")
             case .none:
-                // Anthropic doesn't have explicit "none" - omit tools instead
-                break
+                // Anthropic doesn't have explicit "none" - omit tools entirely
+                shouldOmitTools = true
             case .required:
                 body.toolChoice = ACAToolChoice(type: "any")
             case .tool(let name):
@@ -364,8 +359,8 @@ public actor AnthropicClientAdapter: ProviderClient {
             }
         }
 
-        // Tools - convert from ProviderJSONValue to Anthropic format
-        if let tools = request.tools {
+        // Tools - convert from ProviderJSONValue to Anthropic format (unless toolChoice is .none)
+        if !shouldOmitTools, let tools = request.tools {
             var convertedTools: [ACATool] = []
             for (index, toolValue) in tools.enumerated() {
                 guard case .object(let toolDict) = toolValue else {
@@ -571,7 +566,15 @@ public actor AnthropicClientAdapter: ProviderClient {
             return
         }
 
-        var accumulatedToolCalls: [String: (name: String, arguments: String, startEmitted: Bool)] = [:]
+        // Track tool calls by content block index (not by tool_use_id) since Anthropic
+        // sends deltas and stop events by index. Map index -> tool state.
+        struct ToolCallState {
+            var id: String
+            var name: String
+            var arguments: String
+            var startEmitted: Bool
+        }
+        var toolCallsByIndex: [Int: ToolCallState] = [:]
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
         var decodeErrorCount = 0
@@ -611,13 +614,17 @@ public actor AnthropicClientAdapter: ProviderClient {
                     }
 
                 case "content_block_start":
-                    if let contentBlock = event.contentBlock {
+                    if let contentBlock = event.contentBlock, let index = event.index {
                         switch contentBlock {
                         case .toolUse(let toolUse):
-                            // Start of a tool call
-                            accumulatedToolCalls[toolUse.id] = (name: toolUse.name, arguments: "", startEmitted: false)
+                            // Start of a tool call - track by index
+                            toolCallsByIndex[index] = ToolCallState(
+                                id: toolUse.id,
+                                name: toolUse.name,
+                                arguments: "",
+                                startEmitted: true
+                            )
                             continuation.yield(.toolCallStart(id: toolUse.id, name: toolUse.name))
-                            accumulatedToolCalls[toolUse.id] = (name: toolUse.name, arguments: "", startEmitted: true)
                         case .text:
                             // Text block starting, nothing special needed
                             break
@@ -630,16 +637,11 @@ public actor AnthropicClientAdapter: ProviderClient {
                         case .textDelta(let textDelta):
                             continuation.yield(.textDelta(textDelta.text))
                         case .inputJsonDelta(let jsonDelta):
-                            // Tool call argument delta
-                            // We need to find which tool call this belongs to
-                            // Anthropic sends index in the event
-                            if let index = event.index,
-                               let (id, _) = accumulatedToolCalls.enumerated().first(where: { $0.offset == index })?.element {
-                                if var toolCall = accumulatedToolCalls[id] {
-                                    toolCall.arguments += jsonDelta.partialJson
-                                    accumulatedToolCalls[id] = toolCall
-                                    continuation.yield(.toolCallDelta(id: id, argumentsDelta: jsonDelta.partialJson))
-                                }
+                            // Tool call argument delta - look up by index
+                            if let index = event.index, var toolCall = toolCallsByIndex[index] {
+                                toolCall.arguments += jsonDelta.partialJson
+                                toolCallsByIndex[index] = toolCall
+                                continuation.yield(.toolCallDelta(id: toolCall.id, argumentsDelta: jsonDelta.partialJson))
                             }
                         case .thinkingDelta(let thinking):
                             continuation.yield(.reasoningDelta(thinking.thinking))
@@ -650,18 +652,14 @@ public actor AnthropicClientAdapter: ProviderClient {
                     }
 
                 case "content_block_stop":
-                    // End of a content block - emit tool call finish if applicable
-                    if let index = event.index {
-                        let toolCallArray = Array(accumulatedToolCalls)
-                        if index < toolCallArray.count {
-                            let (id, toolCall) = toolCallArray[index]
-                            if toolCall.startEmitted {
-                                continuation.yield(.toolCallFinish(
-                                    id: id,
-                                    name: toolCall.name,
-                                    arguments: toolCall.arguments
-                                ))
-                            }
+                    // End of a content block - emit tool call finish only if this index was a tool_use block
+                    if let index = event.index, let toolCall = toolCallsByIndex[index] {
+                        if toolCall.startEmitted {
+                            continuation.yield(.toolCallFinish(
+                                id: toolCall.id,
+                                name: toolCall.name,
+                                arguments: toolCall.arguments
+                            ))
                         }
                     }
 

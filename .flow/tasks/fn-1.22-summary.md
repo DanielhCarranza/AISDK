@@ -1,12 +1,3 @@
-# fn-1.22 Task 2.6: AnthropicClientAdapter
-
-## Description
-TBD
-
-## Acceptance
-- [ ] TBD
-
-## Done summary
 # Task fn-1.22: Add AnthropicClientAdapter
 
 ## Summary
@@ -33,7 +24,3 @@ Added AnthropicClientAdapter for Phase 2 routing layer with direct Anthropic API
 ### Testing
 - Build verified successful with `swift build`
 - ProviderClient test suite runs without errors
-## Evidence
-- Commits:
-- Tests:
-- PRs:
