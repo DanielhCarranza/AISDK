@@ -322,7 +322,7 @@ final class ModelRegistryTests: XCTestCase {
 
         await registry.register(model: model, provider: .openai)
 
-        let canonical = await registry.canonicalId(for: "alias")
+        let canonical = await registry.canonicalId(forAlias: "alias")
         XCTAssertEqual(canonical, "openai/real-name")
     }
 
