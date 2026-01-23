@@ -208,6 +208,26 @@ public enum ToolError: AIError {
     }
 }
 
+// MARK: - Provider Access Errors
+
+/// Errors related to provider access control and PHI protection
+public enum AIProviderAccessError: AIError, Equatable {
+    /// The provider is not in the allowed providers list
+    case providerNotAllowed(provider: String, allowedProviders: Set<String>)
+    /// Sensitive or PHI data requires explicit provider allowlisting
+    case sensitiveDataRequiresAllowlist(sensitivity: DataSensitivity)
+
+    public var detailedDescription: String {
+        switch self {
+        case .providerNotAllowed(let provider, let allowed):
+            let allowedList = allowed.isEmpty ? "(none)" : allowed.sorted().joined(separator: ", ")
+            return "Provider '\(provider)' is not allowed. Allowed providers: \(allowedList)"
+        case .sensitiveDataRequiresAllowlist(let sensitivity):
+            return "Requests with \(sensitivity.rawValue) sensitivity require explicit provider allowlisting via allowedProviders"
+        }
+    }
+}
+
 // MARK: - Error Helpers
 extension Error {
     public var userFriendlyDescription: String {

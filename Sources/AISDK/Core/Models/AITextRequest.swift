@@ -94,39 +94,52 @@ public enum DataSensitivity: String, Sendable, Codable, Equatable {
 
 // MARK: - Stream Buffer Policy
 
-/// Stream buffer policy for memory control
-public struct StreamBufferPolicy: Sendable, Equatable {
-    /// Maximum number of events to buffer
-    public let capacity: Int
+/// Stream buffer policy for memory control.
+/// Maps to Swift's AsyncStream/AsyncThrowingStream buffering policies.
+///
+/// Note: Swift's built-in streams support unbounded, dropOldest, and dropNewest behaviors.
+/// The capacity is validated to be > 0 for bounded policies.
+public enum StreamBufferPolicy: Sendable, Equatable {
+    /// Unbounded buffer - no limit on events (use with caution for memory)
+    case unbounded
+    /// Bounded buffer that drops oldest events when full
+    case dropOldest(capacity: Int)
+    /// Bounded buffer that drops newest events when full
+    case dropNewest(capacity: Int)
 
-    /// Action when buffer is full
-    public let overflowBehavior: OverflowBehavior
-
-    public enum OverflowBehavior: Sendable, Equatable {
-        /// Drop oldest events when full
-        case dropOldest
-        /// Drop newest events when full
-        case dropNewest
-        /// Block until space available
-        case suspendProducer
+    /// The effective capacity of the buffer (Int.max for unbounded)
+    public var capacity: Int {
+        switch self {
+        case .unbounded:
+            return Int.max
+        case .dropOldest(let cap), .dropNewest(let cap):
+            return cap
+        }
     }
 
-    public init(capacity: Int, overflowBehavior: OverflowBehavior = .suspendProducer) {
-        self.capacity = capacity
-        self.overflowBehavior = overflowBehavior
+    /// Default bounded policy with 1000 event capacity, dropping oldest on overflow
+    public static let bounded = StreamBufferPolicy.dropOldest(capacity: 1000)
+
+    /// Create a bounded policy with validation
+    /// - Parameters:
+    ///   - capacity: Must be > 0
+    ///   - dropOldest: If true, drops oldest events; if false, drops newest
+    /// - Returns: A bounded policy, or nil if capacity is invalid
+    public static func bounded(capacity: Int, dropOldest: Bool = true) -> StreamBufferPolicy? {
+        guard capacity > 0 else { return nil }
+        return dropOldest ? .dropOldest(capacity: capacity) : .dropNewest(capacity: capacity)
     }
-
-    /// Default bounded policy with 1000 event capacity
-    public static let bounded = StreamBufferPolicy(capacity: 1000)
-
-    /// Unbounded policy (use with caution)
-    public static let unbounded = StreamBufferPolicy(capacity: Int.max)
 }
 
 // MARK: - AITextRequest Extensions
 
 public extension AITextRequest {
-    /// Check if the request can use a specific provider based on sensitivity settings
+    /// Check if the request can use a specific provider based on allowedProviders.
+    /// Returns true if allowedProviders is nil (no restrictions) or if the provider is in the set.
+    ///
+    /// Note: This only checks the provider allowlist. Sensitivity validation
+    /// (requiring explicit allowlisting for sensitive/PHI data) is handled separately
+    /// by the adapter/router layer.
     func canUseProvider(_ provider: String) -> Bool {
         // If allowedProviders is nil, allow all providers
         guard let allowed = allowedProviders else {

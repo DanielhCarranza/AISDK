@@ -68,6 +68,9 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
     // MARK: - AILanguageModel Implementation
 
     public func generateText(request: AITextRequest) async throws -> AITextResult {
+        // Validate provider access based on sensitivity and allowedProviders
+        try validateProviderAccess(request: request)
+
         // Convert AITextRequest to legacy ChatCompletionRequest
         let chatRequest = try convertToLegacyRequest(request, streaming: false)
 
@@ -82,6 +85,9 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    // Validate provider access based on sensitivity and allowedProviders
+                    try self.validateProviderAccess(request: request)
+
                     // Convert AITextRequest to legacy ChatCompletionRequest
                     let chatRequest = try convertToLegacyRequest(request, streaming: true)
 
@@ -185,6 +191,38 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
     }
 
     // MARK: - Private Helpers
+
+    /// Validates that this provider can handle the request based on sensitivity and provider restrictions
+    private func validateProviderAccess(request: AITextRequest) throws {
+        // Check if this provider is in the allowlist (if specified)
+        if !request.canUseProvider(provider) {
+            throw AIProviderAccessError.providerNotAllowed(
+                provider: provider,
+                allowedProviders: request.allowedProviders ?? []
+            )
+        }
+
+        // Validate sensitivity requirements
+        switch request.sensitivity {
+        case .standard:
+            // Standard data can use any provider
+            break
+        case .sensitive:
+            // Sensitive data requires explicit provider allowlisting
+            if request.allowedProviders == nil {
+                throw AIProviderAccessError.sensitiveDataRequiresAllowlist(
+                    sensitivity: request.sensitivity
+                )
+            }
+        case .phi:
+            // PHI requires explicit provider allowlisting
+            if request.allowedProviders == nil {
+                throw AIProviderAccessError.sensitiveDataRequiresAllowlist(
+                    sensitivity: request.sensitivity
+                )
+            }
+        }
+    }
 
     private func convertToLegacyRequest(_ request: AITextRequest, streaming: Bool) throws -> ChatCompletionRequest {
         let messages = request.messages.map { convertToLegacyMessage($0) }

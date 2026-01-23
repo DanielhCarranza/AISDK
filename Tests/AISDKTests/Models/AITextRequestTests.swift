@@ -31,7 +31,7 @@ struct AITextRequestTests {
     func testFullInit() {
         let messages = [AIMessage.user("Hello"), AIMessage.assistant("Hi there")]
         let allowedProviders: Set<String> = ["openai", "anthropic"]
-        let bufferPolicy = StreamBufferPolicy(capacity: 500, overflowBehavior: .dropOldest)
+        let bufferPolicy = StreamBufferPolicy.dropOldest(capacity: 500)
 
         let request = AITextRequest(
             messages: messages,
@@ -121,12 +121,12 @@ struct AITextRequestTests {
     @Test("withBufferPolicy creates new request with buffer policy")
     func testWithBufferPolicy() {
         let original = AITextRequest(messages: [.user("Test")])
-        let policy = StreamBufferPolicy(capacity: 2000, overflowBehavior: .dropNewest)
+        let policy = StreamBufferPolicy.dropNewest(capacity: 2000)
 
         let updated = original.withBufferPolicy(policy)
 
         #expect(updated.bufferPolicy?.capacity == 2000)
-        #expect(updated.bufferPolicy?.overflowBehavior == .dropNewest)
+        #expect(updated.bufferPolicy == .dropNewest(capacity: 2000))
         #expect(original.bufferPolicy == nil) // Original unchanged
     }
 }
@@ -166,12 +166,12 @@ struct DataSensitivityTests {
 
 @Suite("StreamBufferPolicy Tests")
 struct StreamBufferPolicyTests {
-    @Test("Default bounded policy has correct capacity")
+    @Test("Default bounded policy has correct capacity and drops oldest")
     func testDefaultBounded() {
         let policy = StreamBufferPolicy.bounded
 
         #expect(policy.capacity == 1000)
-        #expect(policy.overflowBehavior == .suspendProducer)
+        #expect(policy == .dropOldest(capacity: 1000))
     }
 
     @Test("Unbounded policy uses max capacity")
@@ -183,27 +183,51 @@ struct StreamBufferPolicyTests {
 
     @Test("Custom policy with dropOldest")
     func testDropOldest() {
-        let policy = StreamBufferPolicy(capacity: 500, overflowBehavior: .dropOldest)
+        let policy = StreamBufferPolicy.dropOldest(capacity: 500)
 
         #expect(policy.capacity == 500)
-        #expect(policy.overflowBehavior == .dropOldest)
+        if case .dropOldest(let cap) = policy {
+            #expect(cap == 500)
+        } else {
+            #expect(Bool(false), "Expected dropOldest policy")
+        }
     }
 
     @Test("Custom policy with dropNewest")
     func testDropNewest() {
-        let policy = StreamBufferPolicy(capacity: 100, overflowBehavior: .dropNewest)
+        let policy = StreamBufferPolicy.dropNewest(capacity: 100)
 
         #expect(policy.capacity == 100)
-        #expect(policy.overflowBehavior == .dropNewest)
+        if case .dropNewest(let cap) = policy {
+            #expect(cap == 100)
+        } else {
+            #expect(Bool(false), "Expected dropNewest policy")
+        }
     }
 
     @Test("StreamBufferPolicy is Equatable")
     func testEquatable() {
-        let policy1 = StreamBufferPolicy(capacity: 1000, overflowBehavior: .suspendProducer)
-        let policy2 = StreamBufferPolicy(capacity: 1000, overflowBehavior: .suspendProducer)
-        let policy3 = StreamBufferPolicy(capacity: 500, overflowBehavior: .suspendProducer)
+        let policy1 = StreamBufferPolicy.dropOldest(capacity: 1000)
+        let policy2 = StreamBufferPolicy.dropOldest(capacity: 1000)
+        let policy3 = StreamBufferPolicy.dropOldest(capacity: 500)
 
         #expect(policy1 == policy2)
         #expect(policy1 != policy3)
+    }
+
+    @Test("Bounded factory validates capacity")
+    func testBoundedFactory() {
+        // Valid capacity
+        let valid = StreamBufferPolicy.bounded(capacity: 100)
+        #expect(valid != nil)
+        #expect(valid?.capacity == 100)
+
+        // Invalid capacity (0)
+        let invalidZero = StreamBufferPolicy.bounded(capacity: 0)
+        #expect(invalidZero == nil)
+
+        // Invalid capacity (negative)
+        let invalidNegative = StreamBufferPolicy.bounded(capacity: -1)
+        #expect(invalidNegative == nil)
     }
 }
