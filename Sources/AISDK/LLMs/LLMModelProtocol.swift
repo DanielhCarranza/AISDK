@@ -8,7 +8,7 @@
 import Foundation
 
 // MARK: - Universal LLM Provider Identification
-public enum LLMProvider: String, CaseIterable {
+public enum LLMProvider: String, CaseIterable, Sendable {
     case openai = "OpenAI"
     case anthropic = "Anthropic"
     case google = "Google"
