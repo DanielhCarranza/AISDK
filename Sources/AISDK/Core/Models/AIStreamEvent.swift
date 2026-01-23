@@ -189,31 +189,7 @@ public struct AIStreamMetadata: Sendable {
     }
 }
 
-/// Result of a single step in multi-step execution
-public struct AIStepResult: Sendable {
-    public let stepIndex: Int
-    public let text: String
-    public let toolCalls: [AIToolCallResult]
-    public let toolResults: [AIToolResultData]
-    public let usage: AIUsage
-    public let finishReason: AIFinishReason
-
-    public init(
-        stepIndex: Int,
-        text: String,
-        toolCalls: [AIToolCallResult] = [],
-        toolResults: [AIToolResultData] = [],
-        usage: AIUsage = .zero,
-        finishReason: AIFinishReason = .stop
-    ) {
-        self.stepIndex = stepIndex
-        self.text = text
-        self.toolCalls = toolCalls
-        self.toolResults = toolResults
-        self.usage = usage
-        self.finishReason = finishReason
-    }
-}
+// Note: AIStepResult is defined in AIStepResult.swift
 
 /// Tool call result data
 public struct AIToolCallResult: Sendable, Codable, Equatable {
