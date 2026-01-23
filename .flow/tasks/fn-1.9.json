@@ -1,14 +1,32 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-23T06:46:26.930883Z",
   "created_at": "2026-01-23T03:05:29.915233Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "files_changed": [
+      "Sources/AISDK/Core/Models/AIUsage.swift",
+      "Sources/AISDK/Core/Models/AIStreamEvent.swift",
+      "Tests/AISDKTests/Models/AIUsageTests.swift"
+    ],
+    "test_results": {
+      "failed": 0,
+      "passed": 40,
+      "suites": [
+        "AIUsage Tests",
+        "AIFinishReason Tests"
+      ]
+    },
+    "tests": [
+      "swift test --filter AIUsageTests|AIFinishReasonTests"
+    ]
+  },
   "id": "fn-1.9",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.9.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 1.6: AIUsage/AIFinishReason",
-  "updated_at": "2026-01-23T03:05:29.915392Z"
+  "updated_at": "2026-01-23T06:47:47.686703Z"
 }
