@@ -288,3 +288,76 @@ struct AILanguageModelAdapterProviderValidationTests {
         }
     }
 }
+
+// MARK: - AIObjectRequest Provider Validation Tests
+
+/// Test model for object generation
+fileprivate struct TestProfile: Codable, Sendable, JSONSchemaModel {
+    @Field(description: "User's name")
+    var name: String = ""
+
+    init() {}
+}
+
+@Suite("AIObjectRequest Provider Validation Tests")
+struct AIObjectRequestProviderValidationTests {
+    @Test("AIObjectRequest.canUseProvider with nil allowedProviders allows any provider")
+    func testCanUseProviderWithNil() {
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("Create a profile")],
+            schema: schema,
+            sensitivity: .standard
+        )
+
+        #expect(request.canUseProvider("openai"))
+        #expect(request.canUseProvider("anthropic"))
+        #expect(request.canUseProvider("any-provider"))
+    }
+
+    @Test("AIObjectRequest.canUseProvider respects allowedProviders")
+    func testCanUseProviderWithAllowlist() {
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("Create a profile")],
+            schema: schema,
+            allowedProviders: ["openai", "anthropic"],
+            sensitivity: .sensitive
+        )
+
+        #expect(request.canUseProvider("openai"))
+        #expect(request.canUseProvider("anthropic"))
+        #expect(!request.canUseProvider("google"))
+        #expect(!request.canUseProvider("azure"))
+    }
+
+    @Test("AIObjectRequest PHI sensitivity with allowlist")
+    func testPHIWithAllowlist() {
+        let schema = TestProfile.schema()
+        let request = AIObjectRequest<TestProfile>(
+            messages: [.user("PHI profile")],
+            schema: schema,
+            allowedProviders: ["openai"],
+            sensitivity: .phi
+        )
+
+        #expect(request.canUseProvider("openai"))
+        #expect(!request.canUseProvider("anthropic"))
+        #expect(request.sensitivity == .phi)
+    }
+
+    @Test("AIObjectRequest transformation methods preserve sensitivity")
+    func testTransformationPreservesSensitivity() {
+        let schema = TestProfile.schema()
+        let original = AIObjectRequest<TestProfile>(
+            messages: [.user("Create profile")],
+            schema: schema,
+            sensitivity: .phi
+        )
+
+        let withProviders = original.withAllowedProviders(["openai"])
+
+        #expect(withProviders.sensitivity == .phi)
+        #expect(withProviders.allowedProviders == ["openai"])
+    }
+}
