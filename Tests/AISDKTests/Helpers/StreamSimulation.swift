@@ -427,9 +427,9 @@ public enum StreamSimulation {
             provider: provider
         )))
 
-        // Each step
-        for (index, result) in steps.enumerated() {
-            events.append(.stepStart(stepIndex: index))
+        // Each step - use result.stepIndex for consistency
+        for result in steps {
+            events.append(.stepStart(stepIndex: result.stepIndex))
 
             // Emit text for the step if present
             if !result.text.isEmpty {
@@ -440,7 +440,7 @@ public enum StreamSimulation {
                 }
             }
 
-            events.append(.stepFinish(stepIndex: index, result: result))
+            events.append(.stepFinish(stepIndex: result.stepIndex, result: result))
         }
 
         // Final usage (sum of all steps, preserving optional fields)
@@ -486,15 +486,17 @@ public enum StreamSimulation {
         // Split text into chunks and intersperse heartbeats
         let words = text.split(separator: " ", omittingEmptySubsequences: false)
 
-        // Calculate insertion indices for exactly safeHeartbeatCount heartbeats
-        var heartbeatIndices: Set<Int> = []
-        if safeHeartbeatCount > 0 && words.count > 1 {
-            let step = Double(words.count - 1) / Double(safeHeartbeatCount + 1)
-            for i in 1...safeHeartbeatCount {
-                let insertAfter = Int(Double(i) * step) - 1
-                if insertAfter >= 0 && insertAfter < words.count - 1 {
-                    heartbeatIndices.insert(insertAfter)
-                }
+        // Track heartbeats emitted to guarantee exactly safeHeartbeatCount
+        var heartbeatsEmitted = 0
+
+        // Calculate insertion points - use array to allow multiple heartbeats at same point if needed
+        var heartbeatCountPerIndex: [Int: Int] = [:]
+        if safeHeartbeatCount > 0 && words.count > 0 {
+            // Distribute heartbeats evenly across valid insertion points (after each word except last)
+            let validInsertPoints = max(1, words.count - 1)
+            for i in 0..<safeHeartbeatCount {
+                let insertAfter = i % validInsertPoints
+                heartbeatCountPerIndex[insertAfter, default: 0] += 1
             }
         }
 
@@ -502,10 +504,19 @@ public enum StreamSimulation {
             let delta = index == 0 ? String(word) : " " + String(word)
             events.append(.textDelta(delta))
 
-            // Insert heartbeat at computed indices
-            if heartbeatIndices.contains(index) {
-                events.append(.heartbeat(timestamp: Date()))
+            // Insert heartbeat(s) at computed indices
+            if let count = heartbeatCountPerIndex[index], index < words.count - 1 {
+                for _ in 0..<count {
+                    events.append(.heartbeat(timestamp: Date()))
+                    heartbeatsEmitted += 1
+                }
             }
+        }
+
+        // If we still need more heartbeats (edge case: single word), append them
+        while heartbeatsEmitted < safeHeartbeatCount {
+            events.append(.heartbeat(timestamp: Date()))
+            heartbeatsEmitted += 1
         }
 
         // Text completion

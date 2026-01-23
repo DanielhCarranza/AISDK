@@ -265,7 +265,52 @@ final class StreamSimulationTests: XCTestCase {
             if case .heartbeat = event { return true }
             return false
         }
-        XCTAssertGreaterThanOrEqual(heartbeats.count, 1)
+        // Should emit exactly 2 heartbeats as requested
+        XCTAssertEqual(heartbeats.count, 2)
+    }
+
+    func testHeartbeatStreamExactCount() {
+        // Test various heartbeat counts
+        for count in [0, 1, 3, 5, 10] {
+            let events = StreamSimulation.heartbeatStream(
+                text: "Word1 Word2 Word3 Word4 Word5",
+                heartbeatCount: count
+            )
+
+            let heartbeats = events.filter { event in
+                if case .heartbeat = event { return true }
+                return false
+            }
+            XCTAssertEqual(heartbeats.count, count, "Should emit exactly \(count) heartbeats")
+        }
+    }
+
+    func testHeartbeatStreamWithNegativeCount() {
+        // Negative count should be treated as zero
+        let events = StreamSimulation.heartbeatStream(
+            text: "Some text here",
+            heartbeatCount: -5
+        )
+
+        let heartbeats = events.filter { event in
+            if case .heartbeat = event { return true }
+            return false
+        }
+        XCTAssertEqual(heartbeats.count, 0)
+    }
+
+    func testHeartbeatStreamSingleWord() {
+        // Even with a single word, should emit requested heartbeats
+        let events = StreamSimulation.heartbeatStream(
+            text: "Hello",
+            heartbeatCount: 3
+        )
+
+        let heartbeats = events.filter { event in
+            if case .heartbeat = event { return true }
+            return false
+        }
+        XCTAssertEqual(heartbeats.count, 3)
     }
 
     // MARK: - Async Stream Tests
@@ -325,21 +370,25 @@ final class StreamSimulationTests: XCTestCase {
 
         let events = StreamSimulation.multiStepStream(steps: [step1, step2])
 
-        // Should have step starts and finishes
-        var stepStartCount = 0
-        var stepFinishCount = 0
+        // Should have step starts and finishes with correct indices
+        var stepStartIndices: [Int] = []
+        var stepFinishIndices: [Int] = []
 
         for event in events {
-            if case .stepStart = event {
-                stepStartCount += 1
+            if case .stepStart(let stepIndex) = event {
+                stepStartIndices.append(stepIndex)
             }
-            if case .stepFinish = event {
-                stepFinishCount += 1
+            if case .stepFinish(let stepIndex, _) = event {
+                stepFinishIndices.append(stepIndex)
             }
         }
 
-        XCTAssertEqual(stepStartCount, 2)
-        XCTAssertEqual(stepFinishCount, 2)
+        XCTAssertEqual(stepStartIndices.count, 2)
+        XCTAssertEqual(stepFinishIndices.count, 2)
+
+        // Verify indices match the step results
+        XCTAssertEqual(stepStartIndices, [0, 1])
+        XCTAssertEqual(stepFinishIndices, [0, 1])
 
         // Check total usage is aggregated correctly
         let usageEvent = events.first { event in
