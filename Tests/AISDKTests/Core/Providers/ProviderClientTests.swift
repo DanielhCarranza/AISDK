@@ -128,8 +128,8 @@ final class ProviderClientTests: XCTestCase {
         XCTAssertEqual(response.content, "Hello, world!")
         XCTAssertEqual(response.toolCalls.count, 1)
         XCTAssertEqual(response.toolCalls[0].name, "search")
-        XCTAssertEqual(response.usage.promptTokens, 100)
-        XCTAssertEqual(response.usage.completionTokens, 50)
+        XCTAssertEqual(response.usage?.promptTokens, 100)
+        XCTAssertEqual(response.usage?.completionTokens, 50)
         XCTAssertEqual(response.finishReason, .stop)
         XCTAssertEqual(response.latencyMs, 500)
         XCTAssertEqual(response.metadata?["custom"], "value")
@@ -275,43 +275,48 @@ final class ProviderClientTests: XCTestCase {
 
     func testProviderStreamEventConversions() {
         // Test textDelta
-        if let event = ProviderStreamEvent.textDelta("Hello").toAIStreamEvent() {
-            if case .textDelta(let text) = event {
-                XCTAssertEqual(text, "Hello")
-            } else {
-                XCTFail("Expected textDelta event")
-            }
+        let textEvent = ProviderStreamEvent.textDelta("Hello").toAIStreamEvent()
+        if case .textDelta(let text) = textEvent {
+            XCTAssertEqual(text, "Hello")
+        } else {
+            XCTFail("Expected textDelta event")
         }
 
         // Test start
-        if let event = ProviderStreamEvent.start(id: "id-1", model: "gpt-4").toAIStreamEvent() {
-            if case .start(let metadata) = event {
-                XCTAssertEqual(metadata?.requestId, "id-1")
-                XCTAssertEqual(metadata?.model, "gpt-4")
-            } else {
-                XCTFail("Expected start event")
-            }
+        let startEvent = ProviderStreamEvent.start(id: "id-1", model: "gpt-4").toAIStreamEvent()
+        if case .start(let metadata) = startEvent {
+            XCTAssertEqual(metadata?.requestId, "id-1")
+            XCTAssertEqual(metadata?.model, "gpt-4")
+        } else {
+            XCTFail("Expected start event")
         }
 
         // Test toolCallStart
-        if let event = ProviderStreamEvent.toolCallStart(id: "tc1", name: "search").toAIStreamEvent() {
-            if case .toolCallStart(let id, let name) = event {
-                XCTAssertEqual(id, "tc1")
-                XCTAssertEqual(name, "search")
-            } else {
-                XCTFail("Expected toolCallStart event")
-            }
+        let toolStartEvent = ProviderStreamEvent.toolCallStart(id: "tc1", name: "search").toAIStreamEvent()
+        if case .toolCallStart(let id, let name) = toolStartEvent {
+            XCTAssertEqual(id, "tc1")
+            XCTAssertEqual(name, "search")
+        } else {
+            XCTFail("Expected toolCallStart event")
         }
 
-        // Test finish
+        // Test finish with usage
         let usage = ProviderUsage(promptTokens: 10, completionTokens: 5)
-        if let event = ProviderStreamEvent.finish(reason: .stop, usage: usage).toAIStreamEvent() {
-            if case .finish(let finishReason, let aiUsage) = event {
-                XCTAssertEqual(finishReason, .stop)
-                XCTAssertEqual(aiUsage.totalTokens, 15)
-            } else {
-                XCTFail("Expected finish event")
-            }
+        let finishEvent = ProviderStreamEvent.finish(reason: .stop, usage: usage).toAIStreamEvent()
+        if case .finish(let finishReason, let aiUsage) = finishEvent {
+            XCTAssertEqual(finishReason, .stop)
+            XCTAssertEqual(aiUsage.totalTokens, 15)
+        } else {
+            XCTFail("Expected finish event")
+        }
+
+        // Test finish without usage
+        let finishNoUsageEvent = ProviderStreamEvent.finish(reason: .length, usage: nil).toAIStreamEvent()
+        if case .finish(let finishReason, let aiUsage) = finishNoUsageEvent {
+            XCTAssertEqual(finishReason, .length)
+            XCTAssertEqual(aiUsage.totalTokens, 0) // Defaults to zero when nil
+        } else {
+            XCTFail("Expected finish event")
         }
     }
 
@@ -328,7 +333,7 @@ final class ProviderClientTests: XCTestCase {
 
     // MARK: - AITextRequest Conversion Tests
 
-    func testAITextRequestToProviderRequest() {
+    func testAITextRequestToProviderRequest() throws {
         let request = AITextRequest(
             messages: [.user("Hello")],
             model: "gpt-4",
@@ -339,7 +344,7 @@ final class ProviderClientTests: XCTestCase {
             toolChoice: .auto
         )
 
-        let providerRequest = request.toProviderRequest(modelId: "fallback-model", stream: true)
+        let providerRequest = try request.toProviderRequest(modelId: "fallback-model", stream: true)
 
         XCTAssertEqual(providerRequest.modelId, "gpt-4") // Uses request.model
         XCTAssertEqual(providerRequest.maxTokens, 100)
@@ -350,13 +355,13 @@ final class ProviderClientTests: XCTestCase {
         XCTAssertEqual(providerRequest.toolChoice, .auto)
     }
 
-    func testAITextRequestToProviderRequestUsesFallbackModel() {
+    func testAITextRequestToProviderRequestUsesFallbackModel() throws {
         let request = AITextRequest(
             messages: [.user("Hello")],
             model: nil // No model specified
         )
 
-        let providerRequest = request.toProviderRequest(modelId: "fallback-model")
+        let providerRequest = try request.toProviderRequest(modelId: "fallback-model")
 
         XCTAssertEqual(providerRequest.modelId, "fallback-model")
     }
@@ -473,7 +478,7 @@ final class MockProviderClientTests: XCTestCase {
 
         XCTAssertEqual(response.id, "custom-id")
         XCTAssertEqual(response.content, "Custom response for my-model")
-        XCTAssertEqual(response.usage.totalTokens, 15)
+        XCTAssertEqual(response.usage?.totalTokens, 15)
     }
 
     func testMockProviderClientStream() async throws {

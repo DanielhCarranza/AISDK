@@ -23,12 +23,11 @@ import Foundation
 /// - Supports the reliability layer (circuit breaker, failover)
 /// - Thread-safe by design (Sendable requirement)
 ///
-/// ## Implementors
+/// ## Anticipated Implementors
+/// These types will be implemented in subsequent tasks:
 /// - `OpenRouterClient`: Primary production router
 /// - `LiteLLMClient`: Secondary/fallback router
-/// - `OpenAIClientAdapter`: Direct OpenAI access
-/// - `AnthropicClientAdapter`: Direct Anthropic access
-/// - `GeminiClientAdapter`: Direct Google access
+/// - Provider-specific adapters for direct access
 public protocol ProviderClient: Sendable {
     // MARK: - Identity
 
@@ -58,8 +57,12 @@ public protocol ProviderClient: Sendable {
     func execute(request: ProviderRequest) async throws -> ProviderResponse
 
     /// Execute a streaming text generation request
+    ///
+    /// Errors during streaming are communicated by throwing from the stream.
+    /// The stream should end with a `.finish` event on successful completion.
+    ///
     /// - Parameter request: The provider-level request
-    /// - Returns: An async stream of provider events
+    /// - Returns: An async stream of provider events that throws on error
     func stream(request: ProviderRequest) -> AsyncThrowingStream<ProviderStreamEvent, Error>
 
     // MARK: - Model Information
@@ -100,6 +103,10 @@ public extension ProviderClient {
 // MARK: - Provider Health Status
 
 /// Health status of a provider client
+///
+/// Note: `.unknown` does not accept traffic by default. Routing implementations
+/// should proactively refresh health status before first use to ensure providers
+/// become "known" before receiving traffic.
 public enum ProviderHealthStatus: Sendable, Equatable {
     /// Provider is healthy and accepting requests
     case healthy
@@ -120,6 +127,66 @@ public enum ProviderHealthStatus: Sendable, Equatable {
             return true
         case .unhealthy, .unknown:
             return false
+        }
+    }
+}
+
+// MARK: - ProviderJSONValue
+
+/// A Sendable, Codable JSON value type for provider request parameters.
+///
+/// This replaces `[String: Any]` in contexts where Sendable conformance is required.
+public enum ProviderJSONValue: Sendable, Codable, Equatable {
+    case null
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case string(String)
+    case array([ProviderJSONValue])
+    case object([String: ProviderJSONValue])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let bool = try? container.decode(Bool.self) {
+            self = .bool(bool)
+        } else if let int = try? container.decode(Int.self) {
+            self = .int(int)
+        } else if let double = try? container.decode(Double.self) {
+            self = .double(double)
+        } else if let string = try? container.decode(String.self) {
+            self = .string(string)
+        } else if let array = try? container.decode([ProviderJSONValue].self) {
+            self = .array(array)
+        } else if let object = try? container.decode([String: ProviderJSONValue].self) {
+            self = .object(object)
+        } else {
+            throw DecodingError.typeMismatch(
+                ProviderJSONValue.self,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unable to decode JSON value")
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .null:
+            try container.encodeNil()
+        case .bool(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .string(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
         }
     }
 }
@@ -153,8 +220,8 @@ public struct ProviderRequest: Sendable {
     /// Whether to stream the response
     public let stream: Bool
 
-    /// Tools available for the model (as JSON schemas)
-    public let tools: [[String: Any]]?
+    /// Tools available for the model (as Sendable JSON)
+    public let tools: [ProviderJSONValue]?
 
     /// Tool choice behavior
     public let toolChoice: ProviderToolChoice?
@@ -165,11 +232,14 @@ public struct ProviderRequest: Sendable {
     /// Request timeout in seconds
     public let timeout: TimeInterval
 
-    /// Additional provider-specific parameters
-    public let providerOptions: [String: Any]?
+    /// Additional provider-specific parameters (Sendable JSON)
+    public let providerOptions: [String: ProviderJSONValue]?
 
     /// Trace context for observability
     public let traceContext: AITraceContext?
+
+    /// Request metadata for tracing
+    public let metadata: [String: String]?
 
     public init(
         modelId: String,
@@ -179,12 +249,13 @@ public struct ProviderRequest: Sendable {
         topP: Double? = nil,
         stop: [String]? = nil,
         stream: Bool = false,
-        tools: [[String: Any]]? = nil,
+        tools: [ProviderJSONValue]? = nil,
         toolChoice: ProviderToolChoice? = nil,
         responseFormat: ProviderResponseFormat? = nil,
         timeout: TimeInterval = 120,
-        providerOptions: [String: Any]? = nil,
-        traceContext: AITraceContext? = nil
+        providerOptions: [String: ProviderJSONValue]? = nil,
+        traceContext: AITraceContext? = nil,
+        metadata: [String: String]? = nil
     ) {
         self.modelId = modelId
         self.messages = messages
@@ -199,6 +270,7 @@ public struct ProviderRequest: Sendable {
         self.timeout = timeout
         self.providerOptions = providerOptions
         self.traceContext = traceContext
+        self.metadata = metadata
     }
 }
 
@@ -252,8 +324,8 @@ public struct ProviderResponse: Sendable {
     /// Tool calls made by the model
     public let toolCalls: [ProviderToolCall]
 
-    /// Token usage information
-    public let usage: ProviderUsage
+    /// Token usage information (nil if not provided by provider)
+    public let usage: ProviderUsage?
 
     /// Reason for completion
     public let finishReason: ProviderFinishReason
@@ -270,7 +342,7 @@ public struct ProviderResponse: Sendable {
         provider: String,
         content: String,
         toolCalls: [ProviderToolCall] = [],
-        usage: ProviderUsage,
+        usage: ProviderUsage? = nil,
         finishReason: ProviderFinishReason,
         latencyMs: Int? = nil,
         metadata: [String: String]? = nil
@@ -347,7 +419,10 @@ public struct ProviderUsage: Sendable, Equatable {
 // MARK: - Provider Finish Reason
 
 /// Reason for completion from a provider
-public enum ProviderFinishReason: String, Sendable, Codable, Equatable {
+///
+/// Uses custom Codable implementation to gracefully handle unknown finish reasons
+/// from providers, mapping them to `.unknown` instead of throwing.
+public enum ProviderFinishReason: String, Sendable, Equatable {
     /// Normal completion (stop token reached)
     case stop
 
@@ -365,11 +440,54 @@ public enum ProviderFinishReason: String, Sendable, Codable, Equatable {
 
     /// Unknown or unspecified reason
     case unknown
+
+    /// Initialize from a provider's finish reason string
+    /// Always succeeds - unknown values map to `.unknown`
+    public init(providerReason: String?) {
+        guard let reason = providerReason?.lowercased() else {
+            self = .unknown
+            return
+        }
+
+        switch reason {
+        case "stop", "end_turn", "stop_sequence":
+            self = .stop
+        case "length", "max_tokens":
+            self = .length
+        case "tool_calls", "tool_use":
+            self = .toolCalls
+        case "function_call":
+            self = .functionCall
+        case "content_filter", "safety":
+            self = .contentFilter
+        default:
+            self = .unknown
+        }
+    }
+}
+
+// MARK: - ProviderFinishReason Codable
+
+extension ProviderFinishReason: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self.init(providerReason: rawValue)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 // MARK: - Provider Stream Event
 
 /// Events emitted during streaming from a provider
+///
+/// Note: Errors during streaming should be communicated by throwing from the
+/// `AsyncThrowingStream`, not via `.error` events. This enum exists for
+/// compatibility but stream implementations should prefer throwing.
 public enum ProviderStreamEvent: Sendable {
     /// Stream has started
     case start(id: String, model: String)
@@ -393,16 +511,13 @@ public enum ProviderStreamEvent: Sendable {
     case usage(ProviderUsage)
 
     /// Stream finished
-    case finish(reason: ProviderFinishReason, usage: ProviderUsage)
-
-    /// An error occurred
-    case error(ProviderError)
+    case finish(reason: ProviderFinishReason, usage: ProviderUsage?)
 }
 
 // MARK: - Provider Error
 
 /// Errors that can occur during provider communication
-public enum ProviderError: Error, Sendable, Equatable {
+public enum ProviderError: Error, Sendable, Equatable, LocalizedError {
     /// Invalid request parameters
     case invalidRequest(String)
 
@@ -435,11 +550,7 @@ public enum ProviderError: Error, Sendable, Equatable {
 
     /// Unknown error
     case unknown(String)
-}
 
-// MARK: - ProviderError LocalizedError
-
-extension ProviderError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidRequest(let message):
@@ -479,7 +590,7 @@ public extension ProviderResponse {
         AITextResult(
             text: content,
             toolCalls: toolCalls.map { AIToolCallResult(id: $0.id, name: $0.name, arguments: $0.arguments) },
-            usage: usage.toAIUsage(),
+            usage: usage?.toAIUsage() ?? .zero,
             finishReason: finishReason.toAIFinishReason(),
             requestId: id,
             model: model,
@@ -520,7 +631,9 @@ public extension ProviderFinishReason {
 
 public extension ProviderStreamEvent {
     /// Convert to AIStreamEvent for the unified API layer
-    func toAIStreamEvent() -> AIStreamEvent? {
+    ///
+    /// All ProviderStreamEvents map to an AIStreamEvent.
+    func toAIStreamEvent() -> AIStreamEvent {
         switch self {
         case .start(let id, let model):
             return .start(metadata: AIStreamMetadata(requestId: id, model: model))
@@ -537,9 +650,7 @@ public extension ProviderStreamEvent {
         case .usage(let usage):
             return .usage(usage.toAIUsage())
         case .finish(let reason, let usage):
-            return .finish(finishReason: reason.toAIFinishReason(), usage: usage.toAIUsage())
-        case .error(let error):
-            return .error(error)
+            return .finish(finishReason: reason.toAIFinishReason(), usage: usage?.toAIUsage() ?? .zero)
         }
     }
 }
@@ -548,7 +659,15 @@ public extension ProviderStreamEvent {
 
 public extension AITextRequest {
     /// Convert to ProviderRequest for the transport layer
-    func toProviderRequest(modelId: String, stream: Bool = false) -> ProviderRequest {
+    ///
+    /// Note: Tool conversion is not yet implemented (tracked for Phase 2).
+    /// The `tools` parameter will be nil until tool schema conversion is added.
+    ///
+    /// - Parameters:
+    ///   - modelId: Fallback model ID if request.model is nil
+    ///   - stream: Whether to enable streaming
+    /// - Throws: `ResponseFormatConversionError` if JSON schema encoding fails
+    func toProviderRequest(modelId: String, stream: Bool = false) throws -> ProviderRequest {
         ProviderRequest(
             modelId: model ?? modelId,
             messages: messages,
@@ -557,12 +676,13 @@ public extension AITextRequest {
             topP: topP,
             stop: stop,
             stream: stream,
-            tools: nil, // TODO: Convert ToolSchema to [[String: Any]] in Phase 2
+            tools: nil, // TODO: Convert ToolSchema to [ProviderJSONValue] in Phase 2 task
             toolChoice: toolChoice?.toProviderToolChoice(),
-            responseFormat: responseFormat?.toProviderResponseFormat(),
+            responseFormat: try responseFormat?.toProviderResponseFormat(),
             timeout: 120,
             providerOptions: nil,
-            traceContext: nil
+            traceContext: nil,
+            metadata: metadata
         )
     }
 }
@@ -583,9 +703,19 @@ public extension ToolChoice {
     }
 }
 
+/// Error thrown when response format conversion fails
+public struct ResponseFormatConversionError: Error, LocalizedError {
+    public let message: String
+
+    public var errorDescription: String? {
+        "Failed to convert response format: \(message)"
+    }
+}
+
 public extension ResponseFormat {
     /// Convert to ProviderResponseFormat
-    func toProviderResponseFormat() -> ProviderResponseFormat {
+    /// - Throws: `ResponseFormatConversionError` if JSON schema encoding fails
+    func toProviderResponseFormat() throws -> ProviderResponseFormat {
         switch self {
         case .text:
             return .text
@@ -596,11 +726,11 @@ public extension ResponseFormat {
             let schema = schemaBuilder.build()
             // JSONSchema.rawValue is [String: AnyEncodable], encode it to JSON
             let encoder = JSONEncoder()
-            if let schemaData = try? encoder.encode(schema),
-               let schemaString = String(data: schemaData, encoding: .utf8) {
-                return .jsonSchema(name: name, schema: schemaString)
+            guard let schemaData = try? encoder.encode(schema),
+                  let schemaString = String(data: schemaData, encoding: .utf8) else {
+                throw ResponseFormatConversionError(message: "Failed to encode JSON schema '\(name)'")
             }
-            return .json
+            return .jsonSchema(name: name, schema: schemaString)
         }
     }
 }
