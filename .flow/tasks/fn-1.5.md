@@ -1,7 +1,7 @@
 # fn-1.5 Task 1.2: AIStreamEvent (10+ Events)
 
 ## Description
-Define comprehensive streaming event types for unified AI SDK streaming operations. The AIStreamEvent enum provides 17 distinct event types matching Vercel AI SDK 6.x semantics, covering text generation, reasoning, tool execution, structured output, file handling, usage tracking, and lifecycle events.
+Define comprehensive streaming event types for unified AI SDK streaming operations. The AIStreamEvent enum provides 20 distinct event types matching Vercel AI SDK 6.x semantics, covering text generation, reasoning, tool execution, structured output, file handling, usage tracking, and lifecycle events.
 
 ## Acceptance
 - [x] AIStreamEvent enum with 10+ distinct event types
@@ -20,7 +20,7 @@ Define comprehensive streaming event types for unified AI SDK streaming operatio
 - [x] Build passes without errors
 
 ## Done summary
-Enhanced the AIStreamEvent enum in `Sources/AISDK/Core/Models/AIStreamEvent.swift` to include 17 distinct event types as specified:
+Enhanced the AIStreamEvent enum in `Sources/AISDK/Core/Models/AIStreamEvent.swift` to include 20 distinct event types as specified:
 
 1. **Text Events**: textDelta, textCompletion
 2. **Reasoning Events**: reasoningStart, reasoningDelta, reasoningFinish (for o1/o3 models)
@@ -39,6 +39,6 @@ Supporting types already present and verified:
 
 Note: ToolMetadata Sendable warnings are pre-existing and will be addressed in Task 4.4 (AITool Protocol Redesigned) per the spec.
 ## Evidence
-- Commits: 1ab7cc0e22064cfb339ef2361008fa4b859a41b9
+- Commits: 1ab7cc0e22064cfb339ef2361008fa4b859a41b9, 79addc3
 - Tests: swift build
 - PRs:
