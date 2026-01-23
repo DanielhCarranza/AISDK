@@ -1,7 +1,7 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-23T04:47:01.769327Z",
   "created_at": "2026-01-23T03:05:29.025182Z",
   "depends_on": [
     "fn-1.1",
@@ -9,10 +9,17 @@
     "fn-1.3"
   ],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "ac97db5"
+    ],
+    "tests": "swift build",
+    "verification": "AILanguageModel protocol already exists at Sources/AISDK/Core/Protocols/AILanguageModel.swift with all required methods and types"
+  },
   "id": "fn-1.4",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.4.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 1.1: AILanguageModel Protocol",
-  "updated_at": "2026-01-23T03:06:22.491270Z"
+  "updated_at": "2026-01-23T04:48:09.982851Z"
 }

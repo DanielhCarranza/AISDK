@@ -36,8 +36,7 @@ Verified the AILanguageModel protocol implementation in `Sources/AISDK/Core/Prot
    - AIMessage unified message type with roles, content parts, tool calls
 
 Note: The spec suggested `Actor` conformance, but this was intentionally kept as `Sendable` only to maintain compatibility with the Phase 0 adapter layer (fn-1.1) which wraps non-actor LLM implementations. New native implementations are encouraged to use actors internally.
-
 ## Evidence
-- Commits: Already implemented in 27b11abb47461d373d196eb3ac880c7f1bce2e5e (fn-1.1)
-- Tests: swift build passes
+- Commits: ac97db5
+- Tests: swift build
 - PRs:
