@@ -1,0 +1,8 @@
+{
+  "commits": ["29e0b813ff2cc8adf9d95d0ccb3a48d1c2a78ae7"],
+  "tests": ["swift test --filter Gemini"],
+  "files": [
+    "Sources/AISDK/Core/Providers/GeminiClientAdapter.swift",
+    "Tests/AISDKTests/Core/Providers/GeminiClientAdapterTests.swift"
+  ]
+}
