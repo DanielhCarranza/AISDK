@@ -31,7 +31,8 @@ final class AISDKObserverTests: XCTestCase {
         // These should not crash - they use default no-op implementations
         observer.didStartRequest(context)
         observer.didReceiveEvent(event, context: context)
-        observer.didCompleteRequest(result, context: context)
+        observer.didCompleteTextRequest(result, context: context)
+        observer.didCompleteObjectRequest("test object", context: context)
         observer.didFailRequest(error, context: context)
     }
 
@@ -67,7 +68,7 @@ final class AISDKObserverTests: XCTestCase {
         XCTAssertEqual(recorder.eventCount, 1)
     }
 
-    func test_compositeObserver_broadcastsCompletion() {
+    func test_compositeObserver_broadcastsTextCompletion() {
         let composite = CompositeAISDKObserver()
         let recorder = RecordingObserver()
 
@@ -76,10 +77,25 @@ final class AISDKObserverTests: XCTestCase {
         let context = AITraceContext()
         let result = AITextResult(text: "done", usage: AIUsage(promptTokens: 10, completionTokens: 20))
 
-        composite.didCompleteRequest(result, context: context)
+        composite.didCompleteTextRequest(result, context: context)
 
-        XCTAssertEqual(recorder.completeCount, 1)
-        XCTAssertEqual(recorder.lastResult?.usage.totalTokens, 30)
+        XCTAssertEqual(recorder.completeTextCount, 1)
+        XCTAssertEqual(recorder.lastTextResult?.usage.totalTokens, 30)
+    }
+
+    func test_compositeObserver_broadcastsObjectCompletion() {
+        let composite = CompositeAISDKObserver()
+        let recorder = RecordingObserver()
+
+        composite.add(recorder)
+
+        let context = AITraceContext()
+        let object = ["key": "value"]
+
+        composite.didCompleteObjectRequest(object, context: context)
+
+        XCTAssertEqual(recorder.completeObjectCount, 1)
+        XCTAssertNotNil(recorder.lastObject)
     }
 
     func test_compositeObserver_broadcastsFailure() {
@@ -121,6 +137,37 @@ final class AISDKObserverTests: XCTestCase {
         XCTAssertEqual(composite.count, 0)
     }
 
+    func test_compositeObserver_removeSpecific() {
+        let composite = CompositeAISDKObserver()
+        let recorder1 = RecordingObserver()
+        let recorder2 = RecordingObserver()
+
+        composite.add(recorder1)
+        composite.add(recorder2)
+        XCTAssertEqual(composite.count, 2)
+
+        let removed = composite.remove(recorder1)
+        XCTAssertTrue(removed)
+        XCTAssertEqual(composite.count, 1)
+
+        // Verify recorder2 still receives events
+        composite.didStartRequest(AITraceContext())
+        XCTAssertEqual(recorder1.startCount, 0)
+        XCTAssertEqual(recorder2.startCount, 1)
+    }
+
+    func test_compositeObserver_removeNonExistent() {
+        let composite = CompositeAISDKObserver()
+        let recorder1 = RecordingObserver()
+        let recorder2 = RecordingObserver()
+
+        composite.add(recorder1)
+
+        let removed = composite.remove(recorder2)
+        XCTAssertFalse(removed)
+        XCTAssertEqual(composite.count, 1)
+    }
+
     func test_compositeObserver_threadSafety() async {
         let composite = CompositeAISDKObserver()
         let recorder = RecordingObserver()
@@ -138,6 +185,39 @@ final class AISDKObserverTests: XCTestCase {
         }
 
         XCTAssertEqual(recorder.startCount, 100)
+    }
+
+    func test_compositeObserver_concurrentAddRemove() async {
+        let composite = CompositeAISDKObserver()
+        let context = AITraceContext()
+
+        // Stress test concurrent add/remove while broadcasting
+        await withTaskGroup(of: Void.self) { group in
+            // Add observers
+            for _ in 0..<50 {
+                group.addTask {
+                    let observer = RecordingObserver()
+                    composite.add(observer)
+                }
+            }
+            // Broadcast events
+            for _ in 0..<50 {
+                group.addTask {
+                    composite.didStartRequest(context)
+                }
+            }
+            // Remove all periodically
+            for i in 0..<10 {
+                group.addTask {
+                    if i % 2 == 0 {
+                        composite.removeAll()
+                    }
+                }
+            }
+        }
+
+        // Should not crash - count may vary due to concurrent operations
+        _ = composite.count
     }
 
     // MARK: - LoggingAISDKObserver Tests
@@ -174,7 +254,8 @@ final class AISDKObserverTests: XCTestCase {
         // These should complete without issue
         observer.didStartRequest(context)
         observer.didReceiveEvent(.textDelta("test"), context: context)
-        observer.didCompleteRequest(AITextResult(text: "test"), context: context)
+        observer.didCompleteTextRequest(AITextResult(text: "test"), context: context)
+        observer.didCompleteObjectRequest("test", context: context)
         observer.didFailRequest(AISDKErrorV2(code: .unknown, message: "test"), context: context)
     }
 
@@ -184,23 +265,53 @@ final class AISDKObserverTests: XCTestCase {
         acceptSendable(observer)
     }
 
-    // MARK: - Observer Lifecycle Integration Tests
+    // MARK: - AIStreamEvent Extension Tests
 
-    func test_observerReceivesFullLifecycle() {
+    func test_eventType_returnsCorrectStrings() {
+        XCTAssertEqual(AIStreamEvent.textDelta("test").eventType, "textDelta")
+        XCTAssertEqual(AIStreamEvent.textCompletion("test").eventType, "textCompletion")
+        XCTAssertEqual(AIStreamEvent.reasoningStart.eventType, "reasoningStart")
+        XCTAssertEqual(AIStreamEvent.toolCallStart(id: "1", name: "test").eventType, "toolCallStart")
+        XCTAssertEqual(AIStreamEvent.finish(finishReason: .stop, usage: .zero).eventType, "finish")
+        XCTAssertEqual(AIStreamEvent.error(NSError(domain: "test", code: 1)).eventType, "error")
+    }
+
+    // MARK: - Observer Lifecycle Tests
+
+    func test_observerReceivesFullTextLifecycle() {
         let recorder = RecordingObserver()
         let context = AITraceContext(operation: "test_request")
 
-        // Simulate full request lifecycle
+        // Simulate full text request lifecycle
         recorder.didStartRequest(context)
         recorder.didReceiveEvent(.start(metadata: nil), context: context)
         recorder.didReceiveEvent(.textDelta("Hello"), context: context)
         recorder.didReceiveEvent(.textDelta(" World"), context: context)
         recorder.didReceiveEvent(.finish(finishReason: .stop, usage: .zero), context: context)
-        recorder.didCompleteRequest(AITextResult(text: "Hello World"), context: context)
+        recorder.didCompleteTextRequest(AITextResult(text: "Hello World"), context: context)
 
         XCTAssertEqual(recorder.startCount, 1)
         XCTAssertEqual(recorder.eventCount, 4)
-        XCTAssertEqual(recorder.completeCount, 1)
+        XCTAssertEqual(recorder.completeTextCount, 1)
+        XCTAssertEqual(recorder.completeObjectCount, 0)
+        XCTAssertEqual(recorder.failCount, 0)
+    }
+
+    func test_observerReceivesFullObjectLifecycle() {
+        let recorder = RecordingObserver()
+        let context = AITraceContext(operation: "object_request")
+
+        // Simulate full object request lifecycle
+        recorder.didStartRequest(context)
+        recorder.didReceiveEvent(.start(metadata: nil), context: context)
+        recorder.didReceiveEvent(.objectDelta(Data()), context: context)
+        recorder.didReceiveEvent(.finish(finishReason: .stop, usage: .zero), context: context)
+        recorder.didCompleteObjectRequest(["result": "data"], context: context)
+
+        XCTAssertEqual(recorder.startCount, 1)
+        XCTAssertEqual(recorder.eventCount, 3)
+        XCTAssertEqual(recorder.completeTextCount, 0)
+        XCTAssertEqual(recorder.completeObjectCount, 1)
         XCTAssertEqual(recorder.failCount, 0)
     }
 
@@ -217,7 +328,8 @@ final class AISDKObserverTests: XCTestCase {
 
         XCTAssertEqual(recorder.startCount, 1)
         XCTAssertEqual(recorder.eventCount, 3)
-        XCTAssertEqual(recorder.completeCount, 0)
+        XCTAssertEqual(recorder.completeTextCount, 0)
+        XCTAssertEqual(recorder.completeObjectCount, 0)
         XCTAssertEqual(recorder.failCount, 1)
     }
 
@@ -255,10 +367,12 @@ private final class RecordingObserver: AISDKObserver, @unchecked Sendable {
 
     private var _startCount = 0
     private var _eventCount = 0
-    private var _completeCount = 0
+    private var _completeTextCount = 0
+    private var _completeObjectCount = 0
     private var _failCount = 0
     private var _lastContext: AITraceContext?
-    private var _lastResult: AITextResult?
+    private var _lastTextResult: AITextResult?
+    private var _lastObject: Any?
     private var _lastError: AISDKErrorV2?
     private var _events: [AIStreamEvent] = []
 
@@ -274,10 +388,16 @@ private final class RecordingObserver: AISDKObserver, @unchecked Sendable {
         return _eventCount
     }
 
-    var completeCount: Int {
+    var completeTextCount: Int {
         lock.lock()
         defer { lock.unlock() }
-        return _completeCount
+        return _completeTextCount
+    }
+
+    var completeObjectCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _completeObjectCount
     }
 
     var failCount: Int {
@@ -292,10 +412,16 @@ private final class RecordingObserver: AISDKObserver, @unchecked Sendable {
         return _lastContext
     }
 
-    var lastResult: AITextResult? {
+    var lastTextResult: AITextResult? {
         lock.lock()
         defer { lock.unlock() }
-        return _lastResult
+        return _lastTextResult
+    }
+
+    var lastObject: Any? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastObject
     }
 
     var lastError: AISDKErrorV2? {
@@ -325,11 +451,19 @@ private final class RecordingObserver: AISDKObserver, @unchecked Sendable {
         _lastContext = context
     }
 
-    func didCompleteRequest(_ result: AITextResult, context: AITraceContext) {
+    func didCompleteTextRequest(_ result: AITextResult, context: AITraceContext) {
         lock.lock()
         defer { lock.unlock() }
-        _completeCount += 1
-        _lastResult = result
+        _completeTextCount += 1
+        _lastTextResult = result
+        _lastContext = context
+    }
+
+    func didCompleteObjectRequest(_ object: Any, context: AITraceContext) {
+        lock.lock()
+        defer { lock.unlock() }
+        _completeObjectCount += 1
+        _lastObject = object
         _lastContext = context
     }
 
