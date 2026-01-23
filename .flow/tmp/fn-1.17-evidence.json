@@ -1,0 +1,5 @@
+{
+  "commits": ["3ea2d17"],
+  "tests": "swift test --filter ProviderClientTests (26 tests passed)",
+  "verification": "ProviderClient protocol created at Sources/AISDK/Core/Providers/ProviderClient.swift with all required types: ProviderClient protocol, ProviderHealthStatus, ProviderRequest, ProviderResponse, ProviderToolChoice, ProviderResponseFormat, ProviderToolCall, ProviderUsage, ProviderFinishReason, ProviderStreamEvent, ProviderError, and full bidirectional conversions to unified AI types"
+}
