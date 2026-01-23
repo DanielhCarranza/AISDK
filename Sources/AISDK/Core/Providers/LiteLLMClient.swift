@@ -84,12 +84,16 @@ public actor LiteLLMClient: ProviderClient {
     /// Refresh health status by pinging the health endpoint
     public func refreshHealthStatus() async {
         do {
-            _ = try await checkHealth()
-            _healthStatus = .healthy
+            let isHealthy = try await checkHealth()
+            if isHealthy {
+                _healthStatus = .healthy
+            } else {
+                _healthStatus = .unhealthy(reason: "Health check returned non-2xx status")
+            }
         } catch let error as ProviderError {
             switch error {
-            case .authenticationFailed:
-                _healthStatus = .unhealthy(reason: "Authentication failed")
+            case .authenticationFailed(let message):
+                _healthStatus = .unhealthy(reason: "Authentication failed: \(message)")
             case .rateLimited:
                 _healthStatus = .degraded(reason: "Rate limited")
             case .serverError(let statusCode, let message):
@@ -192,6 +196,11 @@ public actor LiteLLMClient: ProviderClient {
         }
         httpRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        // For streaming requests, set Accept header for SSE
+        if streaming {
+            httpRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        }
+
         // Build request body
         let body = try buildRequestBody(from: request, streaming: streaming)
         httpRequest.httpBody = try JSONEncoder().encode(body)
@@ -281,7 +290,7 @@ public actor LiteLLMClient: ProviderClient {
             }
         }
 
-        // Tools from providerOptions - validate all tools convert successfully
+        // Tools - validate all tools convert successfully
         if let tools = request.tools {
             var convertedTools: [LiteLLMTool] = []
             for (index, toolValue) in tools.enumerated() {
@@ -502,9 +511,10 @@ public actor LiteLLMClient: ProviderClient {
         }
 
         var responseId: String?
-        // Key by index for accumulation; store (id, name, arguments, pendingDeltas)
-        // pendingDeltas holds argument fragments before we can emit start
-        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool, pendingDeltas: [String])] = [:]
+        // Key by index for accumulation; store (id, name, arguments, startEmitted)
+        // When startEmitted=false, arguments accumulates pending deltas
+        // When startEmitted=true, arguments is the full accumulated string so far
+        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool)] = [:]
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
         var decodeErrorCount = 0
@@ -564,29 +574,31 @@ public actor LiteLLMClient: ProviderClient {
                         let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
                         let existingName = accumulatedToolCalls[index]?.name ?? ""
                         let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
-                        let pendingDeltas = accumulatedToolCalls[index]?.pendingDeltas ?? []
                         let name = newName ?? existingName
 
-                        // Collect argument delta
-                        var newPendingDeltas = pendingDeltas
-                        if let argsDelta = toolCall.function?.arguments, !argsDelta.isEmpty {
-                            newPendingDeltas.append(argsDelta)
-                        }
+                        // Get new argument delta (may be empty)
+                        let argsDelta = toolCall.function?.arguments ?? ""
 
                         // Can we emit start? Need a name
                         if !startEmitted && !name.isEmpty {
                             continuation.yield(.toolCallStart(id: stableId, name: name))
-                            // Now flush all pending deltas
-                            var allArgs = existingArgs
-                            for delta in newPendingDeltas {
-                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: delta))
-                                allArgs += delta
+                            // Now flush all buffered args as a single delta, then the new delta
+                            if !existingArgs.isEmpty {
+                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: existingArgs))
                             }
-                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: true, pendingDeltas: [])
+                            if !argsDelta.isEmpty {
+                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                            }
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: true)
+                        } else if startEmitted {
+                            // Already emitted start, emit delta directly
+                            if !argsDelta.isEmpty {
+                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                            }
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: true)
                         } else {
-                            // Buffer until we can emit start
-                            let allArgs = existingArgs + newPendingDeltas.joined()
-                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: false, pendingDeltas: newPendingDeltas)
+                            // Buffer until we can emit start (no name yet)
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: false)
                         }
                     }
                 }
@@ -684,13 +696,21 @@ public actor LiteLLMClient: ProviderClient {
         request.httpMethod = "GET"
         request.timeoutInterval = 10
 
-        let (_, response) = try await performRequest(request, timeout: 10)
+        // Include API key for authenticated deployments
+        if let apiKey = apiKey {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await performRequest(request, timeout: 10)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")
         }
 
-        return (200..<300).contains(httpResponse.statusCode)
+        // Validate response and throw appropriate errors for 4xx/5xx
+        try validateHTTPResponse(httpResponse, data: data)
+
+        return true
     }
 }
 
@@ -856,11 +876,19 @@ private struct LiteLLMJSONSchema: Encodable {
         guard let data = schemaString.data(using: .utf8) else {
             throw ProviderError.invalidRequest("Invalid JSON schema encoding")
         }
-        self.schema = try JSONDecoder().decode(ProviderJSONValue.self, from: data)
+        let decoded = try JSONDecoder().decode(ProviderJSONValue.self, from: data)
+        // Validate that the schema is a JSON object
+        guard case .object = decoded else {
+            throw ProviderError.invalidRequest("JSON schema must be an object, not \(type(of: decoded))")
+        }
+        self.schema = decoded
     }
 
-    /// Create directly from ProviderJSONValue
-    init(name: String, schema: ProviderJSONValue) {
+    /// Create directly from ProviderJSONValue (validates it's an object)
+    init(name: String, schema: ProviderJSONValue) throws {
+        guard case .object = schema else {
+            throw ProviderError.invalidRequest("JSON schema must be an object")
+        }
         self.name = name
         self.schema = schema
     }
