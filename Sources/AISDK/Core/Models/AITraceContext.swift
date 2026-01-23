@@ -16,12 +16,20 @@ import Security
 /// and operations within that request create spans that can be linked
 /// in parent-child relationships.
 ///
+/// **Scope**: This implementation provides `traceparent` header support only.
+/// W3C `tracestate` and `baggage` header encoding/parsing are not included;
+/// the `baggage` property is for internal context propagation, not HTTP headers.
+///
+/// **Integration**: AITraceContext is a standalone type. Integration with
+/// AITextRequest/AIObjectRequest and provider adapters is handled separately
+/// in the Provider & Routing Layer (Phase 2).
+///
 /// **PHI Safety**: Trace IDs are generated UUIDs, never derived from
 /// user data, patient IDs, or other PII. Safe to include in logs.
 ///
 /// **Note on baggage**: The `baggage` property is for operational metadata only.
 /// Callers must ensure baggage values do not contain PHI. Baggage is excluded
-/// from `toLogDictionary()` by default for safety.
+/// from `toLogDictionary()` and Codable encoding by default for safety.
 ///
 /// Example:
 /// ```swift
@@ -158,7 +166,8 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     // MARK: - Validation Helpers
 
     /// Check if a trace ID is valid per W3C spec
-    private static func isValidTraceId(_ id: String) -> Bool {
+    /// Internal for use by Codable and validated factory
+    internal static func isValidTraceId(_ id: String) -> Bool {
         guard id.count == 32 else { return false }
         let lowercased = id.lowercased()
         guard lowercased.allSatisfy({ $0.isHexDigit }) else { return false }
@@ -167,7 +176,8 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
     }
 
     /// Check if a span ID is valid per W3C spec
-    private static func isValidSpanId(_ id: String) -> Bool {
+    /// Internal for use by Codable and validated factory
+    internal static func isValidSpanId(_ id: String) -> Bool {
         guard id.count == 16 else { return false }
         let lowercased = id.lowercased()
         guard lowercased.allSatisfy({ $0.isHexDigit }) else { return false }
@@ -359,6 +369,24 @@ public struct AITraceContext: Sendable, Equatable, Hashable {
 
 // MARK: - Codable
 
+/// Errors that can occur during AITraceContext decoding
+public enum AITraceContextDecodingError: Error, LocalizedError {
+    case invalidTraceId(String)
+    case invalidSpanId(String)
+    case invalidParentSpanId(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidTraceId(let id):
+            return "Invalid trace ID: \(id). Must be 32 hex characters and not all-zeros."
+        case .invalidSpanId(let id):
+            return "Invalid span ID: \(id). Must be 16 hex characters and not all-zeros."
+        case .invalidParentSpanId(let id):
+            return "Invalid parent span ID: \(id). Must be 16 hex characters and not all-zeros."
+        }
+    }
+}
+
 extension AITraceContext: Codable {
     enum CodingKeys: String, CodingKey {
         case traceId = "trace_id"
@@ -372,12 +400,36 @@ extension AITraceContext: Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        traceId = try container.decode(String.self, forKey: .traceId)
-        spanId = try container.decode(String.self, forKey: .spanId)
-        parentSpanId = try container.decodeIfPresent(String.self, forKey: .parentSpanId)
+
+        // Decode and validate trace ID
+        let rawTraceId = try container.decode(String.self, forKey: .traceId)
+        guard Self.isValidTraceId(rawTraceId) else {
+            throw AITraceContextDecodingError.invalidTraceId(rawTraceId)
+        }
+        traceId = rawTraceId.lowercased()
+
+        // Decode and validate span ID
+        let rawSpanId = try container.decode(String.self, forKey: .spanId)
+        guard Self.isValidSpanId(rawSpanId) else {
+            throw AITraceContextDecodingError.invalidSpanId(rawSpanId)
+        }
+        spanId = rawSpanId.lowercased()
+
+        // Decode and validate parent span ID if present
+        if let rawParentSpanId = try container.decodeIfPresent(String.self, forKey: .parentSpanId) {
+            guard Self.isValidSpanId(rawParentSpanId) else {
+                throw AITraceContextDecodingError.invalidParentSpanId(rawParentSpanId)
+            }
+            parentSpanId = rawParentSpanId.lowercased()
+        } else {
+            parentSpanId = nil
+        }
+
         operation = try container.decodeIfPresent(String.self, forKey: .operation)
         startTime = try container.decodeIfPresent(Date.self, forKey: .startTime) ?? Date()
         sampled = try container.decodeIfPresent(Bool.self, forKey: .sampled) ?? true
+
+        // Baggage is decoded but considered potentially sensitive
         baggage = try container.decodeIfPresent([String: String].self, forKey: .baggage) ?? [:]
     }
 
@@ -389,9 +441,9 @@ extension AITraceContext: Codable {
         try container.encodeIfPresent(operation, forKey: .operation)
         try container.encode(startTime, forKey: .startTime)
         try container.encode(sampled, forKey: .sampled)
-        if !baggage.isEmpty {
-            try container.encode(baggage, forKey: .baggage)
-        }
+        // Note: baggage is intentionally NOT encoded by default to prevent
+        // accidental serialization of sensitive data. Callers who need baggage
+        // in encoded form should handle it separately after verification.
     }
 }
 
