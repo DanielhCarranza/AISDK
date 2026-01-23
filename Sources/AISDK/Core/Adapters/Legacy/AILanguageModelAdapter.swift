@@ -402,8 +402,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         if let usage = chunk.usage {
             lastUsage = AIUsage(
                 promptTokens: usage.promptTokens ?? 0,
-                completionTokens: usage.completionTokens ?? 0,
-                totalTokens: usage.totalTokens ?? 0
+                completionTokens: usage.completionTokens ?? 0
             )
             events.append(.usage(lastUsage))
         }

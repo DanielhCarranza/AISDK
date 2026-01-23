@@ -25,8 +25,10 @@ public struct AIUsage: Sendable, Codable, Equatable, Hashable {
     /// Number of tokens in the completion/output
     public let completionTokens: Int
 
-    /// Total tokens consumed (promptTokens + completionTokens)
-    public let totalTokens: Int
+    /// Total tokens consumed (computed as promptTokens + completionTokens)
+    public var totalTokens: Int {
+        promptTokens + completionTokens
+    }
 
     /// Reasoning/thinking tokens for models that support extended thinking (o1/o3)
     /// This is included in completionTokens but tracked separately for billing
@@ -38,35 +40,23 @@ public struct AIUsage: Sendable, Codable, Equatable, Hashable {
     public init(
         promptTokens: Int,
         completionTokens: Int,
-        totalTokens: Int? = nil,
         reasoningTokens: Int? = nil,
         cachedTokens: Int? = nil
     ) {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
-        self.totalTokens = totalTokens ?? (promptTokens + completionTokens)
         self.reasoningTokens = reasoningTokens
         self.cachedTokens = cachedTokens
     }
 
     /// Zero usage for initialization
-    public static let zero = AIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
-
-    /// Create from legacy ChatCompletionResponse.Usage
-    public init(legacy: ChatCompletionResponse.Usage?) {
-        self.promptTokens = legacy?.promptTokens ?? 0
-        self.completionTokens = legacy?.completionTokens ?? 0
-        self.totalTokens = legacy?.totalTokens ?? (promptTokens + completionTokens)
-        self.reasoningTokens = legacy?.completionTokensDetails?.reasoningTokens
-        self.cachedTokens = nil  // Legacy Usage doesn't track cached tokens
-    }
+    public static let zero = AIUsage(promptTokens: 0, completionTokens: 0)
 
     /// Combine two usage values (for multi-step operations)
     public static func + (lhs: AIUsage, rhs: AIUsage) -> AIUsage {
         AIUsage(
             promptTokens: lhs.promptTokens + rhs.promptTokens,
             completionTokens: lhs.completionTokens + rhs.completionTokens,
-            totalTokens: lhs.totalTokens + rhs.totalTokens,
             reasoningTokens: combineOptionals(lhs.reasoningTokens, rhs.reasoningTokens),
             cachedTokens: combineOptionals(lhs.cachedTokens, rhs.cachedTokens)
         )
@@ -80,6 +70,15 @@ public struct AIUsage: Sendable, Codable, Equatable, Hashable {
         case (nil, nil): return nil
         }
     }
+
+    // MARK: - Codable
+
+    enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case reasoningTokens = "reasoning_tokens"
+        case cachedTokens = "cached_tokens"
+    }
 }
 
 // MARK: - AIFinishReason
@@ -87,32 +86,66 @@ public struct AIUsage: Sendable, Codable, Equatable, Hashable {
 /// Reason why the model stopped generating
 ///
 /// Maps to Vercel AI SDK 6.x finish reasons and provider-specific values.
-public enum AIFinishReason: String, Sendable, Codable, CaseIterable {
+/// Uses custom Codable implementation to safely handle unknown future values.
+public enum AIFinishReason: Sendable, Hashable, CaseIterable {
     /// Model completed naturally (end of response)
-    case stop = "stop"
+    case stop
 
     /// Hit maximum token limit
-    case length = "length"
+    case length
 
     /// Model requested tool/function calls
-    case toolCalls = "tool_calls"
+    case toolCalls
 
     /// Content was filtered by safety systems
-    case contentFilter = "content_filter"
+    case contentFilter
 
     /// An error occurred during generation
-    case error = "error"
+    case error
 
     /// Request was cancelled
-    case cancelled = "cancelled"
+    case cancelled
 
-    /// Unknown finish reason
-    case unknown = "unknown"
+    /// Unknown finish reason (preserves original string for debugging)
+    case unknown
+
+    /// The raw string value for serialization
+    public var rawValue: String {
+        switch self {
+        case .stop: return "stop"
+        case .length: return "length"
+        case .toolCalls: return "tool_calls"
+        case .contentFilter: return "content_filter"
+        case .error: return "error"
+        case .cancelled: return "cancelled"
+        case .unknown: return "unknown"
+        }
+    }
+
+    /// Initialize from a raw string value
+    public init?(rawValue: String) {
+        switch rawValue.lowercased() {
+        case "stop": self = .stop
+        case "length": self = .length
+        case "tool_calls": self = .toolCalls
+        case "content_filter": self = .contentFilter
+        case "error": self = .error
+        case "cancelled", "canceled": self = .cancelled
+        case "unknown": self = .unknown
+        default: return nil
+        }
+    }
 
     /// Convert from legacy finish_reason strings (OpenAI, Anthropic, etc.)
+    /// Always succeeds - unknown values map to .unknown
     public init(legacyReason: String?) {
-        switch legacyReason {
-        case "stop", "end_turn":
+        guard let reason = legacyReason?.lowercased() else {
+            self = .unknown
+            return
+        }
+
+        switch reason {
+        case "stop", "end_turn", "stop_sequence":
             self = .stop
         case "length", "max_tokens":
             self = .length
@@ -142,5 +175,23 @@ public enum AIFinishReason: String, Sendable, Codable, CaseIterable {
     /// Whether the response may be incomplete
     public var mayBeTruncated: Bool {
         self == .length
+    }
+}
+
+// MARK: - AIFinishReason Codable
+
+extension AIFinishReason: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+
+        // Use legacyReason init which handles case-insensitive matching
+        // and maps unknown values to .unknown instead of throwing
+        self.init(legacyReason: rawValue)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
