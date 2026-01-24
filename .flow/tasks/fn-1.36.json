@@ -1,14 +1,26 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-24T00:38:45.745934Z",
   "created_at": "2026-01-23T03:05:55.373232Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "442979dd0a07a1bbddca019ace3a6a602f387caf"
+    ],
+    "files_created": [
+      "Sources/AISDK/Tools/ToolCallRepair.swift",
+      "Tests/AISDKTests/Tools/ToolCallRepairTests.swift"
+    ],
+    "task_id": "fn-1.36",
+    "test_command": "swift test --filter ToolCallRepairTests",
+    "test_results": "24 tests passed"
+  },
   "id": "fn-1.36",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.36.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 4.3: ToolCallRepair",
-  "updated_at": "2026-01-23T03:05:55.373468Z"
+  "updated_at": "2026-01-24T00:39:01.939955Z"
 }

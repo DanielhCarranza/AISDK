@@ -29,6 +29,18 @@ final class ToolCallRepairTests: XCTestCase {
         XCTAssertEqual(strategy.maxAttempts, 3)
     }
 
+    func test_strategy_autoRepairMax_with_zero_does_not_allow_repair() {
+        let strategy = ToolCallRepair.Strategy.autoRepairMax(0)
+        XCTAssertFalse(strategy.allowsRepair)
+        XCTAssertEqual(strategy.maxAttempts, 0)
+    }
+
+    func test_strategy_autoRepairMax_with_negative_does_not_allow_repair() {
+        let strategy = ToolCallRepair.Strategy.autoRepairMax(-5)
+        XCTAssertFalse(strategy.allowsRepair)
+        XCTAssertEqual(strategy.maxAttempts, 0)
+    }
+
     func test_strategy_custom_allows_repair() {
         let strategy = ToolCallRepair.Strategy.custom { _, _, _ in nil }
         XCTAssertTrue(strategy.allowsRepair)
@@ -37,30 +49,31 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_strategy_default_is_autoRepairOnce() {
         let strategy = ToolCallRepair.Strategy.default
-        XCTAssertEqual(strategy, .autoRepairOnce)
+        XCTAssertTrue(strategy.matches(.autoRepairOnce))
     }
 
-    // MARK: - Strategy Equality Tests
+    // MARK: - Strategy Matching Tests
 
-    func test_strategy_equality_strict() {
-        XCTAssertEqual(ToolCallRepair.Strategy.strict, .strict)
-        XCTAssertNotEqual(ToolCallRepair.Strategy.strict, .autoRepairOnce)
+    func test_strategy_matches_strict() {
+        XCTAssertTrue(ToolCallRepair.Strategy.strict.matches(.strict))
+        XCTAssertFalse(ToolCallRepair.Strategy.strict.matches(.autoRepairOnce))
     }
 
-    func test_strategy_equality_autoRepairOnce() {
-        XCTAssertEqual(ToolCallRepair.Strategy.autoRepairOnce, .autoRepairOnce)
-        XCTAssertNotEqual(ToolCallRepair.Strategy.autoRepairOnce, .strict)
+    func test_strategy_matches_autoRepairOnce() {
+        XCTAssertTrue(ToolCallRepair.Strategy.autoRepairOnce.matches(.autoRepairOnce))
+        XCTAssertFalse(ToolCallRepair.Strategy.autoRepairOnce.matches(.strict))
     }
 
-    func test_strategy_equality_autoRepairMax() {
-        XCTAssertEqual(ToolCallRepair.Strategy.autoRepairMax(3), .autoRepairMax(3))
-        XCTAssertNotEqual(ToolCallRepair.Strategy.autoRepairMax(3), .autoRepairMax(5))
+    func test_strategy_matches_autoRepairMax() {
+        XCTAssertTrue(ToolCallRepair.Strategy.autoRepairMax(3).matches(.autoRepairMax(3)))
+        XCTAssertFalse(ToolCallRepair.Strategy.autoRepairMax(3).matches(.autoRepairMax(5)))
     }
 
-    func test_strategy_equality_custom_never_equal() {
+    func test_strategy_matches_custom_by_type() {
         let custom1 = ToolCallRepair.Strategy.custom { _, _, _ in nil }
         let custom2 = ToolCallRepair.Strategy.custom { _, _, _ in nil }
-        XCTAssertNotEqual(custom1, custom2)
+        // Custom strategies match by type, not by closure identity
+        XCTAssertTrue(custom1.matches(custom2))
     }
 
     // MARK: - Repair Result Tests
@@ -86,6 +99,28 @@ final class ToolCallRepairTests: XCTestCase {
         XCTAssertEqual(ToolCallRepair.RepairResult.notAttempted, .notAttempted)
     }
 
+    // MARK: - RequestContext Tests
+
+    func test_requestContext_default_values() {
+        let context = ToolCallRepair.RequestContext()
+        XCTAssertNil(context.allowedProviders)
+        XCTAssertEqual(context.sensitivity, .standard)
+        XCTAssertNil(context.metadata)
+    }
+
+    func test_requestContext_from_request() {
+        let request = AITextRequest(
+            messages: [.user("test")],
+            allowedProviders: ["provider1"],
+            sensitivity: .phi,
+            metadata: ["key": "value"]
+        )
+        let context = ToolCallRepair.RequestContext.from(request)
+        XCTAssertEqual(context.allowedProviders, ["provider1"])
+        XCTAssertEqual(context.sensitivity, .phi)
+        XCTAssertEqual(context.metadata, ["key": "value"])
+    }
+
     // MARK: - Repair Method Tests
 
     func test_repair_returns_corrected_arguments() async throws {
@@ -109,6 +144,28 @@ final class ToolCallRepairTests: XCTestCase {
         XCTAssertEqual(repaired?.id, "call-1")
         XCTAssertEqual(repaired?.name, "search")
         XCTAssertEqual(repaired?.arguments, #"{"query": "corrected search"}"#)
+    }
+
+    func test_repair_accepts_generic_error() async throws {
+        // Mock model that returns corrected JSON
+        let mock = MockAILanguageModel.withResponse(#"{"query": "fixed"}"#)
+
+        let originalCall = AIToolCallResult(
+            id: "call-1",
+            name: "search",
+            arguments: #"{"broken": true}"#
+        )
+        // Use a generic NSError instead of ToolError
+        let error = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Generic error"])
+
+        let repaired = try await ToolCallRepair.repair(
+            toolCall: originalCall,
+            error: error,
+            model: mock
+        )
+
+        XCTAssertNotNil(repaired)
+        XCTAssertEqual(repaired?.arguments, #"{"query": "fixed"}"#)
     }
 
     func test_repair_returns_nil_for_same_arguments() async throws {
@@ -152,6 +209,26 @@ final class ToolCallRepairTests: XCTestCase {
         XCTAssertNil(repaired, "Should return nil when model returns invalid JSON")
     }
 
+    func test_repair_returns_nil_for_json_array_response() async throws {
+        // Mock model that returns a JSON array (invalid for tool arguments)
+        let mock = MockAILanguageModel.withResponse(#"["item1", "item2"]"#)
+
+        let originalCall = AIToolCallResult(
+            id: "call-1",
+            name: "search",
+            arguments: #"{"query": "test"}"#
+        )
+        let error = ToolError.invalidParameters("test error")
+
+        let repaired = try await ToolCallRepair.repair(
+            toolCall: originalCall,
+            error: error,
+            model: mock
+        )
+
+        XCTAssertNil(repaired, "Should return nil when model returns JSON array instead of object")
+    }
+
     func test_repair_handles_markdown_code_block_response() async throws {
         // Mock model that returns JSON in markdown code block
         let mock = MockAILanguageModel.withResponse("""
@@ -175,6 +252,36 @@ final class ToolCallRepairTests: XCTestCase {
 
         XCTAssertNotNil(repaired)
         XCTAssertEqual(repaired?.arguments, #"{"query": "fixed"}"#)
+    }
+
+    func test_repair_preserves_request_context() async throws {
+        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+
+        let originalCall = AIToolCallResult(
+            id: "1",
+            name: "test",
+            arguments: #"{"broken": true}"#
+        )
+        let error = ToolError.invalidParameters("test")
+
+        let context = ToolCallRepair.RequestContext(
+            allowedProviders: ["safe-provider"],
+            sensitivity: .phi,
+            metadata: ["trace": "123"]
+        )
+
+        _ = try await ToolCallRepair.repair(
+            toolCall: originalCall,
+            error: error,
+            model: mock,
+            requestContext: context
+        )
+
+        // Verify the request preserved context settings
+        XCTAssertNotNil(mock.lastTextRequest)
+        XCTAssertEqual(mock.lastTextRequest?.allowedProviders, ["safe-provider"])
+        XCTAssertEqual(mock.lastTextRequest?.sensitivity, .phi)
+        XCTAssertEqual(mock.lastTextRequest?.metadata, ["trace": "123"])
     }
 
     // MARK: - attemptRepair Tests
@@ -276,6 +383,29 @@ final class ToolCallRepairTests: XCTestCase {
         }
     }
 
+    func test_attemptRepair_custom_receives_generic_error() async throws {
+        var receivedError: Error?
+
+        let customStrategy = ToolCallRepair.Strategy.custom { call, error, _ in
+            receivedError = error
+            return AIToolCallResult(id: call.id, name: call.name, arguments: #"{"fixed": true}"#)
+        }
+
+        let mock = MockAILanguageModel.withResponse("{}")
+        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let error = NSError(domain: "test", code: 42, userInfo: nil)
+
+        _ = try await ToolCallRepair.attemptRepair(
+            toolCall: originalCall,
+            error: error,
+            model: mock,
+            strategy: customStrategy
+        )
+
+        XCTAssertNotNil(receivedError)
+        XCTAssertEqual((receivedError as NSError?)?.code, 42)
+    }
+
     func test_attemptRepair_custom_returns_failed_when_handler_returns_nil() async throws {
         let customStrategy = ToolCallRepair.Strategy.custom { _, _, _ in
             nil
@@ -301,12 +431,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     // MARK: - autoRepairMax Tests
 
-    func test_attemptRepair_autoRepairMax_tries_multiple_times() async throws {
-        // Sequential mock returns invalid, then valid JSON
-        let sequential = MockAILanguageModel.withSequence([
-            "invalid first",
-            #"{"second": "valid"}"#
-        ])
+    func test_attemptRepair_autoRepairMax_succeeds_on_first_attempt() async throws {
+        // Mock returns valid JSON on first call
+        let mock = MockAILanguageModel.withResponse(#"{"fixed": "first"}"#)
 
         let originalCall = AIToolCallResult(
             id: "1",
@@ -315,19 +442,19 @@ final class ToolCallRepairTests: XCTestCase {
         )
         let error = ToolError.invalidParameters("test")
 
-        // Note: This test verifies the multi-attempt behavior.
-        // The current implementation makes N requests for autoRepairMax(N)
-        // Since sequential mock returns valid JSON on second call, repair should succeed
         let result = try await ToolCallRepair.attemptRepair(
             toolCall: originalCall,
             error: error,
-            model: sequential,
+            model: mock,
             strategy: .autoRepairMax(3)
         )
 
-        // First attempt fails (invalid JSON), but we keep trying
-        // The behavior depends on implementation details - verify request was made
-        XCTAssertGreaterThan(sequential.requestCount, 0)
+        XCTAssertEqual(mock.requestCount, 1, "Should succeed on first attempt")
+        if case .repaired(let call) = result {
+            XCTAssertEqual(call.arguments, #"{"fixed": "first"}"#)
+        } else {
+            XCTFail("Expected .repaired result")
+        }
     }
 
     func test_attemptRepair_autoRepairMax_exhausts_attempts() async throws {
@@ -348,21 +475,61 @@ final class ToolCallRepairTests: XCTestCase {
             strategy: .autoRepairMax(2)
         )
 
+        XCTAssertEqual(mock.requestCount, 2, "Should exhaust all 2 attempts")
         if case .failed(let reason) = result {
-            XCTAssertTrue(reason.lowercased().contains("attempt") || reason.lowercased().contains("exhaust"))
+            XCTAssertTrue(reason.contains("Exhausted"))
+            XCTAssertTrue(reason.contains("2"))
         } else {
             XCTFail("Expected .failed result after exhausting attempts")
+        }
+    }
+
+    func test_attemptRepair_autoRepairMax_with_zero_returns_failed() async throws {
+        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+
+        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let error = ToolError.invalidParameters("test")
+
+        let result = try await ToolCallRepair.attemptRepair(
+            toolCall: originalCall,
+            error: error,
+            model: mock,
+            strategy: .autoRepairMax(0)
+        )
+
+        XCTAssertEqual(mock.requestCount, 0, "Should not make any requests with zero attempts")
+        if case .failed(let reason) = result {
+            XCTAssertTrue(reason.contains("Invalid maxAttempts"))
+        } else {
+            XCTFail("Expected .failed result for zero attempts")
+        }
+    }
+
+    func test_attemptRepair_autoRepairMax_with_negative_returns_failed() async throws {
+        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+
+        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let error = ToolError.invalidParameters("test")
+
+        let result = try await ToolCallRepair.attemptRepair(
+            toolCall: originalCall,
+            error: error,
+            model: mock,
+            strategy: .autoRepairMax(-1)
+        )
+
+        XCTAssertEqual(mock.requestCount, 0, "Should not make any requests with negative attempts")
+        if case .failed(let reason) = result {
+            XCTAssertTrue(reason.contains("Invalid maxAttempts"))
+        } else {
+            XCTFail("Expected .failed result for negative attempts")
         }
     }
 
     // MARK: - Integration with Tool Schema
 
     func test_repair_uses_tool_schema_when_provided() async throws {
-        var capturedRequest: AITextRequest?
         let mock = MockAILanguageModel.withResponse(#"{"location": "New York"}"#)
-
-        // Capture the request to verify schema is included in prompt
-        let originalLastRequest = mock.lastTextRequest
 
         let originalCall = AIToolCallResult(
             id: "1",
