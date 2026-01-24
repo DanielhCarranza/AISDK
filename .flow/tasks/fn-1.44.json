@@ -7,11 +7,12 @@
   "epic": "fn-1",
   "evidence": {
     "commits": [
-      "d7e5d02c1e44f8ad663564fd7106a58246fb8c23"
+      "d7e5d02c1e44f8ad663564fd7106a58246fb8c23",
+      "0b3a866f3bf537c1b3c189f9c2270d771b7fc9c3"
     ],
     "prs": [],
     "tests": [
-      "swift test --filter GenerativeUIViewTests (18 tests pass)"
+      "swift test --filter GenerativeUIViewTests (22 tests pass)"
     ]
   },
   "id": "fn-1.44",
@@ -19,5 +20,5 @@
   "spec_path": ".flow/tasks/fn-1.44.md",
   "status": "done",
   "title": "Task 5.6: GenerativeUIView",
-  "updated_at": "2026-01-24T05:22:02.526459Z"
+  "updated_at": "2026-01-24T05:36:55.979011Z"
 }
