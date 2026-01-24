@@ -387,11 +387,12 @@ public struct UICatalog: Sendable {
         self.validators = [:]
     }
 
-    /// Creates a catalog with predefined components
+    /// Creates a catalog with predefined components (internal, unchecked)
     ///
     /// - Parameter componentTypes: Array of component definition types to register
-    /// - Note: Uses unchecked registration for variadic initializer (assumes valid types)
-    public init<each T: UIComponentDefinition>(componentTypes: repeat (each T).Type) {
+    /// - Note: Uses unchecked registration - assumes valid, non-duplicate types.
+    ///         For public use, create an empty catalog and use `register` method.
+    init<each T: UIComponentDefinition>(componentTypes: repeat (each T).Type) {
         self.components = [:]
         self.actions = [:]
         self.validators = [:]
@@ -408,6 +409,10 @@ public struct UICatalog: Sendable {
     public mutating func register<T: UIComponentDefinition>(_ definitionType: T.Type) throws {
         let typeName = T.type.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typeName.isEmpty else {
+            throw UIComponentValidationError.invalidComponentTypeName(T.type)
+        }
+        // Reject types with leading/trailing whitespace to ensure consistency
+        guard T.type == typeName else {
             throw UIComponentValidationError.invalidComponentTypeName(T.type)
         }
         guard components[typeName] == nil else {
@@ -670,8 +675,8 @@ struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
         // Basic validation
         try validate(props: props)
 
-        // Catalog-aware validation: check action exists
-        if !actions.isEmpty && !actions.contains(props.action) {
+        // Catalog-aware validation: check action exists in registered actions
+        if !actions.contains(props.action) {
             throw UIComponentValidationError.unknownAction(
                 component: type,
                 action: props.action
@@ -771,9 +776,9 @@ struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
         // Basic validation
         try validate(props: props)
 
-        // Catalog-aware validation: check validator exists
+        // Catalog-aware validation: check validator exists in registered validators
         if let validation = props.validation, !validation.isEmpty {
-            if !validators.isEmpty && !validators.contains(validation) {
+            if !validators.contains(validation) {
                 throw UIComponentValidationError.unknownValidator(
                     component: type,
                     validator: validation
