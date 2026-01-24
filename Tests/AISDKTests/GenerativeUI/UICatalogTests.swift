@@ -78,13 +78,31 @@ final class UICatalogTests: XCTestCase {
 
     // MARK: - Registration Tests
 
-    func testRegisterCustomComponent() {
+    func testRegisterCustomComponent() throws {
         var catalog = UICatalog()
         XCTAssertEqual(catalog.registeredComponentTypes.count, 0)
 
-        catalog.register(TextComponentDefinitionPlaceholder.self)
+        try catalog.register(TextComponentDefinitionPlaceholder.self)
         XCTAssertEqual(catalog.registeredComponentTypes.count, 1)
         XCTAssertTrue(catalog.hasComponent("Text"))
+    }
+
+    func testRegisterDuplicateComponentThrows() throws {
+        var catalog = UICatalog()
+        try catalog.register(TextComponentDefinitionPlaceholder.self)
+
+        // Attempting to register again should throw
+        XCTAssertThrowsError(try catalog.register(TextComponentDefinitionPlaceholder.self)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .duplicateComponentType(let type) = validationError {
+                XCTAssertEqual(type, "Text")
+            } else {
+                XCTFail("Expected duplicateComponentType error, got \(validationError)")
+            }
+        }
     }
 
     func testRegisterAction() {
@@ -449,6 +467,136 @@ final class UICatalogTests: XCTestCase {
         }
     }
 
+    // MARK: - Unknown Prop Validation Tests
+
+    func testUnknownPropRejected() {
+        let catalog = UICatalog.core8
+
+        // Extra prop "foo" should be rejected
+        let unknownPropJSON = """
+        {"content": "Hello", "foo": "bar"}
+        """
+        let unknownPropData = Data(unknownPropJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Text", propsData: unknownPropData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .unknownProp(let component, let prop) = validationError {
+                XCTAssertEqual(component, "Text")
+                XCTAssertEqual(prop, "foo")
+            } else {
+                XCTFail("Expected unknownProp error, got \(validationError)")
+            }
+        }
+    }
+
+    func testUnknownPropWithSnakeCase() {
+        let catalog = UICatalog.core8
+
+        // unknown_prop should be converted to unknownProp and rejected
+        let unknownPropJSON = """
+        {"content": "Hello", "unknown_prop": "value"}
+        """
+        let unknownPropData = Data(unknownPropJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Text", propsData: unknownPropData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .unknownProp(let component, _) = validationError {
+                XCTAssertEqual(component, "Text")
+            } else {
+                XCTFail("Expected unknownProp error, got \(validationError)")
+            }
+        }
+    }
+
+    // MARK: - Action Validation Tests
+
+    func testButtonWithUnknownActionRejected() {
+        let catalog = UICatalog.core8
+
+        // "customAction" is not a registered action
+        let unknownActionJSON = """
+        {"title": "Click", "action": "customAction"}
+        """
+        let unknownActionData = Data(unknownActionJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Button", propsData: unknownActionData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .unknownAction(let component, let action) = validationError {
+                XCTAssertEqual(component, "Button")
+                XCTAssertEqual(action, "customAction")
+            } else {
+                XCTFail("Expected unknownAction error, got \(validationError)")
+            }
+        }
+    }
+
+    func testButtonWithRegisteredActionAccepted() throws {
+        let catalog = UICatalog.core8
+
+        // All registered actions should be accepted
+        for action in ["submit", "navigate", "dismiss"] {
+            let validJSON = """
+            {"title": "Click", "action": "\(action)"}
+            """
+            let validData = Data(validJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Button", propsData: validData), "Expected action '\(action)' to be valid")
+        }
+    }
+
+    // MARK: - Validator Validation Tests
+
+    func testInputWithUnknownValidatorRejected() {
+        let catalog = UICatalog.core8
+
+        // "customValidator" is not a registered validator
+        let unknownValidatorJSON = """
+        {"label": "Email", "name": "email", "validation": "customValidator"}
+        """
+        let unknownValidatorData = Data(unknownValidatorJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Input", propsData: unknownValidatorData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .unknownValidator(let component, let validator) = validationError {
+                XCTAssertEqual(component, "Input")
+                XCTAssertEqual(validator, "customValidator")
+            } else {
+                XCTFail("Expected unknownValidator error, got \(validationError)")
+            }
+        }
+    }
+
+    func testInputWithRegisteredValidatorAccepted() throws {
+        let catalog = UICatalog.core8
+
+        // All registered validators should be accepted
+        for validator in ["required", "email", "minLength", "maxLength", "pattern"] {
+            let validJSON = """
+            {"label": "Field", "name": "field", "validation": "\(validator)"}
+            """
+            let validData = Data(validJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Input", propsData: validData), "Expected validator '\(validator)' to be valid")
+        }
+    }
+
+    func testInputWithNoValidationAccepted() throws {
+        let catalog = UICatalog.core8
+
+        // Input without validation should be accepted
+        let noValidationJSON = """
+        {"label": "Name", "name": "name"}
+        """
+        let noValidationData = Data(noValidationJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Input", propsData: noValidationData))
+    }
+
     // MARK: - Decoding Error Tests
 
     func testDecodingMissingRequiredProp() {
@@ -542,6 +690,34 @@ final class UICatalogTests: XCTestCase {
         )
         XCTAssertTrue(decodingFailedError.errorDescription?.contains("Input") ?? false)
         XCTAssertTrue(decodingFailedError.errorDescription?.contains("decoding failed") ?? false)
+
+        let unknownPropError = UIComponentValidationError.unknownProp(
+            component: "Text",
+            prop: "foo"
+        )
+        XCTAssertTrue(unknownPropError.errorDescription?.contains("Text") ?? false)
+        XCTAssertTrue(unknownPropError.errorDescription?.contains("foo") ?? false)
+        XCTAssertTrue(unknownPropError.errorDescription?.contains("unknown") ?? false)
+
+        let unknownActionError = UIComponentValidationError.unknownAction(
+            component: "Button",
+            action: "customAction"
+        )
+        XCTAssertTrue(unknownActionError.errorDescription?.contains("Button") ?? false)
+        XCTAssertTrue(unknownActionError.errorDescription?.contains("customAction") ?? false)
+        XCTAssertTrue(unknownActionError.errorDescription?.contains("action") ?? false)
+
+        let unknownValidatorError = UIComponentValidationError.unknownValidator(
+            component: "Input",
+            validator: "customValidator"
+        )
+        XCTAssertTrue(unknownValidatorError.errorDescription?.contains("Input") ?? false)
+        XCTAssertTrue(unknownValidatorError.errorDescription?.contains("customValidator") ?? false)
+        XCTAssertTrue(unknownValidatorError.errorDescription?.contains("validator") ?? false)
+
+        let duplicateTypeError = UIComponentValidationError.duplicateComponentType("Text")
+        XCTAssertTrue(duplicateTypeError.errorDescription?.contains("Text") ?? false)
+        XCTAssertTrue(duplicateTypeError.errorDescription?.contains("Duplicate") ?? false)
     }
 
     // MARK: - Component Definition Tests
