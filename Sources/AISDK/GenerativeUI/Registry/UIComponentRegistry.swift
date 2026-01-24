@@ -33,7 +33,8 @@ private func accessibilityTraits(from traits: [String]?) -> AccessibilityTraits 
     guard let traits else { return [] }
     var result: AccessibilityTraits = []
     for trait in traits {
-        switch trait.lowercased() {
+        let normalized = trait.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
         case "header":
             result.formUnion(.isHeader)
         case "link":
@@ -583,18 +584,47 @@ private struct GenerativeInputView: View {
         let props = try? decoder.decode(InputComponentDefinition.Props.self, from: node.propsData)
         let label = props?.label ?? "Input"
         let placeholder = props?.placeholder ?? ""
+        let inputType = props?.type ?? .text
 
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.roundedBorder)
+            inputField(placeholder: placeholder, inputType: inputType)
         }
         .accessibilityLabel(props?.accessibilityLabel ?? label)
         .accessibilityHint(props?.accessibilityHint ?? "")
         .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
+    }
+
+    @ViewBuilder
+    private func inputField(placeholder: String, inputType: InputType) -> some View {
+        switch inputType {
+        case .password:
+            SecureField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                #if os(iOS)
+                .textContentType(.password)
+                #endif
+        case .email:
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                #if os(iOS)
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .autocapitalization(.none)
+                #endif
+        case .number:
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+        case .text:
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+        }
     }
 }
 

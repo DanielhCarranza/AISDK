@@ -1,7 +1,8 @@
 {
   "commits": [
     "2634ece",
-    "ae09b93"
+    "ae09b93",
+    "002fc0a"
   ],
   "tests": [
     "swift test --filter UIComponentRegistryTests"
