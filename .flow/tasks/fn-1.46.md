@@ -25,8 +25,3 @@ Implemented GenerativeUIIntegrationTests with 25 tests covering:
 - Sendable compliance for UIComponentRegistry and UITree
 
 Note: Tests follow existing codebase patterns. SwiftUI rendering tests would require UIHostingController which is not used elsewhere in this test suite.
-
-## Evidence
-- Commits: 4d25a0d
-- Tests: swift test --filter GenerativeUIIntegrationTests (25 tests passed)
-- PRs:
