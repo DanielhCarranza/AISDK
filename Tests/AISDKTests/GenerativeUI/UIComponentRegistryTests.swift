@@ -449,6 +449,95 @@ extension UIComponentRegistryTests {
         XCTAssertTrue(registry.isActionAllowed("dismiss"))
         XCTAssertFalse(registry.isActionAllowed("malicious_action"))
     }
+
+    // MARK: - Secure Default Tests
+
+    func test_secureDefault_has_standard_actions() {
+        // Given
+        let registry = UIComponentRegistry.secureDefault
+
+        // Then - secure default should have standard actions pre-allowed
+        XCTAssertTrue(registry.isActionAllowed("submit"))
+        XCTAssertTrue(registry.isActionAllowed("navigate"))
+        XCTAssertTrue(registry.isActionAllowed("dismiss"))
+        XCTAssertFalse(registry.isActionAllowed("custom_action"))
+        XCTAssertEqual(registry.currentAllowedActions.count, 3)
+    }
+
+    func test_secureDefault_has_core8_components() {
+        // Given
+        let registry = UIComponentRegistry.secureDefault
+
+        // Then - should have all Core 8 components
+        XCTAssertEqual(registry.registeredTypes.count, 8)
+        XCTAssertTrue(registry.hasComponent("Text"))
+        XCTAssertTrue(registry.hasComponent("Button"))
+    }
+
+    // MARK: - Action Trimming Tests
+
+    func test_allowAction_trims_whitespace() {
+        // Given
+        var registry = UIComponentRegistry()
+
+        // When - add action with whitespace
+        registry.allowAction("  submit  ")
+
+        // Then - trimmed version should be allowed
+        XCTAssertTrue(registry.isActionAllowed("submit"))
+        XCTAssertTrue(registry.isActionAllowed("  submit  ")) // Also works with whitespace
+        XCTAssertEqual(registry.currentAllowedActions, ["submit"])
+    }
+
+    func test_allowAction_ignores_empty() {
+        // Given
+        var registry = UIComponentRegistry()
+
+        // When - try to add empty or whitespace-only
+        registry.allowAction("")
+        registry.allowAction("   ")
+
+        // Then - should remain empty
+        XCTAssertTrue(registry.currentAllowedActions.isEmpty)
+    }
+
+    func test_isActionAllowed_trims_input() {
+        // Given
+        var registry = UIComponentRegistry()
+        registry.allowAction("submit")
+
+        // Then - check with whitespace should work
+        XCTAssertTrue(registry.isActionAllowed("submit"))
+        XCTAssertTrue(registry.isActionAllowed("  submit  "))
+        XCTAssertTrue(registry.isActionAllowed("\tsubmit\n"))
+    }
+
+    func test_action_dispatch_trims_and_normalizes() {
+        // Given
+        var registry = UIComponentRegistry()
+        registry.register("Button") { node, _, decoder, handler, _ in
+            let props = try? decoder.decode(ButtonComponentDefinition.Props.self, from: node.propsData)
+            handler(props?.action ?? "")
+            return Text("Button")
+        }
+        registry.allowAction("submit")
+
+        // When - action has trailing whitespace
+        let node = UINode(
+            key: "btn",
+            type: "Button",
+            propsData: Data(#"{"title":"Test","action":"submit "}"#.utf8)
+        )
+        let tree = UITree(rootKey: "btn", nodes: ["btn": node])
+
+        var receivedAction: String?
+        _ = registry.build(node: node, tree: tree) { action in
+            receivedAction = action
+        }
+
+        // Then - should receive trimmed action
+        XCTAssertEqual(receivedAction, "submit")
+    }
 }
 
 #endif
