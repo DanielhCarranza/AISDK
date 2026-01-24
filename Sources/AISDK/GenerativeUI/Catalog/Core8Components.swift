@@ -17,6 +17,39 @@ public protocol AccessibilityProps: Codable, Sendable {
     var accessibilityTraits: [String]? { get }
 }
 
+// MARK: - Validation Helpers
+
+/// Helper to validate that a required string is not empty or whitespace-only
+private func validateRequiredString(
+    _ value: String,
+    prop: String,
+    component: String
+) throws {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+        throw UIComponentValidationError.invalidPropValue(
+            component: component,
+            prop: prop,
+            reason: "\(prop.capitalized) cannot be empty or whitespace-only"
+        )
+    }
+}
+
+/// Helper to validate accessibility traits (check for non-empty strings)
+private func validateAccessibilityTraits(
+    _ traits: [String]?,
+    component: String
+) throws {
+    guard let traits else { return }
+    for trait in traits where trait.trimmingCharacters(in: .whitespaces).isEmpty {
+        throw UIComponentValidationError.invalidPropValue(
+            component: component,
+            prop: "accessibilityTraits",
+            reason: "Accessibility trait cannot be empty"
+        )
+    }
+}
+
 // MARK: - Text Component
 
 /// Text component for displaying text content
@@ -64,13 +97,7 @@ public struct TextComponentDefinition: UIComponentDefinition {
     ]
 
     public static func validate(props: Props) throws {
-        if props.content.isEmpty {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "content",
-                reason: "Content cannot be empty"
-            )
-        }
+        try validateRequiredString(props.content, prop: "content", component: type)
 
         // Validate style if provided
         if let style = props.style {
@@ -84,16 +111,7 @@ public struct TextComponentDefinition: UIComponentDefinition {
             }
         }
 
-        // Validate accessibility traits if provided (check for non-empty strings)
-        if let traits = props.accessibilityTraits {
-            for trait in traits where trait.trimmingCharacters(in: .whitespaces).isEmpty {
-                throw UIComponentValidationError.invalidPropValue(
-                    component: type,
-                    prop: "accessibilityTraits",
-                    reason: "Accessibility trait cannot be empty"
-                )
-            }
-        }
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 }
 
@@ -155,20 +173,8 @@ public struct ButtonComponentDefinition: UIComponentDefinition {
     ]
 
     public static func validate(props: Props) throws {
-        if props.title.isEmpty {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "title",
-                reason: "Title cannot be empty"
-            )
-        }
-        if props.action.isEmpty {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "action",
-                reason: "Action cannot be empty"
-            )
-        }
+        try validateRequiredString(props.title, prop: "title", component: type)
+        try validateRequiredString(props.action, prop: "action", component: type)
 
         // Validate style if provided
         if let style = props.style {
@@ -182,31 +188,23 @@ public struct ButtonComponentDefinition: UIComponentDefinition {
             }
         }
 
-        // Validate accessibility traits if provided (check for non-empty strings)
-        if let traits = props.accessibilityTraits {
-            for trait in traits where trait.trimmingCharacters(in: .whitespaces).isEmpty {
-                throw UIComponentValidationError.invalidPropValue(
-                    component: type,
-                    prop: "accessibilityTraits",
-                    reason: "Accessibility trait cannot be empty"
-                )
-            }
-        }
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 
     public static func validateWithCatalog(
         props: Props,
         actions: Set<String>,
-        validators: Set<String>
+        validators _: Set<String>
     ) throws {
         // Basic validation
         try validate(props: props)
 
         // Catalog-aware validation: check action exists in registered actions
-        if !actions.contains(props.action) {
+        let trimmedAction = props.action.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !actions.contains(trimmedAction) {
             throw UIComponentValidationError.unknownAction(
                 component: type,
-                action: props.action
+                action: trimmedAction
             )
         }
     }
@@ -276,6 +274,8 @@ public struct CardComponentDefinition: UIComponentDefinition {
                 )
             }
         }
+
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 }
 
@@ -348,25 +348,14 @@ public struct InputComponentDefinition: UIComponentDefinition {
     ]
 
     public static func validate(props: Props) throws {
-        if props.label.isEmpty {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "label",
-                reason: "Label cannot be empty"
-            )
-        }
-        if props.name.isEmpty {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "name",
-                reason: "Name cannot be empty"
-            )
-        }
+        try validateRequiredString(props.label, prop: "label", component: type)
+        try validateRequiredString(props.name, prop: "name", component: type)
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 
     public static func validateWithCatalog(
         props: Props,
-        actions: Set<String>,
+        actions _: Set<String>,
         validators: Set<String>
     ) throws {
         // Basic validation
@@ -374,7 +363,7 @@ public struct InputComponentDefinition: UIComponentDefinition {
 
         // Catalog-aware validation: check validator exists in registered validators
         if let validation = props.validation {
-            let trimmedValidation = validation.trimmingCharacters(in: .whitespaces)
+            let trimmedValidation = validation.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmedValidation.isEmpty {
                 throw UIComponentValidationError.invalidPropValue(
                     component: type,
@@ -432,6 +421,10 @@ public struct ListComponentDefinition: UIComponentDefinition {
     public static let allowedPropKeys: Set<String> = [
         "style", "accessibilityLabel", "accessibilityHint", "accessibilityTraits"
     ]
+
+    public static func validate(props: Props) throws {
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
+    }
 }
 
 // MARK: - Image Component
@@ -498,13 +491,8 @@ public struct ImageComponentDefinition: UIComponentDefinition {
     ]
 
     public static func validate(props: Props) throws {
-        if props.url.isEmpty {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "url",
-                reason: "URL cannot be empty"
-            )
-        }
+        try validateRequiredString(props.url, prop: "url", component: type)
+
         if let width = props.width, width <= 0 {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -531,6 +519,8 @@ public struct ImageComponentDefinition: UIComponentDefinition {
                 )
             }
         }
+
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 }
 
@@ -558,7 +548,7 @@ public struct StackComponentDefinition: UIComponentDefinition {
         public let accessibilityTraits: [String]?
 
         public init(
-            direction: StackDirection = .vertical,
+            direction: StackDirection,
             spacing: Double? = nil,
             alignment: StackAlignment? = nil,
             accessibilityLabel: String? = nil,
@@ -595,6 +585,8 @@ public struct StackComponentDefinition: UIComponentDefinition {
                 reason: "Spacing cannot be negative"
             )
         }
+
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 }
 
@@ -646,5 +638,7 @@ public struct SpacerComponentDefinition: UIComponentDefinition {
                 reason: "Size cannot be negative"
             )
         }
+
+        try validateAccessibilityTraits(props.accessibilityTraits, component: type)
     }
 }
