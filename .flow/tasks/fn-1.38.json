@@ -5,10 +5,26 @@
   "created_at": "2026-01-23T03:05:55.788886Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "050bb9d"
+    ],
+    "files_changed": [
+      "Sources/AISDK/Agents/AIAgentActor.swift",
+      "Tests/AISDKTests/Agents/AIAgentActorTests.swift"
+    ],
+    "tests": [
+      "test_stateStream_emits_current_state_immediately",
+      "test_stateStream_emits_state_changes",
+      "test_stateStream_supports_multiple_subscribers",
+      "test_stateStream_cleans_up_on_task_cancellation",
+      "test_stateStream_integration_with_agent_execution"
+    ]
+  },
   "id": "fn-1.38",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.38.md",
-  "status": "in_progress",
+  "status": "done",
   "title": "Task 4.5: AgentState Observable",
-  "updated_at": "2026-01-24T01:18:10.932761Z"
+  "updated_at": "2026-01-24T02:35:49.347673Z"
 }

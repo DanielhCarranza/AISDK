@@ -832,30 +832,35 @@ public final class ObservableAgentState: @unchecked Sendable {
     public var stateStream: AsyncStream<AgentState> {
         let subscriberId = UUID()
 
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            // Set up cleanup on termination FIRST to avoid race conditions
+            // Use weak self to prevent retain cycles
+            continuation.onTermination = { @Sendable [weak self] _ in
+                guard let self = self else { return }
+                self.subscribersLock.lock()
+                self.subscribers.removeValue(forKey: subscriberId)
+                self.subscribersLock.unlock()
+            }
+
             // Register subscriber
             self.subscribersLock.lock()
             self.subscribers[subscriberId] = continuation
             self.subscribersLock.unlock()
 
             // Emit current state immediately
-            Task { @MainActor in
+            // Use weak self to prevent retain cycles
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
                 continuation.yield(self.state)
-            }
-
-            // Set up cleanup on termination
-            continuation.onTermination = { @Sendable _ in
-                self.subscribersLock.lock()
-                self.subscribers.removeValue(forKey: subscriberId)
-                self.subscribersLock.unlock()
             }
         }
     }
 
     /// Broadcast state change to all active subscribers
     private func broadcastState(_ newState: AgentState) {
+        // Snapshot to array under lock to avoid iterator invalidation
         subscribersLock.lock()
-        let activeSubscribers = subscribers.values
+        let activeSubscribers = Array(subscribers.values)
         subscribersLock.unlock()
 
         for continuation in activeSubscribers {
@@ -865,8 +870,9 @@ public final class ObservableAgentState: @unchecked Sendable {
 
     deinit {
         // Finish all active streams when deallocated
+        // Snapshot to array under lock, then clear, then finish
         subscribersLock.lock()
-        let activeSubscribers = subscribers.values
+        let activeSubscribers = Array(subscribers.values)
         subscribers.removeAll()
         subscribersLock.unlock()
 

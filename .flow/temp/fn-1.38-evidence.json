@@ -1,0 +1,14 @@
+{
+  "commits": ["050bb9d"],
+  "tests": [
+    "test_stateStream_emits_current_state_immediately",
+    "test_stateStream_emits_state_changes",
+    "test_stateStream_supports_multiple_subscribers",
+    "test_stateStream_cleans_up_on_task_cancellation",
+    "test_stateStream_integration_with_agent_execution"
+  ],
+  "files_changed": [
+    "Sources/AISDK/Agents/AIAgentActor.swift",
+    "Tests/AISDKTests/Agents/AIAgentActorTests.swift"
+  ]
+}
