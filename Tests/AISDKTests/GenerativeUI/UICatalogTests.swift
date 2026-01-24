@@ -105,6 +105,31 @@ final class UICatalogTests: XCTestCase {
         }
     }
 
+    func testRegisterComponentWithWhitespaceTypeThrows() throws {
+        // Test component with leading/trailing whitespace in type name
+        struct WhitespaceTypeComponent: UIComponentDefinition {
+            struct Props: Codable, Sendable {}
+            static let type = "  Spaced  "
+            static let description = "Component with whitespace type"
+            static let hasChildren = false
+            static let propsSchemaDescription = "{}"
+            static let allowedPropKeys: Set<String> = []
+        }
+
+        var catalog = UICatalog()
+        XCTAssertThrowsError(try catalog.register(WhitespaceTypeComponent.self)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .invalidComponentTypeName(let name) = validationError {
+                XCTAssertEqual(name, "  Spaced  ")
+            } else {
+                XCTFail("Expected invalidComponentTypeName error, got \(validationError)")
+            }
+        }
+    }
+
     func testRegisterAction() {
         var catalog = UICatalog()
         XCTAssertEqual(catalog.actions.count, 0)
@@ -549,6 +574,29 @@ final class UICatalogTests: XCTestCase {
         }
     }
 
+    func testButtonWithActionInEmptyCatalogRejected() throws {
+        // When catalog has no actions registered, any action should be rejected
+        var catalog = UICatalog()
+        try catalog.register(ButtonComponentDefinitionPlaceholder.self)
+
+        let anyActionJSON = """
+        {"title": "Click", "action": "anyAction"}
+        """
+        let anyActionData = Data(anyActionJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Button", propsData: anyActionData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .unknownAction(let component, let action) = validationError {
+                XCTAssertEqual(component, "Button")
+                XCTAssertEqual(action, "anyAction")
+            } else {
+                XCTFail("Expected unknownAction error, got \(validationError)")
+            }
+        }
+    }
+
     // MARK: - Validator Validation Tests
 
     func testInputWithUnknownValidatorRejected() {
@@ -595,6 +643,29 @@ final class UICatalogTests: XCTestCase {
         """
         let noValidationData = Data(noValidationJSON.utf8)
         XCTAssertNoThrow(try catalog.validate(type: "Input", propsData: noValidationData))
+    }
+
+    func testInputWithValidatorInEmptyCatalogRejected() throws {
+        // When catalog has no validators registered, any validator should be rejected
+        var catalog = UICatalog()
+        try catalog.register(InputComponentDefinitionPlaceholder.self)
+
+        let anyValidatorJSON = """
+        {"label": "Email", "name": "email", "validation": "anyValidator"}
+        """
+        let anyValidatorData = Data(anyValidatorJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Input", propsData: anyValidatorData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .unknownValidator(let component, let validator) = validationError {
+                XCTAssertEqual(component, "Input")
+                XCTAssertEqual(validator, "anyValidator")
+            } else {
+                XCTFail("Expected unknownValidator error, got \(validationError)")
+            }
+        }
     }
 
     // MARK: - Decoding Error Tests
