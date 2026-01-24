@@ -532,6 +532,7 @@ final class StopConditionTests: XCTestCase {
             let capabilities: LLMCapabilities = []
             var callCount = 0
             let lock = NSLock()
+            let maxCalls = 10 // Fail-safe to prevent infinite loop if token budget logic regresses
 
             func generateText(request: AITextRequest) async throws -> AITextResult {
                 lock.lock()
@@ -539,7 +540,17 @@ final class StopConditionTests: XCTestCase {
                 let currentCall = callCount
                 lock.unlock()
 
-                // Always return tool calls to keep the loop going
+                // Fail-safe: stop returning tool calls after maxCalls to prevent hanging
+                if currentCall > maxCalls {
+                    return AITextResult(
+                        text: "Fail-safe triggered - no more tool calls",
+                        toolCalls: [],
+                        usage: AIUsage(promptTokens: 50, completionTokens: 50),
+                        finishReason: .stop
+                    )
+                }
+
+                // Return tool calls to keep the loop going until budget is exceeded
                 // Each step uses 100 tokens total (50 prompt + 50 completion)
                 return AITextResult(
                     text: "Step \(currentCall)",

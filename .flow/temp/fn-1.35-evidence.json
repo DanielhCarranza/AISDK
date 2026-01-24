@@ -1,0 +1,13 @@
+{
+  "commits": [
+    "2a58f5fd9b0291cfcd2b742defbb4bf94bca1ba8",
+    "c5f2ccf79902bba854dab59a4d2b6d4daa59d55a"
+  ],
+  "tests": [
+    "swift test --filter StopConditionTests"
+  ],
+  "files": [
+    "Sources/AISDK/Agents/AIAgentActor.swift",
+    "Tests/AISDKTests/Agents/AIAgentActorTests.swift"
+  ]
+}
