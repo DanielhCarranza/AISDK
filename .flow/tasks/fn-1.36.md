@@ -32,14 +32,19 @@ TBD
 - RepairResult enum for tracking outcomes (repaired, failed, notAttempted)
 
 ## Test Coverage
-All 24 tests passing covering:
+All 34 tests passing covering:
 - Strategy properties (allowsRepair, maxAttempts)
-- Strategy equality
+- Strategy matching (replaces equality for closures)
 - RepairResult equality
+- RequestContext creation and preservation
 - Core repair method with various responses
+- Generic Error type acceptance
+- JSON array rejection (only objects valid)
 - attemptRepair with all strategies
+- autoRepairMax with 0/negative guards
 - Tool schema integration
+
 ## Evidence
-- Commits: 442979dd0a07a1bbddca019ace3a6a602f387caf
-- Tests:
+- Commits: 442979dd0a07a1bbddca019ace3a6a602f387caf, 08d17b69a4e3f9111d494bf95a365cd7676f7d9f
+- Tests: swift test --filter ToolCallRepairTests (34 tests passing)
 - PRs:
