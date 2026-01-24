@@ -7,7 +7,7 @@ Implement SwiftUI view components for the Core 8 UI component definitions, enabl
 - [x] GenerativeTextView - Renders text with style support (body, headline, subheadline, caption, title)
 - [x] GenerativeButtonView - Interactive button with action handling and style variants (primary, secondary, destructive, plain)
 - [x] GenerativeCardView - Container with optional title/subtitle and child rendering
-- [x] GenerativeInputView - Text input field with label and placeholder
+- [x] GenerativeInputView - Text input field with label, placeholder, and input type (text, password, email, number)
 - [x] GenerativeListView - Ordered/unordered/plain list container with child items
 - [x] GenerativeImageView - Async image loading with content mode support and invalid URL handling
 - [x] GenerativeStackView - HStack/VStack layout with spacing and alignment
@@ -34,9 +34,10 @@ All 8 Core SwiftUI view components implemented in UIComponentRegistry.swift with
 - Fixed-size spacer uses Color.clear for predictable sizing
 - Image fill mode clips when frame is set
 - Plain list style omits marker spacing
-- 23 tests pass covering registration, action handling, and view building
+- Input type support (password -> SecureField, email/number -> keyboard types on iOS)
+- 29 tests pass covering registration, action handling, trimming, and secureDefault
 
 ## Evidence
-- Commits: (pending)
-- Tests: swift test --filter UIComponentRegistryTests (23 tests pass)
+- Commits: 002fc0a, 4d3145f, 877b512
+- Tests: swift test --filter UIComponentRegistryTests (29 tests pass)
 - PRs:
