@@ -1,12 +1,3 @@
-# fn-1.39 Task 5.1: UICatalog
-
-## Description
-TBD
-
-## Acceptance
-- [ ] TBD
-
-## Done summary
 # fn-1.39 UICatalog - Done Summary
 
 ## Implementation
@@ -59,7 +50,3 @@ Props validation during decode with:
 
 - `Sources/AISDK/GenerativeUI/Catalog/UICatalog.swift` (new)
 - `Tests/AISDKTests/GenerativeUI/UICatalogTests.swift` (new)
-## Evidence
-- Commits: 08e3c104efbcd1c472d3679235496320a74600d1
-- Tests: command, passed, failed
-- PRs:

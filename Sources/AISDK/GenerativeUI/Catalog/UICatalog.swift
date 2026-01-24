@@ -102,7 +102,7 @@ public struct UIValidatorDefinition: Sendable {
 
 /// Errors that can occur during component validation
 public enum UIComponentValidationError: Error, Sendable {
-    /// A required prop is missing
+    /// A required prop is missing during decoding
     case missingRequiredProp(component: String, prop: String)
 
     /// A prop value is invalid
@@ -111,8 +111,11 @@ public enum UIComponentValidationError: Error, Sendable {
     /// Component type is not registered
     case unknownComponentType(String)
 
-    /// General validation failure
+    /// General validation failure (includes decoding failures)
     case validationFailed(component: String, reason: String)
+
+    /// Props data failed to decode
+    case decodingFailed(component: String, reason: String)
 }
 
 extension UIComponentValidationError: LocalizedError {
@@ -126,6 +129,8 @@ extension UIComponentValidationError: LocalizedError {
             return "Unknown component type: \(type)"
         case .validationFailed(let component, let reason):
             return "Component '\(component)' validation failed: \(reason)"
+        case .decodingFailed(let component, let reason):
+            return "Component '\(component)' props decoding failed: \(reason)"
         }
     }
 }
@@ -148,7 +153,7 @@ public struct AnyUIComponentDefinition: Sendable {
     /// Props schema description for LLM
     public let propsSchemaDescription: String
 
-    /// Type-erased validation function
+    /// Type-erased validation function that always throws UIComponentValidationError
     private let _validate: @Sendable (Data) throws -> Void
 
     /// Creates a type-erased wrapper for a component definition
@@ -160,18 +165,63 @@ public struct AnyUIComponentDefinition: Sendable {
         self.hasChildren = T.hasChildren
         self.propsSchemaDescription = T.propsSchemaDescription
 
+        let componentType = T.type  // Capture for closure
+
         self._validate = { data in
+            // Decode props with error wrapping
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let props = try decoder.decode(T.Props.self, from: data)
-            try T.validate(props: props)
+
+            let props: T.Props
+            do {
+                props = try decoder.decode(T.Props.self, from: data)
+            } catch let decodingError as DecodingError {
+                // Extract meaningful error message from DecodingError
+                let reason: String
+                switch decodingError {
+                case .keyNotFound(let key, _):
+                    throw UIComponentValidationError.missingRequiredProp(
+                        component: componentType,
+                        prop: key.stringValue
+                    )
+                case .typeMismatch(let expectedType, let context):
+                    reason = "Expected \(expectedType) at \(context.codingPath.map(\.stringValue).joined(separator: "."))"
+                case .valueNotFound(let expectedType, let context):
+                    reason = "Missing value of type \(expectedType) at \(context.codingPath.map(\.stringValue).joined(separator: "."))"
+                case .dataCorrupted(let context):
+                    reason = context.debugDescription
+                @unknown default:
+                    reason = decodingError.localizedDescription
+                }
+                throw UIComponentValidationError.decodingFailed(
+                    component: componentType,
+                    reason: reason
+                )
+            } catch {
+                throw UIComponentValidationError.decodingFailed(
+                    component: componentType,
+                    reason: error.localizedDescription
+                )
+            }
+
+            // Run component-specific validation
+            do {
+                try T.validate(props: props)
+            } catch let validationError as UIComponentValidationError {
+                throw validationError
+            } catch {
+                throw UIComponentValidationError.validationFailed(
+                    component: componentType,
+                    reason: error.localizedDescription
+                )
+            }
         }
     }
 
     /// Validate props data for this component
     ///
     /// - Parameter propsData: JSON data for the props
-    /// - Throws: Decoding or validation errors
+    /// - Throws: `UIComponentValidationError` for any validation or decoding failure
     public func validate(propsData: Data) throws {
         try _validate(propsData)
     }
@@ -283,7 +333,7 @@ public struct UICatalog: Sendable {
     /// - Parameters:
     ///   - type: The component type identifier
     ///   - propsData: JSON data for the props
-    /// - Throws: `UIComponentValidationError` if validation fails
+    /// - Throws: `UIComponentValidationError` if validation fails (including decoding errors)
     public func validate(type: String, propsData: Data) throws {
         guard let definition = components[type] else {
             throw UIComponentValidationError.unknownComponentType(type)
@@ -311,6 +361,8 @@ public struct UICatalog: Sendable {
             prompt += "Props: \(definition.propsSchemaDescription)\n"
             if definition.hasChildren {
                 prompt += "Can contain children: Yes\n"
+            } else {
+                prompt += "Can contain children: No\n"
             }
             prompt += "\n"
         }
@@ -362,38 +414,41 @@ public struct UICatalog: Sendable {
         - Each element must have a unique key
         - The "root" field must reference an existing element key
         - Child keys must reference existing element keys
-        - Only components marked "Can contain children: Yes" can have children
+        - Only components marked "Can contain children: Yes" may have a "children" array
+        - Components marked "Can contain children: No" must omit the "children" field
+        - Use only registered component types listed above
         """
 
         return prompt
     }
 }
 
-// MARK: - Core 8 Placeholder Definitions
+// MARK: - Core 8 Placeholder Definitions (Internal)
 
 // Note: Full component definitions are implemented in Task 5.2
-// These are placeholder definitions for the core8 catalog
+// These are internal placeholder definitions for the core8 catalog
+// They will be replaced by public definitions in Task 5.2
 
 /// Placeholder for Text component (full implementation in Task 5.2)
-public struct TextComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let content: String
-        public let style: String?
-        public let accessibilityLabel: String?
+struct TextComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let content: String
+        let style: String?
+        let accessibilityLabel: String?
 
-        public init(content: String, style: String? = nil, accessibilityLabel: String? = nil) {
+        init(content: String, style: String? = nil, accessibilityLabel: String? = nil) {
             self.content = content
             self.style = style
             self.accessibilityLabel = accessibilityLabel
         }
     }
 
-    public static let type = "Text"
-    public static let description = "Display text content"
-    public static let hasChildren = false
-    public static let propsSchemaDescription = "{ content: string, style?: string, accessibilityLabel?: string }"
+    static let type = "Text"
+    static let description = "Display text content"
+    static let hasChildren = false
+    static let propsSchemaDescription = "{ content: string (required), style?: string, accessibilityLabel?: string }"
 
-    public static func validate(props: Props) throws {
+    static func validate(props: Props) throws {
         if props.content.isEmpty {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -405,17 +460,17 @@ public struct TextComponentDefinitionPlaceholder: UIComponentDefinition {
 }
 
 /// Placeholder for Button component (full implementation in Task 5.2)
-public struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let title: String
-        public let action: String
-        public let style: String?
-        public let disabled: Bool?
-        public let accessibilityLabel: String?
-        public let accessibilityHint: String?
-        public let accessibilityTraits: [String]?
+struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let title: String
+        let action: String
+        let style: String?
+        let disabled: Bool?
+        let accessibilityLabel: String?
+        let accessibilityHint: String?
+        let accessibilityTraits: [String]?
 
-        public init(
+        init(
             title: String,
             action: String,
             style: String? = nil,
@@ -434,15 +489,15 @@ public struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
         }
     }
 
-    public static let type = "Button"
-    public static let description = "Interactive button that triggers an action"
-    public static let hasChildren = false
-    public static let propsSchemaDescription = """
-        { title: string, action: string, style?: string, disabled?: boolean, \
+    static let type = "Button"
+    static let description = "Interactive button that triggers an action"
+    static let hasChildren = false
+    static let propsSchemaDescription = """
+        { title: string (required), action: string (required), style?: string, disabled?: boolean, \
         accessibilityLabel?: string, accessibilityHint?: string, accessibilityTraits?: string[] }
         """
 
-    public static func validate(props: Props) throws {
+    static func validate(props: Props) throws {
         if props.title.isEmpty {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -461,40 +516,48 @@ public struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
 }
 
 /// Placeholder for Card component (full implementation in Task 5.2)
-public struct CardComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let title: String?
-        public let subtitle: String?
-        public let style: String?
+struct CardComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let title: String?
+        let subtitle: String?
+        let style: String?
 
-        public init(title: String? = nil, subtitle: String? = nil, style: String? = nil) {
+        init(title: String? = nil, subtitle: String? = nil, style: String? = nil) {
             self.title = title
             self.subtitle = subtitle
             self.style = style
         }
     }
 
-    public static let type = "Card"
-    public static let description = "Container card with optional title and subtitle"
-    public static let hasChildren = true
-    public static let propsSchemaDescription = "{ title?: string, subtitle?: string, style?: string }"
+    static let type = "Card"
+    static let description = "Container card with optional title and subtitle"
+    static let hasChildren = true
+    static let propsSchemaDescription = "{ title?: string, subtitle?: string, style?: string }"
+}
+
+/// Input type enum for validation
+enum InputType: String, Codable, Sendable {
+    case text
+    case email
+    case password
+    case number
 }
 
 /// Placeholder for Input component (full implementation in Task 5.2)
-public struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let label: String
-        public let placeholder: String?
-        public let name: String
-        public let type: String?
-        public let required: Bool?
-        public let validation: String?
+struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let label: String
+        let placeholder: String?
+        let name: String
+        let type: InputType?
+        let required: Bool?
+        let validation: String?
 
-        public init(
+        init(
             label: String,
             name: String,
             placeholder: String? = nil,
-            type: String? = nil,
+            type: InputType? = nil,
             required: Bool? = nil,
             validation: String? = nil
         ) {
@@ -507,15 +570,15 @@ public struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
         }
     }
 
-    public static let type = "Input"
-    public static let description = "Text input field for user data entry"
-    public static let hasChildren = false
-    public static let propsSchemaDescription = """
-        { label: string, name: string, placeholder?: string, type?: 'text'|'email'|'password'|'number', \
-        required?: boolean, validation?: string }
+    static let type = "Input"
+    static let description = "Text input field for user data entry"
+    static let hasChildren = false
+    static let propsSchemaDescription = """
+        { label: string (required), name: string (required), placeholder?: string, \
+        type?: 'text'|'email'|'password'|'number', required?: boolean, validation?: string }
         """
 
-    public static func validate(props: Props) throws {
+    static func validate(props: Props) throws {
         if props.label.isEmpty {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -530,34 +593,43 @@ public struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
                 reason: "Name cannot be empty"
             )
         }
+        // Note: type is now an enum, so invalid values will cause a decoding error
     }
 }
 
-/// Placeholder for List component (full implementation in Task 5.2)
-public struct ListComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let style: String?
+/// List style enum for validation
+enum ListStyle: String, Codable, Sendable {
+    case ordered
+    case unordered
+    case plain
+}
 
-        public init(style: String? = nil) {
+/// Placeholder for List component (full implementation in Task 5.2)
+struct ListComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let style: ListStyle?
+
+        init(style: ListStyle? = nil) {
             self.style = style
         }
     }
 
-    public static let type = "List"
-    public static let description = "Ordered or unordered list container"
-    public static let hasChildren = true
-    public static let propsSchemaDescription = "{ style?: 'ordered'|'unordered'|'plain' }"
+    static let type = "List"
+    static let description = "Ordered or unordered list container"
+    static let hasChildren = true
+    static let propsSchemaDescription = "{ style?: 'ordered'|'unordered'|'plain' }"
+    // Note: style is now an enum, so invalid values will cause a decoding error
 }
 
 /// Placeholder for Image component (full implementation in Task 5.2)
-public struct ImageComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let url: String
-        public let alt: String?
-        public let width: Double?
-        public let height: Double?
+struct ImageComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let url: String
+        let alt: String?
+        let width: Double?
+        let height: Double?
 
-        public init(url: String, alt: String? = nil, width: Double? = nil, height: Double? = nil) {
+        init(url: String, alt: String? = nil, width: Double? = nil, height: Double? = nil) {
             self.url = url
             self.alt = alt
             self.width = width
@@ -565,12 +637,12 @@ public struct ImageComponentDefinitionPlaceholder: UIComponentDefinition {
         }
     }
 
-    public static let type = "Image"
-    public static let description = "Display an image from URL"
-    public static let hasChildren = false
-    public static let propsSchemaDescription = "{ url: string, alt?: string, width?: number, height?: number }"
+    static let type = "Image"
+    static let description = "Display an image from URL"
+    static let hasChildren = false
+    static let propsSchemaDescription = "{ url: string (required), alt?: string, width?: number, height?: number }"
 
-    public static func validate(props: Props) throws {
+    static func validate(props: Props) throws {
         if props.url.isEmpty {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -595,36 +667,42 @@ public struct ImageComponentDefinitionPlaceholder: UIComponentDefinition {
     }
 }
 
-/// Placeholder for Stack component (full implementation in Task 5.2)
-public struct StackComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let direction: String
-        public let spacing: Double?
-        public let alignment: String?
+/// Stack direction enum for validation
+enum StackDirection: String, Codable, Sendable {
+    case horizontal
+    case vertical
+}
 
-        public init(direction: String = "vertical", spacing: Double? = nil, alignment: String? = nil) {
+/// Stack alignment enum for validation
+enum StackAlignment: String, Codable, Sendable {
+    case leading
+    case center
+    case trailing
+}
+
+/// Placeholder for Stack component (full implementation in Task 5.2)
+struct StackComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let direction: StackDirection
+        let spacing: Double?
+        let alignment: StackAlignment?
+
+        init(direction: StackDirection = .vertical, spacing: Double? = nil, alignment: StackAlignment? = nil) {
             self.direction = direction
             self.spacing = spacing
             self.alignment = alignment
         }
     }
 
-    public static let type = "Stack"
-    public static let description = "Layout container for horizontal or vertical arrangement"
-    public static let hasChildren = true
-    public static let propsSchemaDescription = """
-        { direction: 'horizontal'|'vertical', spacing?: number, alignment?: 'leading'|'center'|'trailing' }
+    static let type = "Stack"
+    static let description = "Layout container for horizontal or vertical arrangement"
+    static let hasChildren = true
+    static let propsSchemaDescription = """
+        { direction: 'horizontal'|'vertical' (required), spacing?: number, alignment?: 'leading'|'center'|'trailing' }
         """
 
-    public static func validate(props: Props) throws {
-        let validDirections = ["horizontal", "vertical"]
-        if !validDirections.contains(props.direction) {
-            throw UIComponentValidationError.invalidPropValue(
-                component: type,
-                prop: "direction",
-                reason: "Direction must be 'horizontal' or 'vertical'"
-            )
-        }
+    static func validate(props: Props) throws {
+        // Direction and alignment are now enums, so invalid values cause decoding errors
         if let spacing = props.spacing, spacing < 0 {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -632,35 +710,25 @@ public struct StackComponentDefinitionPlaceholder: UIComponentDefinition {
                 reason: "Spacing cannot be negative"
             )
         }
-        if let alignment = props.alignment {
-            let validAlignments = ["leading", "center", "trailing"]
-            if !validAlignments.contains(alignment) {
-                throw UIComponentValidationError.invalidPropValue(
-                    component: type,
-                    prop: "alignment",
-                    reason: "Alignment must be 'leading', 'center', or 'trailing'"
-                )
-            }
-        }
     }
 }
 
 /// Placeholder for Spacer component (full implementation in Task 5.2)
-public struct SpacerComponentDefinitionPlaceholder: UIComponentDefinition {
-    public struct Props: Codable, Sendable {
-        public let size: Double?
+struct SpacerComponentDefinitionPlaceholder: UIComponentDefinition {
+    struct Props: Codable, Sendable {
+        let size: Double?
 
-        public init(size: Double? = nil) {
+        init(size: Double? = nil) {
             self.size = size
         }
     }
 
-    public static let type = "Spacer"
-    public static let description = "Flexible space between elements"
-    public static let hasChildren = false
-    public static let propsSchemaDescription = "{ size?: number }"
+    static let type = "Spacer"
+    static let description = "Flexible space between elements"
+    static let hasChildren = false
+    static let propsSchemaDescription = "{ size?: number }"
 
-    public static func validate(props: Props) throws {
+    static func validate(props: Props) throws {
         if let size = props.size, size < 0 {
             throw UIComponentValidationError.invalidPropValue(
                 component: type,
@@ -685,7 +753,7 @@ extension UICatalog {
     /// - **Image**: Image display
     /// - **Stack**: Layout container (horizontal/vertical)
     /// - **Spacer**: Flexible space
-    public static var core8: UICatalog {
+    public static let core8: UICatalog = {
         var catalog = UICatalog()
 
         // Register Core 8 components
@@ -740,5 +808,5 @@ extension UICatalog {
         ))
 
         return catalog
-    }
+    }()
 }
