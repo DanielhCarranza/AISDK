@@ -34,11 +34,27 @@ public protocol UIComponentDefinition: Sendable {
     /// Human-readable description of the props schema for LLM
     static var propsSchemaDescription: String { get }
 
+    /// Allowed prop keys for strict validation (empty = allow all)
+    static var allowedPropKeys: Set<String> { get }
+
     /// Validate decoded props, throwing on invalid values
     ///
     /// - Parameter props: The decoded props to validate
     /// - Throws: `UIComponentValidationError` if validation fails
     static func validate(props: Props) throws
+
+    /// Catalog-aware validation for props that reference actions/validators
+    ///
+    /// - Parameters:
+    ///   - props: The decoded props to validate
+    ///   - actions: Registered action names in the catalog
+    ///   - validators: Registered validator names in the catalog
+    /// - Throws: `UIComponentValidationError` if validation fails
+    static func validateWithCatalog(
+        props: Props,
+        actions: Set<String>,
+        validators: Set<String>
+    ) throws
 }
 
 // MARK: - Default Implementation
@@ -47,6 +63,21 @@ extension UIComponentDefinition {
     /// Default validation - no-op (override for custom validation)
     public static func validate(props: Props) throws {
         // Default implementation does nothing
+    }
+
+    /// Default catalog-aware validation - delegates to regular validation
+    public static func validateWithCatalog(
+        props: Props,
+        actions: Set<String>,
+        validators: Set<String>
+    ) throws {
+        // Default implementation just calls regular validation
+        try validate(props: props)
+    }
+
+    /// Default allowed prop keys - empty means no strict validation
+    public static var allowedPropKeys: Set<String> {
+        []
     }
 }
 
@@ -116,6 +147,21 @@ public enum UIComponentValidationError: Error, Sendable {
 
     /// Props data failed to decode
     case decodingFailed(component: String, reason: String)
+
+    /// Unknown prop key in JSON (strict mode)
+    case unknownProp(component: String, prop: String)
+
+    /// Action name not registered in catalog
+    case unknownAction(component: String, action: String)
+
+    /// Validator name not registered in catalog
+    case unknownValidator(component: String, validator: String)
+
+    /// Component type name is invalid (empty or whitespace)
+    case invalidComponentTypeName(String)
+
+    /// Duplicate component type registration attempted
+    case duplicateComponentType(String)
 }
 
 extension UIComponentValidationError: LocalizedError {
@@ -131,6 +177,16 @@ extension UIComponentValidationError: LocalizedError {
             return "Component '\(component)' validation failed: \(reason)"
         case .decodingFailed(let component, let reason):
             return "Component '\(component)' props decoding failed: \(reason)"
+        case .unknownProp(let component, let prop):
+            return "Component '\(component)' has unknown prop '\(prop)'"
+        case .unknownAction(let component, let action):
+            return "Component '\(component)' references unknown action '\(action)'"
+        case .unknownValidator(let component, let validator):
+            return "Component '\(component)' references unknown validator '\(validator)'"
+        case .invalidComponentTypeName(let name):
+            return "Invalid component type name: '\(name)' (must be non-empty)"
+        case .duplicateComponentType(let type):
+            return "Duplicate component type registration: '\(type)'"
         }
     }
 }
@@ -153,8 +209,11 @@ public struct AnyUIComponentDefinition: Sendable {
     /// Props schema description for LLM
     public let propsSchemaDescription: String
 
+    /// Allowed prop keys for strict validation
+    public let allowedPropKeys: Set<String>
+
     /// Type-erased validation function that always throws UIComponentValidationError
-    private let _validate: @Sendable (Data) throws -> Void
+    private let _validateWithCatalog: @Sendable (Data, Set<String>, Set<String>) throws -> Void
 
     /// Creates a type-erased wrapper for a component definition
     ///
@@ -164,10 +223,21 @@ public struct AnyUIComponentDefinition: Sendable {
         self.description = T.description
         self.hasChildren = T.hasChildren
         self.propsSchemaDescription = T.propsSchemaDescription
+        self.allowedPropKeys = T.allowedPropKeys
 
         let componentType = T.type  // Capture for closure
+        let allowedKeys = T.allowedPropKeys
 
-        self._validate = { data in
+        self._validateWithCatalog = { data, actions, validators in
+            // First, check for unknown keys if strict validation is enabled
+            if !allowedKeys.isEmpty {
+                try Self.validateUnknownKeys(
+                    data: data,
+                    allowedKeys: allowedKeys,
+                    componentType: componentType
+                )
+            }
+
             // Decode props with error wrapping
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -204,9 +274,9 @@ public struct AnyUIComponentDefinition: Sendable {
                 )
             }
 
-            // Run component-specific validation
+            // Run catalog-aware validation
             do {
-                try T.validate(props: props)
+                try T.validateWithCatalog(props: props, actions: actions, validators: validators)
             } catch let validationError as UIComponentValidationError {
                 throw validationError
             } catch {
@@ -218,12 +288,60 @@ public struct AnyUIComponentDefinition: Sendable {
         }
     }
 
-    /// Validate props data for this component
+    /// Check for unknown keys in JSON data
+    private static func validateUnknownKeys(
+        data: Data,
+        allowedKeys: Set<String>,
+        componentType: String
+    ) throws {
+        // Parse JSON to get all keys
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return  // Let decoder handle malformed JSON
+        }
+
+        // Convert snake_case keys to camelCase for comparison
+        let jsonKeys = Set(json.keys.map { key -> String in
+            // Convert snake_case to camelCase
+            let parts = key.split(separator: "_")
+            if parts.count <= 1 { return key }
+            return parts.enumerated().map { index, part in
+                index == 0 ? String(part) : String(part).capitalized
+            }.joined()
+        })
+
+        // Find unknown keys
+        for key in jsonKeys {
+            if !allowedKeys.contains(key) {
+                throw UIComponentValidationError.unknownProp(
+                    component: componentType,
+                    prop: key
+                )
+            }
+        }
+    }
+
+    /// Validate props data for this component (without catalog context)
     ///
     /// - Parameter propsData: JSON data for the props
     /// - Throws: `UIComponentValidationError` for any validation or decoding failure
     public func validate(propsData: Data) throws {
-        try _validate(propsData)
+        // Validate without catalog context (empty action/validator sets)
+        try _validateWithCatalog(propsData, [], [])
+    }
+
+    /// Validate props data with catalog context for action/validator validation
+    ///
+    /// - Parameters:
+    ///   - propsData: JSON data for the props
+    ///   - actions: Registered action names in the catalog
+    ///   - validators: Registered validator names in the catalog
+    /// - Throws: `UIComponentValidationError` for any validation or decoding failure
+    public func validateWithCatalog(
+        propsData: Data,
+        actions: Set<String>,
+        validators: Set<String>
+    ) throws {
+        try _validateWithCatalog(propsData, actions, validators)
     }
 }
 
@@ -272,11 +390,12 @@ public struct UICatalog: Sendable {
     /// Creates a catalog with predefined components
     ///
     /// - Parameter componentTypes: Array of component definition types to register
+    /// - Note: Uses unchecked registration for variadic initializer (assumes valid types)
     public init<each T: UIComponentDefinition>(componentTypes: repeat (each T).Type) {
         self.components = [:]
         self.actions = [:]
         self.validators = [:]
-        repeat register((each componentTypes))
+        repeat registerUnchecked((each componentTypes))
     }
 
     // MARK: - Registration
@@ -284,7 +403,25 @@ public struct UICatalog: Sendable {
     /// Register a component definition
     ///
     /// - Parameter definitionType: The component definition type to register
-    public mutating func register<T: UIComponentDefinition>(_ definitionType: T.Type) {
+    /// - Throws: `UIComponentValidationError.invalidComponentTypeName` if type name is empty/whitespace,
+    ///           `UIComponentValidationError.duplicateComponentType` if type is already registered
+    public mutating func register<T: UIComponentDefinition>(_ definitionType: T.Type) throws {
+        let typeName = T.type.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typeName.isEmpty else {
+            throw UIComponentValidationError.invalidComponentTypeName(T.type)
+        }
+        guard components[typeName] == nil else {
+            throw UIComponentValidationError.duplicateComponentType(typeName)
+        }
+        let wrapped = AnyUIComponentDefinition(definitionType)
+        components[typeName] = wrapped
+    }
+
+    /// Register a component definition (internal, non-throwing for core8 initialization)
+    ///
+    /// - Parameter definitionType: The component definition type to register
+    /// - Note: This method is internal and used for core8 catalog initialization
+    mutating func registerUnchecked<T: UIComponentDefinition>(_ definitionType: T.Type) {
         let wrapped = AnyUIComponentDefinition(definitionType)
         components[T.type] = wrapped
     }
@@ -333,12 +470,18 @@ public struct UICatalog: Sendable {
     /// - Parameters:
     ///   - type: The component type identifier
     ///   - propsData: JSON data for the props
-    /// - Throws: `UIComponentValidationError` if validation fails (including decoding errors)
+    /// - Throws: `UIComponentValidationError` if validation fails (including decoding errors,
+    ///           unknown props, unknown actions/validators)
     public func validate(type: String, propsData: Data) throws {
         guard let definition = components[type] else {
             throw UIComponentValidationError.unknownComponentType(type)
         }
-        try definition.validate(propsData: propsData)
+        // Use catalog-aware validation to check action/validator references
+        try definition.validateWithCatalog(
+            propsData: propsData,
+            actions: Set(actions.keys),
+            validators: Set(validators.keys)
+        )
     }
 
     // MARK: - Prompt Generation
@@ -447,6 +590,7 @@ struct TextComponentDefinitionPlaceholder: UIComponentDefinition {
     static let description = "Display text content"
     static let hasChildren = false
     static let propsSchemaDescription = "{ content: string (required), style?: string, accessibilityLabel?: string }"
+    static let allowedPropKeys: Set<String> = ["content", "style", "accessibilityLabel"]
 
     static func validate(props: Props) throws {
         if props.content.isEmpty {
@@ -496,6 +640,10 @@ struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
         { title: string (required), action: string (required), style?: string, disabled?: boolean, \
         accessibilityLabel?: string, accessibilityHint?: string, accessibilityTraits?: string[] }
         """
+    static let allowedPropKeys: Set<String> = [
+        "title", "action", "style", "disabled",
+        "accessibilityLabel", "accessibilityHint", "accessibilityTraits"
+    ]
 
     static func validate(props: Props) throws {
         if props.title.isEmpty {
@@ -510,6 +658,23 @@ struct ButtonComponentDefinitionPlaceholder: UIComponentDefinition {
                 component: type,
                 prop: "action",
                 reason: "Action cannot be empty"
+            )
+        }
+    }
+
+    static func validateWithCatalog(
+        props: Props,
+        actions: Set<String>,
+        validators: Set<String>
+    ) throws {
+        // Basic validation
+        try validate(props: props)
+
+        // Catalog-aware validation: check action exists
+        if !actions.isEmpty && !actions.contains(props.action) {
+            throw UIComponentValidationError.unknownAction(
+                component: type,
+                action: props.action
             )
         }
     }
@@ -533,6 +698,7 @@ struct CardComponentDefinitionPlaceholder: UIComponentDefinition {
     static let description = "Container card with optional title and subtitle"
     static let hasChildren = true
     static let propsSchemaDescription = "{ title?: string, subtitle?: string, style?: string }"
+    static let allowedPropKeys: Set<String> = ["title", "subtitle", "style"]
 }
 
 /// Input type enum for validation
@@ -577,6 +743,7 @@ struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
         { label: string (required), name: string (required), placeholder?: string, \
         type?: 'text'|'email'|'password'|'number', required?: boolean, validation?: string }
         """
+    static let allowedPropKeys: Set<String> = ["label", "placeholder", "name", "type", "required", "validation"]
 
     static func validate(props: Props) throws {
         if props.label.isEmpty {
@@ -594,6 +761,25 @@ struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
             )
         }
         // Note: type is now an enum, so invalid values will cause a decoding error
+    }
+
+    static func validateWithCatalog(
+        props: Props,
+        actions: Set<String>,
+        validators: Set<String>
+    ) throws {
+        // Basic validation
+        try validate(props: props)
+
+        // Catalog-aware validation: check validator exists
+        if let validation = props.validation, !validation.isEmpty {
+            if !validators.isEmpty && !validators.contains(validation) {
+                throw UIComponentValidationError.unknownValidator(
+                    component: type,
+                    validator: validation
+                )
+            }
+        }
     }
 }
 
@@ -618,6 +804,7 @@ struct ListComponentDefinitionPlaceholder: UIComponentDefinition {
     static let description = "Ordered or unordered list container"
     static let hasChildren = true
     static let propsSchemaDescription = "{ style?: 'ordered'|'unordered'|'plain' }"
+    static let allowedPropKeys: Set<String> = ["style"]
     // Note: style is now an enum, so invalid values will cause a decoding error
 }
 
@@ -641,6 +828,7 @@ struct ImageComponentDefinitionPlaceholder: UIComponentDefinition {
     static let description = "Display an image from URL"
     static let hasChildren = false
     static let propsSchemaDescription = "{ url: string (required), alt?: string, width?: number, height?: number }"
+    static let allowedPropKeys: Set<String> = ["url", "alt", "width", "height"]
 
     static func validate(props: Props) throws {
         if props.url.isEmpty {
@@ -700,6 +888,7 @@ struct StackComponentDefinitionPlaceholder: UIComponentDefinition {
     static let propsSchemaDescription = """
         { direction: 'horizontal'|'vertical' (required), spacing?: number, alignment?: 'leading'|'center'|'trailing' }
         """
+    static let allowedPropKeys: Set<String> = ["direction", "spacing", "alignment"]
 
     static func validate(props: Props) throws {
         // Direction and alignment are now enums, so invalid values cause decoding errors
@@ -727,6 +916,7 @@ struct SpacerComponentDefinitionPlaceholder: UIComponentDefinition {
     static let description = "Flexible space between elements"
     static let hasChildren = false
     static let propsSchemaDescription = "{ size?: number }"
+    static let allowedPropKeys: Set<String> = ["size"]
 
     static func validate(props: Props) throws {
         if let size = props.size, size < 0 {
@@ -756,15 +946,15 @@ extension UICatalog {
     public static let core8: UICatalog = {
         var catalog = UICatalog()
 
-        // Register Core 8 components
-        catalog.register(TextComponentDefinitionPlaceholder.self)
-        catalog.register(ButtonComponentDefinitionPlaceholder.self)
-        catalog.register(CardComponentDefinitionPlaceholder.self)
-        catalog.register(InputComponentDefinitionPlaceholder.self)
-        catalog.register(ListComponentDefinitionPlaceholder.self)
-        catalog.register(ImageComponentDefinitionPlaceholder.self)
-        catalog.register(StackComponentDefinitionPlaceholder.self)
-        catalog.register(SpacerComponentDefinitionPlaceholder.self)
+        // Register Core 8 components (using unchecked for internal initialization)
+        catalog.registerUnchecked(TextComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(ButtonComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(CardComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(InputComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(ListComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(ImageComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(StackComponentDefinitionPlaceholder.self)
+        catalog.registerUnchecked(SpacerComponentDefinitionPlaceholder.self)
 
         // Register common actions
         catalog.registerAction(UIActionDefinition(
