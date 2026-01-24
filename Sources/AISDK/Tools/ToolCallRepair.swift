@@ -20,24 +20,75 @@ import Foundation
 /// ## Strategies
 /// - `.strict`: No repair attempted, errors propagate immediately
 /// - `.autoRepairOnce`: Single repair attempt using LLM
-/// - `.autoRepairMax(n)`: Up to n repair attempts
+/// - `.autoRepairMax(n)`: Up to n repair attempts (n must be > 0)
 /// - `.custom(closure)`: Custom repair logic
 ///
 /// ## Usage Example
 /// ```swift
-/// let agent = AIAgentActor(
+/// // Basic usage with ToolCallRepair.attemptRepair
+/// let result = try await ToolCallRepair.attemptRepair(
+///     toolCall: failedCall,
+///     error: ToolError.invalidParameters("Missing required field"),
 ///     model: myModel,
-///     tools: [SearchTool.self],
-///     repairStrategy: .autoRepairOnce
+///     strategy: .autoRepairOnce,
+///     requestContext: originalContext  // Preserves safety settings
 /// )
 ///
-/// // During execution, if a tool call fails due to invalid arguments,
-/// // the repair mechanism will ask the model to fix them
+/// switch result {
+/// case .repaired(let fixedCall):
+///     // Retry execution with fixedCall
+/// case .failed(let reason):
+///     // Handle repair failure
+/// case .notAttempted:
+///     // Strict mode - error propagates
+/// }
 /// ```
+///
+/// ## Request Context
+/// When repairing tool calls, provide a `RequestContext` to preserve the original
+/// request's security settings (`allowedProviders`, `sensitivity`). This ensures
+/// repair requests respect PHI/HIPAA constraints.
 public struct ToolCallRepair: Sendable {
+    // MARK: - Request Context
+
+    /// Context from the original request for preserving safety settings during repair
+    public struct RequestContext: Sendable {
+        /// Allowed providers (for PHI protection)
+        public let allowedProviders: Set<String>?
+
+        /// Data sensitivity level
+        public let sensitivity: DataSensitivity
+
+        /// Request metadata for tracing
+        public let metadata: [String: String]?
+
+        public init(
+            allowedProviders: Set<String>? = nil,
+            sensitivity: DataSensitivity = .standard,
+            metadata: [String: String]? = nil
+        ) {
+            self.allowedProviders = allowedProviders
+            self.sensitivity = sensitivity
+            self.metadata = metadata
+        }
+
+        /// Create context from an existing AITextRequest
+        public static func from(_ request: AITextRequest) -> RequestContext {
+            RequestContext(
+                allowedProviders: request.allowedProviders,
+                sensitivity: request.sensitivity,
+                metadata: request.metadata
+            )
+        }
+    }
+
     // MARK: - Strategy
 
     /// Repair strategy for handling failed tool calls
+    ///
+    /// Note: Strategy does not conform to Equatable to avoid violating equality
+    /// semantics for the `.custom` case (closures cannot be meaningfully compared).
+    /// Use pattern matching to check strategy type if needed.
     public enum Strategy: Sendable {
         /// No repair - errors propagate immediately
         case strict
@@ -45,11 +96,11 @@ public struct ToolCallRepair: Sendable {
         /// Single automatic repair attempt using LLM
         case autoRepairOnce
 
-        /// Multiple repair attempts (up to max count)
+        /// Multiple repair attempts (up to max count, must be > 0)
         case autoRepairMax(Int)
 
         /// Custom repair logic
-        case custom(@Sendable (AIToolCallResult, ToolError, any AILanguageModel) async throws -> AIToolCallResult?)
+        case custom(@Sendable (AIToolCallResult, Error, any AILanguageModel) async throws -> AIToolCallResult?)
 
         /// Default strategy (single repair attempt)
         public static var `default`: Strategy { .autoRepairOnce }
@@ -59,7 +110,11 @@ public struct ToolCallRepair: Sendable {
             switch self {
             case .strict:
                 return false
-            case .autoRepairOnce, .autoRepairMax, .custom:
+            case .autoRepairOnce:
+                return true
+            case .autoRepairMax(let max):
+                return max > 0
+            case .custom:
                 return true
             }
         }
@@ -72,9 +127,26 @@ public struct ToolCallRepair: Sendable {
             case .autoRepairOnce:
                 return 1
             case .autoRepairMax(let max):
-                return max
+                return Swift.max(0, max)
             case .custom:
                 return 1  // Custom strategies get one attempt by default
+            }
+        }
+
+        /// Check if this strategy matches another (for testing)
+        public func matches(_ other: Strategy) -> Bool {
+            switch (self, other) {
+            case (.strict, .strict):
+                return true
+            case (.autoRepairOnce, .autoRepairOnce):
+                return true
+            case (.autoRepairMax(let lhs), .autoRepairMax(let rhs)):
+                return lhs == rhs
+            case (.custom, .custom):
+                // Custom strategies are considered matching by type only
+                return true
+            default:
+                return false
             }
         }
     }
@@ -82,7 +154,7 @@ public struct ToolCallRepair: Sendable {
     // MARK: - Repair Result
 
     /// Result of a repair attempt
-    public enum RepairResult: Sendable {
+    public enum RepairResult: Sendable, Equatable {
         /// Repair succeeded with corrected tool call
         case repaired(AIToolCallResult)
 
@@ -102,16 +174,18 @@ public struct ToolCallRepair: Sendable {
     ///
     /// - Parameters:
     ///   - toolCall: The failed tool call
-    ///   - error: The error that occurred
+    ///   - error: The error that occurred (accepts any Error type)
     ///   - model: The language model to use for repair
     ///   - toolSchema: Optional JSON schema for the tool (helps model understand expected format)
+    ///   - requestContext: Optional context to preserve safety settings from original request
     /// - Returns: A repaired tool call if successful, nil if repair fails
     /// - Throws: If the repair request itself fails
     public static func repair(
         toolCall: AIToolCallResult,
-        error: ToolError,
+        error: Error,
         model: any AILanguageModel,
-        toolSchema: ToolSchema? = nil
+        toolSchema: ToolSchema? = nil,
+        requestContext: RequestContext? = nil
     ) async throws -> AIToolCallResult? {
         // Build repair prompt with context
         let repairPrompt = buildRepairPrompt(
@@ -120,20 +194,24 @@ public struct ToolCallRepair: Sendable {
             toolSchema: toolSchema
         )
 
-        // Ask model to fix the arguments
+        // Build request preserving safety settings from context
+        let context = requestContext ?? RequestContext()
         let request = AITextRequest(
             messages: [.user(repairPrompt)],
-            responseFormat: .jsonObject
+            responseFormat: .jsonObject,
+            allowedProviders: context.allowedProviders,
+            sensitivity: context.sensitivity,
+            metadata: context.metadata
         )
 
         let result = try await model.generateText(request: request)
 
-        // Parse corrected arguments from response
-        guard let correctedArgs = parseArguments(from: result.text) else {
+        // Parse corrected arguments from response (must be JSON object, not array)
+        guard let correctedArgs = parseArgumentsAsObject(from: result.text) else {
             return nil
         }
 
-        // Validate that the corrected arguments are different and valid JSON
+        // Validate that the corrected arguments are different
         guard correctedArgs != toolCall.arguments else {
             // Model returned the same arguments, repair didn't help
             return nil
@@ -150,17 +228,19 @@ public struct ToolCallRepair: Sendable {
     ///
     /// - Parameters:
     ///   - toolCall: The failed tool call
-    ///   - error: The error that occurred
+    ///   - error: The error that occurred (accepts any Error type)
     ///   - model: The language model for repair
     ///   - strategy: The repair strategy to use
     ///   - toolSchema: Optional JSON schema for the tool
+    ///   - requestContext: Optional context to preserve safety settings
     /// - Returns: RepairResult indicating the outcome
     public static func attemptRepair(
         toolCall: AIToolCallResult,
-        error: ToolError,
+        error: Error,
         model: any AILanguageModel,
         strategy: Strategy,
-        toolSchema: ToolSchema? = nil
+        toolSchema: ToolSchema? = nil,
+        requestContext: RequestContext? = nil
     ) async throws -> RepairResult {
         switch strategy {
         case .strict:
@@ -171,35 +251,42 @@ public struct ToolCallRepair: Sendable {
                 toolCall: toolCall,
                 error: error,
                 model: model,
-                toolSchema: toolSchema
+                toolSchema: toolSchema,
+                requestContext: requestContext
             ) {
                 return .repaired(repaired)
             }
             return .failed(reason: "Single repair attempt failed")
 
         case .autoRepairMax(let maxAttempts):
-            var lastError: ToolError = error
+            // Guard against non-positive values
+            guard maxAttempts > 0 else {
+                return .failed(reason: "Invalid maxAttempts: \(maxAttempts) (must be > 0)")
+            }
+
             var currentCall = toolCall
+            var lastErrorDescription = errorDescription(error)
 
             for attempt in 1...maxAttempts {
+                // Create a synthetic error for retry attempts
+                let currentError = attempt == 1 ? error : ToolError.invalidParameters(lastErrorDescription)
+
                 if let repaired = try await repair(
                     toolCall: currentCall,
-                    error: lastError,
+                    error: currentError,
                     model: model,
-                    toolSchema: toolSchema
+                    toolSchema: toolSchema,
+                    requestContext: requestContext
                 ) {
-                    // Validate the repaired arguments
-                    if let validationError = validateArguments(repaired.arguments) {
-                        lastError = validationError
-                        currentCall = repaired
-                        continue
-                    }
                     return .repaired(repaired)
                 }
 
                 if attempt == maxAttempts {
                     return .failed(reason: "Exhausted all \(maxAttempts) repair attempts")
                 }
+
+                // Update for next iteration
+                lastErrorDescription = "Previous repair attempt produced invalid arguments"
             }
             return .failed(reason: "Repair loop completed without success")
 
@@ -213,10 +300,21 @@ public struct ToolCallRepair: Sendable {
 
     // MARK: - Private Helpers
 
+    /// Extract error description from any Error type
+    private static func errorDescription(_ error: Error) -> String {
+        if let toolError = error as? ToolError {
+            return toolError.detailedDescription
+        } else if let aiError = error as? AISDKError {
+            return aiError.localizedDescription
+        } else {
+            return error.localizedDescription
+        }
+    }
+
     /// Build a repair prompt with context about the failure
     private static func buildRepairPrompt(
         toolCall: AIToolCallResult,
-        error: ToolError,
+        error: Error,
         toolSchema: ToolSchema?
     ) -> String {
         var prompt = """
@@ -224,7 +322,7 @@ public struct ToolCallRepair: Sendable {
 
         Tool Name: \(toolCall.name)
         Original Arguments: \(toolCall.arguments)
-        Error: \(error.detailedDescription)
+        Error: \(errorDescription(error))
 
         """
 
@@ -244,7 +342,7 @@ public struct ToolCallRepair: Sendable {
         prompt += """
 
         Respond with ONLY the corrected JSON arguments object, no explanation or markdown.
-        The response must be valid JSON that can be parsed directly.
+        The response must be a valid JSON object (not an array) that can be parsed directly.
         """
 
         return prompt
@@ -266,8 +364,8 @@ public struct ToolCallRepair: Sendable {
         return lines.joined(separator: "\n")
     }
 
-    /// Parse and validate JSON arguments from model response
-    private static func parseArguments(from text: String) -> String? {
+    /// Parse and validate JSON arguments from model response, ensuring it's a JSON object (not array)
+    private static func parseArgumentsAsObject(from text: String) -> String? {
         // Clean up the response - remove markdown code blocks if present
         var cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -282,61 +380,13 @@ public struct ToolCallRepair: Sendable {
         }
         cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Validate it's valid JSON
+        // Validate it's valid JSON and specifically a dictionary (not array)
         guard let data = cleanedText.data(using: .utf8),
-              let _ = try? JSONSerialization.jsonObject(with: data, options: []) else {
+              let json = try? JSONSerialization.jsonObject(with: data, options: []),
+              json is [String: Any] else {
             return nil
         }
 
         return cleanedText
-    }
-
-    /// Validate that arguments are valid JSON
-    private static func validateArguments(_ arguments: String) -> ToolError? {
-        guard let data = arguments.data(using: .utf8) else {
-            return .invalidParameters("Arguments are not valid UTF-8")
-        }
-
-        do {
-            _ = try JSONSerialization.jsonObject(with: data, options: [])
-            return nil
-        } catch {
-            return .invalidParameters("Invalid JSON: \(error.localizedDescription)")
-        }
-    }
-}
-
-// MARK: - Convenience Extensions
-
-extension ToolCallRepair.Strategy: Equatable {
-    public static func == (lhs: ToolCallRepair.Strategy, rhs: ToolCallRepair.Strategy) -> Bool {
-        switch (lhs, rhs) {
-        case (.strict, .strict):
-            return true
-        case (.autoRepairOnce, .autoRepairOnce):
-            return true
-        case (.autoRepairMax(let lhsMax), .autoRepairMax(let rhsMax)):
-            return lhsMax == rhsMax
-        case (.custom, .custom):
-            // Custom closures cannot be compared for equality
-            return false
-        default:
-            return false
-        }
-    }
-}
-
-extension ToolCallRepair.RepairResult: Equatable {
-    public static func == (lhs: ToolCallRepair.RepairResult, rhs: ToolCallRepair.RepairResult) -> Bool {
-        switch (lhs, rhs) {
-        case (.repaired(let lhsCall), .repaired(let rhsCall)):
-            return lhsCall == rhsCall
-        case (.failed(let lhsReason), .failed(let rhsReason)):
-            return lhsReason == rhsReason
-        case (.notAttempted, .notAttempted):
-            return true
-        default:
-            return false
-        }
     }
 }
