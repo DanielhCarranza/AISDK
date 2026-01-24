@@ -10,6 +10,39 @@
 import Foundation
 import SwiftUI
 
+// MARK: - PropsDecoderConfiguration
+
+/// Configuration for props decoding to avoid storing non-Sendable JSONDecoder
+public struct PropsDecoderConfiguration: Sendable {
+    /// Key decoding strategy
+    public enum KeyStrategy: Sendable {
+        case useDefaultKeys
+        case convertFromSnakeCase
+    }
+
+    /// The key decoding strategy to use
+    public let keyStrategy: KeyStrategy
+
+    /// Default configuration using snake_case conversion
+    public static let `default` = PropsDecoderConfiguration(keyStrategy: .convertFromSnakeCase)
+
+    public init(keyStrategy: KeyStrategy) {
+        self.keyStrategy = keyStrategy
+    }
+
+    /// Creates a JSONDecoder with this configuration
+    func makeDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        switch keyStrategy {
+        case .useDefaultKeys:
+            decoder.keyDecodingStrategy = .useDefaultKeys
+        case .convertFromSnakeCase:
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+        }
+        return decoder
+    }
+}
+
 // MARK: - GenerativeUIView
 
 /// Main SwiftUI view for rendering LLM-generated UI from a UITree
@@ -22,13 +55,12 @@ import SwiftUI
 /// - Renders UITree nodes using a UIComponentRegistry
 /// - Provides action handling for interactive components
 /// - Supports custom registries for extended component sets
-/// - Handles loading and error states gracefully
 /// - Accessibility-first design with VoiceOver support
 ///
 /// ## Basic Usage
 /// ```swift
 /// let tree = try UITree.parse(from: jsonData)
-/// GenerativeUIView(tree: tree) { action in
+/// GenerativeUIView.secure(tree: tree) { action in
 ///     print("Action triggered: \(action)")
 /// }
 /// ```
@@ -46,9 +78,13 @@ import SwiftUI
 /// ```
 ///
 /// ## Security
-/// For production use with LLM-generated UI, use `UIComponentRegistry.secureDefault`
-/// or configure explicit action allowlists to prevent unauthorized actions.
-public struct GenerativeUIView: View {
+/// The default initializer uses `UIComponentRegistry.default` which allows all
+/// actions (pass-through mode). For production use with LLM-generated UI, use
+/// `GenerativeUIView.secure(tree:onAction:)` or pass `UIComponentRegistry.secureDefault`
+/// to prevent unauthorized actions.
+///
+/// - Note: For async loading with loading/error states, use `GenerativeUITreeView` instead.
+public struct GenerativeUIView: View, Sendable {
     /// The UITree to render
     private let tree: UITree
 
@@ -58,12 +94,16 @@ public struct GenerativeUIView: View {
     /// Handler for actions triggered by interactive components
     private let onAction: UIActionHandler
 
-    /// JSONDecoder for props decoding
-    private let propsDecoder: JSONDecoder
+    /// Props decoder configuration (Sendable-safe)
+    private let decoderConfig: PropsDecoderConfiguration
 
     // MARK: - Initialization
 
     /// Creates a GenerativeUIView with the default registry
+    ///
+    /// - Warning: The default registry allows all actions (pass-through mode).
+    ///   For production use with LLM-generated UI, use `GenerativeUIView.secure(tree:onAction:)`
+    ///   or pass `UIComponentRegistry.secureDefault` to prevent unauthorized actions.
     ///
     /// - Parameters:
     ///   - tree: The UITree to render
@@ -75,7 +115,7 @@ public struct GenerativeUIView: View {
         self.tree = tree
         self.registry = .default
         self.onAction = onAction
-        self.propsDecoder = UIComponentRegistry.defaultPropsDecoder
+        self.decoderConfig = .default
     }
 
     /// Creates a GenerativeUIView with a custom registry
@@ -92,26 +132,26 @@ public struct GenerativeUIView: View {
         self.tree = tree
         self.registry = registry
         self.onAction = onAction
-        self.propsDecoder = UIComponentRegistry.defaultPropsDecoder
+        self.decoderConfig = .default
     }
 
-    /// Creates a GenerativeUIView with a custom registry and decoder
+    /// Creates a GenerativeUIView with a custom registry and decoder configuration
     ///
     /// - Parameters:
     ///   - tree: The UITree to render
     ///   - registry: Custom registry for component lookup
-    ///   - propsDecoder: JSONDecoder for props decoding
+    ///   - decoderConfig: Configuration for props decoding
     ///   - onAction: Handler called when interactive components trigger actions
     public init(
         tree: UITree,
         registry: UIComponentRegistry,
-        propsDecoder: JSONDecoder,
+        decoderConfig: PropsDecoderConfiguration,
         onAction: @escaping UIActionHandler
     ) {
         self.tree = tree
         self.registry = registry
         self.onAction = onAction
-        self.propsDecoder = propsDecoder
+        self.decoderConfig = decoderConfig
     }
 
     // MARK: - Body
@@ -120,7 +160,7 @@ public struct GenerativeUIView: View {
         registry.build(
             node: tree.rootNode,
             tree: tree,
-            propsDecoder: propsDecoder,
+            propsDecoder: decoderConfig.makeDecoder(),
             actionHandler: onAction
         )
         .accessibilityElement(children: .contain)
@@ -180,7 +220,7 @@ extension GenerativeUIView {
 ///     }
 /// }
 /// ```
-public struct GenerativeUITreeView: View {
+public struct GenerativeUITreeView: View, Sendable {
     /// The UITree to render (nil if not yet loaded)
     private let tree: UITree?
 
@@ -188,7 +228,7 @@ public struct GenerativeUITreeView: View {
     private let isLoading: Bool
 
     /// Error that occurred during loading
-    private let error: Error?
+    private let error: (any Error)?
 
     /// The registry to use for component lookup
     private let registry: UIComponentRegistry
@@ -209,7 +249,7 @@ public struct GenerativeUITreeView: View {
     public init(
         tree: UITree?,
         isLoading: Bool = false,
-        error: Error? = nil,
+        error: (any Error)? = nil,
         registry: UIComponentRegistry = .secureDefault,
         onAction: @escaping UIActionHandler
     ) {
@@ -232,12 +272,13 @@ public struct GenerativeUITreeView: View {
                 )
             } else if isLoading {
                 loadingView
-            } else if let error {
-                errorView(error)
+            } else if error != nil {
+                errorView
             } else {
                 emptyView
             }
         }
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - State Views
@@ -256,7 +297,7 @@ public struct GenerativeUITreeView: View {
     }
 
     @ViewBuilder
-    private func errorView(_ error: Error) -> some View {
+    private var errorView: some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
@@ -265,14 +306,18 @@ public struct GenerativeUITreeView: View {
             Text("Failed to load UI")
                 .font(.headline)
 
-            Text(error.localizedDescription)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+            #if DEBUG
+            if let error {
+                Text(error.localizedDescription)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityLabel("Error loading generative UI: \(error.localizedDescription)")
+        .accessibilityLabel("Error loading generative UI")
     }
 
     @ViewBuilder
@@ -327,7 +372,7 @@ extension GenerativeUIView {
 
         if let tree = try? UITree.parse(from: json) {
             return AnyView(
-                GenerativeUIView(tree: tree) { action in
+                GenerativeUIView.secure(tree: tree) { action in
                     print("Preview action: \(action)")
                 }
                 .padding()

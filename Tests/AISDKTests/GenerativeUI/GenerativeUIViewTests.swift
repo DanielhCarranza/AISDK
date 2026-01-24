@@ -67,7 +67,7 @@ final class GenerativeUIViewTests: XCTestCase {
         XCTAssertNotNil(view)
     }
 
-    func test_init_with_custom_props_decoder() {
+    func test_init_with_custom_decoder_config() {
         // Given
         let json = """
         {
@@ -82,18 +82,49 @@ final class GenerativeUIViewTests: XCTestCase {
         """
         let tree = try! UITree.parse(from: json)
 
-        let customDecoder = JSONDecoder()
-        customDecoder.keyDecodingStrategy = .useDefaultKeys
+        let customConfig = PropsDecoderConfiguration(keyStrategy: .useDefaultKeys)
 
         // When
         let view = GenerativeUIView(
             tree: tree,
             registry: .default,
-            propsDecoder: customDecoder
+            decoderConfig: customConfig
         ) { _ in }
 
         // Then
         XCTAssertNotNil(view)
+    }
+
+    // MARK: - PropsDecoderConfiguration Tests
+
+    func test_props_decoder_config_default_uses_snake_case() {
+        // Given
+        let config = PropsDecoderConfiguration.default
+
+        // Then
+        XCTAssertEqual(config.keyStrategy, .convertFromSnakeCase)
+    }
+
+    func test_props_decoder_config_creates_decoder() {
+        // Given
+        let config = PropsDecoderConfiguration(keyStrategy: .convertFromSnakeCase)
+
+        // When
+        let decoder = config.makeDecoder()
+
+        // Then
+        XCTAssertNotNil(decoder)
+    }
+
+    func test_props_decoder_config_is_sendable() {
+        // Given
+        let config = PropsDecoderConfiguration.default
+
+        // When - capture in @Sendable closure
+        let sendableConfig: @Sendable () -> PropsDecoderConfiguration = { config }
+
+        // Then - compiles without warning
+        XCTAssertEqual(sendableConfig().keyStrategy, .convertFromSnakeCase)
     }
 
     // MARK: - Secure Factory Tests
@@ -291,7 +322,7 @@ final class GenerativeUIViewTests: XCTestCase {
 
     // MARK: - Sendable Compliance Tests
 
-    func test_view_is_sendable() {
+    func test_generativeUIView_is_sendable() {
         // Given
         let json = """
         {
@@ -306,16 +337,17 @@ final class GenerativeUIViewTests: XCTestCase {
         """
         let tree = try! UITree.parse(from: json)
 
-        // When - capture in async context
-        Task {
-            let view = GenerativeUIView(tree: tree) { _ in }
-            let _ = view
-        }
+        // Create view outside the closure to verify Sendable
+        let view = GenerativeUIView(tree: tree) { _ in }
 
-        // Then - compiles without warning
+        // When - capture in @Sendable closure (forces Sendable check)
+        let sendableCheck: @Sendable () -> GenerativeUIView = { view }
+
+        // Then - compiles without warning and returns the view
+        XCTAssertNotNil(sendableCheck())
     }
 
-    func test_tree_view_is_sendable() {
+    func test_generativeUITreeView_is_sendable() {
         // Given
         let json = """
         {
@@ -330,13 +362,14 @@ final class GenerativeUIViewTests: XCTestCase {
         """
         let tree = try! UITree.parse(from: json)
 
-        // When - capture in async context
-        Task {
-            let view = GenerativeUITreeView(tree: tree) { _ in }
-            let _ = view
-        }
+        // Create view outside the closure to verify Sendable
+        let view = GenerativeUITreeView(tree: tree) { _ in }
 
-        // Then - compiles without warning
+        // When - capture in @Sendable closure (forces Sendable check)
+        let sendableCheck: @Sendable () -> GenerativeUITreeView = { view }
+
+        // Then - compiles without warning and returns the view
+        XCTAssertNotNil(sendableCheck())
     }
 
     // MARK: - State Transition Tests
@@ -453,6 +486,29 @@ final class GenerativeUIViewTests: XCTestCase {
         let view = GenerativeUIView(tree: tree) { _ in }
 
         // Then
+        XCTAssertNotNil(view)
+    }
+
+    // MARK: - Security Documentation Tests
+
+    func test_default_init_uses_passthrough_registry() {
+        // This test documents that the default init uses pass-through mode
+        // Users should be aware and use .secure() for production
+        let json = """
+        {
+          "root": "text1",
+          "elements": {
+            "text1": { "type": "Text", "props": { "content": "Test" } }
+          }
+        }
+        """
+        let tree = try! UITree.parse(from: json)
+
+        // When - using default init
+        let view = GenerativeUIView(tree: tree) { _ in }
+
+        // Then - view is created (test passes, documenting the behavior)
+        // NOTE: For production, use GenerativeUIView.secure() instead
         XCTAssertNotNil(view)
     }
 }
