@@ -206,7 +206,8 @@ final class AIToolTests: XCTestCase {
 
         XCTAssertEqual(result.content, "Value: 21")
         XCTAssertNotNil(result.metadata)
-        XCTAssertEqual(result.metadata?.typeName, "TestMetadata")
+        // typeName is fully-qualified, so check it contains the type name
+        XCTAssertTrue(result.metadata?.typeName.contains("TestMetadata") ?? false)
 
         // Decode the metadata
         if let metadata = result.metadata?.decode(as: MetadataTool.TestMetadata.self) {
@@ -253,9 +254,12 @@ final class AIToolTests: XCTestCase {
                 arguments: #"{}"#
             )
             XCTFail("Expected error to be thrown")
+        } catch let error as AISDKErrorV2 {
+            // Tool errors should be wrapped in AISDKErrorV2.toolExecutionFailed
+            XCTAssertEqual(error.code, .toolExecutionFailed)
+            XCTAssertTrue(error.message.contains("failing_tool"))
         } catch {
-            // Tool errors should propagate
-            XCTAssertTrue(error is TestToolError)
+            XCTFail("Unexpected error type: \(error)")
         }
     }
 
@@ -377,8 +381,10 @@ final class AIToolTests: XCTestCase {
         let metadata = MetadataTool.TestMetadata(computedValue: 100, timestamp: "test")
         let wrapped = AnyAIToolMetadata(metadata)
 
-        XCTAssertEqual(wrapped.typeName, "TestMetadata")
+        // typeName is fully-qualified, so check it contains the type name
+        XCTAssertTrue(wrapped.typeName.contains("TestMetadata"))
         XCTAssertNotNil(wrapped.jsonData)
+        XCTAssertNil(wrapped.encodingError)
     }
 
     func test_AnyAIToolMetadata_decodesToOriginalType() {
@@ -395,8 +401,8 @@ final class AIToolTests: XCTestCase {
 
         // Try to decode as a different type with incompatible structure
         // Note: EmptyMetadata can decode from any JSON object (it has no required fields)
-        // So we verify that the typeName reflects the original type
-        XCTAssertEqual(wrapped.typeName, "TestMetadata")
+        // So we verify that the typeName reflects the original type (fully-qualified)
+        XCTAssertTrue(wrapped.typeName.contains("TestMetadata"))
 
         // Verify the original type decodes correctly
         let decoded = wrapped.decode(as: MetadataTool.TestMetadata.self)
