@@ -48,7 +48,7 @@ import Foundation
 ///
 /// ## Migration from Legacy Tool Protocol
 /// The legacy `Tool` protocol uses `@Parameter` property wrappers and mutable instances.
-/// Use `ToolAdapter` to wrap legacy tools for compatibility with `AITool`-based systems.
+/// See `Sources/AISDK/Core/Adapters/Legacy/ToolAdapter.swift` for legacy tool adapter APIs.
 public protocol AITool: Sendable {
     /// The type of arguments this tool accepts
     associatedtype Arguments: Codable & Sendable
@@ -70,6 +70,10 @@ public protocol AITool: Sendable {
     /// - Parameter arguments: The decoded arguments from the LLM
     /// - Returns: The tool result with content and optional metadata
     /// - Throws: If tool execution fails
+    ///
+    /// - Important: Implementations should be cancellation-cooperative. Check `Task.isCancelled`
+    ///   and use cancellable APIs to ensure the tool stops promptly when cancelled (e.g., on timeout).
+    ///   Tools that ignore cancellation may continue running after the caller has moved on.
     static func execute(arguments: Arguments) async throws -> AIToolResult<Metadata>
 
     /// Generate a JSON schema for this tool's arguments
@@ -91,8 +95,9 @@ extension AITool {
     /// Default schema generation - returns a basic accept-any schema.
     ///
     /// **Important**: This default implementation returns an empty properties dictionary
-    /// with `additionalProperties: true`, which allows any arguments. For production use,
-    /// you **must** override this method to provide accurate parameter descriptions.
+    /// with `additionalProperties: true`, which allows any arguments but may conflict with
+    /// strict mode on some providers. For production use, you **must** override this method
+    /// to provide accurate parameter descriptions and set `additionalProperties: false`.
     public static func generateSchema() -> ToolSchema {
         // Create a basic accept-any schema - implementers should override for detailed schemas
         return ToolSchema(
@@ -247,13 +252,8 @@ public struct AIToolExecutor: Sendable {
         let normalizedArgs = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
         let jsonString = normalizedArgs.isEmpty ? "{}" : normalizedArgs
 
-        // Parse arguments
-        guard let data = jsonString.data(using: .utf8) else {
-            throw AISDKErrorV2.toolExecutionFailed(
-                tool: T.name,
-                reason: "Invalid UTF-8 in arguments"
-            )
-        }
+        // Parse arguments - Swift String is always valid UTF-8
+        let data = Data(jsonString.utf8)
 
         let decodedArgs: T.Arguments
         do {
@@ -261,9 +261,10 @@ public struct AIToolExecutor: Sendable {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             decodedArgs = try decoder.decode(T.Arguments.self, from: data)
         } catch {
-            throw AISDKErrorV2.toolExecutionFailed(
-                tool: T.name,
-                reason: "Failed to decode arguments: \(error.localizedDescription)"
+            // Use invalidToolArguments for parsing/schema errors, not toolExecutionFailed
+            throw AISDKErrorV2(
+                code: .invalidToolArguments,
+                message: "Tool '\(T.name)': Failed to decode arguments"
             )
         }
 
@@ -300,10 +301,11 @@ public struct AIToolExecutor: Sendable {
         } catch is CancellationError {
             throw AISDKErrorV2.cancelled()
         } catch {
-            // Wrap non-SDK errors in toolExecutionFailed for PHI-safe error handling
+            // Wrap non-SDK errors in toolExecutionFailed with PHI-safe message
+            // Do not include error.localizedDescription as it may contain PHI/PII
             throw AISDKErrorV2.toolExecutionFailed(
                 tool: T.name,
-                reason: "Execution failed: \(error.localizedDescription)"
+                reason: "Execution failed"
             )
         }
 
@@ -400,10 +402,13 @@ public final class AIToolRegistry: @unchecked Sendable {
     ///
     /// - Parameter toolType: The AITool type to register
     /// - Note: Overwrites any existing tool with the same name
+    /// - Precondition: Tool name must not be empty or whitespace-only
     public func register<T: AITool>(_ toolType: T.Type) {
+        let name = T.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        precondition(!name.isEmpty, "Tool name must not be empty")
         let wrapped = AnyAITool(toolType)
         lock.lock()
-        tools[T.name] = wrapped
+        tools[name] = wrapped
         lock.unlock()
     }
 
