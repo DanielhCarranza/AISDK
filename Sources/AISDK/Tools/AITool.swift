@@ -62,7 +62,7 @@ public protocol AITool: Sendable {
     /// A description of what this tool does (shown to the LLM)
     static var description: String { get }
 
-    /// The execution timeout for this tool in seconds (default: 60)
+    /// The execution timeout for this tool in seconds (default: 60, must be positive and finite)
     static var timeout: TimeInterval { get }
 
     /// Execute the tool with the provided arguments
@@ -74,8 +74,9 @@ public protocol AITool: Sendable {
 
     /// Generate a JSON schema for this tool's arguments
     ///
-    /// Override this method to provide a custom schema. The default implementation
-    /// generates a schema from the `Arguments` type using reflection.
+    /// Override this method to provide a custom schema with parameter descriptions.
+    /// The default implementation returns a basic accept-any schema with no properties.
+    /// **Production tools should override this** to provide accurate parameter definitions.
     ///
     /// - Returns: A ToolSchema suitable for LLM function calling
     static func generateSchema() -> ToolSchema
@@ -87,12 +88,13 @@ extension AITool {
     /// Default timeout of 60 seconds
     public static var timeout: TimeInterval { 60.0 }
 
-    /// Default schema generation using JSONEncoder introspection
+    /// Default schema generation - returns a basic accept-any schema.
     ///
-    /// This default implementation creates a basic schema. For production use,
-    /// you should override this method to provide accurate parameter descriptions.
+    /// **Important**: This default implementation returns an empty properties dictionary
+    /// with `additionalProperties: true`, which allows any arguments. For production use,
+    /// you **must** override this method to provide accurate parameter descriptions.
     public static func generateSchema() -> ToolSchema {
-        // Create a basic schema - implementers should override for detailed schemas
+        // Create a basic accept-any schema - implementers should override for detailed schemas
         return ToolSchema(
             type: "function",
             function: ToolFunction(
@@ -165,18 +167,28 @@ public struct EmptyMetadata: AIToolMetadata, Equatable {
 ///
 /// Provides a Sendable container for any AIToolMetadata type, with JSON encoding support.
 public struct AnyAIToolMetadata: Sendable {
-    /// The underlying metadata type name
+    /// The fully-qualified underlying metadata type name (for identification, not display)
     public let typeName: String
 
     /// The JSON-encoded metadata (if encodable)
     public let jsonData: Data?
 
+    /// Description of encoding error, if any
+    public let encodingError: String?
+
     /// Creates a type-erased metadata wrapper
     ///
     /// - Parameter metadata: The metadata to wrap
     public init<M: AIToolMetadata>(_ metadata: M) {
-        self.typeName = String(describing: type(of: metadata))
-        self.jsonData = try? JSONEncoder().encode(metadata)
+        // Use fully-qualified name for uniqueness across modules
+        self.typeName = String(reflecting: type(of: metadata))
+        do {
+            self.jsonData = try JSONEncoder().encode(metadata)
+            self.encodingError = nil
+        } catch {
+            self.jsonData = nil
+            self.encodingError = error.localizedDescription
+        }
     }
 
     /// Decode the metadata to a specific type
@@ -212,10 +224,13 @@ public struct AIToolExecutionResult: Sendable {
 /// Executor for running AITool implementations with timeout and argument parsing
 ///
 /// This executor handles:
-/// - JSON argument parsing and validation
+/// - JSON argument parsing and validation (with snake_case key support)
 /// - Timeout enforcement via the tool's static timeout
-/// - Error wrapping for consistent error handling
+/// - Error wrapping in AISDKErrorV2 for consistent error handling
 public struct AIToolExecutor: Sendable {
+
+    /// Maximum allowed timeout in seconds (24 hours)
+    private static let maxTimeout: TimeInterval = 86400
 
     /// Execute an AITool with raw JSON arguments
     ///
@@ -223,13 +238,17 @@ public struct AIToolExecutor: Sendable {
     ///   - toolType: The AITool type to execute
     ///   - arguments: JSON string containing the tool arguments
     /// - Returns: The tool execution result with content and optional metadata
-    /// - Throws: AISDKErrorV2 if parsing fails or execution errors
+    /// - Throws: AISDKErrorV2 for all error cases (parsing, timeout, execution)
     public static func execute<T: AITool>(
         _ toolType: T.Type,
         arguments: String
     ) async throws -> AIToolExecutionResult {
+        // Normalize empty/whitespace arguments to empty JSON object
+        let normalizedArgs = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+        let jsonString = normalizedArgs.isEmpty ? "{}" : normalizedArgs
+
         // Parse arguments
-        guard let data = arguments.data(using: .utf8) else {
+        guard let data = jsonString.data(using: .utf8) else {
             throw AISDKErrorV2.toolExecutionFailed(
                 tool: T.name,
                 reason: "Invalid UTF-8 in arguments"
@@ -238,7 +257,9 @@ public struct AIToolExecutor: Sendable {
 
         let decodedArgs: T.Arguments
         do {
-            decodedArgs = try JSONDecoder().decode(T.Arguments.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            decodedArgs = try decoder.decode(T.Arguments.self, from: data)
         } catch {
             throw AISDKErrorV2.toolExecutionFailed(
                 tool: T.name,
@@ -246,24 +267,44 @@ public struct AIToolExecutor: Sendable {
             )
         }
 
+        // Validate and clamp timeout
+        let timeout = validatedTimeout(T.timeout)
+
         // Execute with timeout
-        let result = try await withThrowingTaskGroup(of: AIToolResult<T.Metadata>.self) { group in
-            group.addTask {
-                try await T.execute(arguments: decodedArgs)
-            }
+        let result: AIToolResult<T.Metadata>
+        do {
+            result = try await withThrowingTaskGroup(of: AIToolResult<T.Metadata>.self) { group in
+                group.addTask {
+                    try await T.execute(arguments: decodedArgs)
+                }
 
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(T.timeout * 1_000_000_000))
-                throw AISDKErrorV2.toolTimeout(
-                    tool: T.name,
-                    after: T.timeout
-                )
-            }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    throw AISDKErrorV2.toolTimeout(
+                        tool: T.name,
+                        after: timeout
+                    )
+                }
 
-            // Return first completed, cancel the other
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+                // Return first completed, cancel the other
+                guard let taskResult = try await group.next() else {
+                    // Group was cancelled before producing any result
+                    throw AISDKErrorV2.cancelled()
+                }
+                group.cancelAll()
+                return taskResult
+            }
+        } catch let error as AISDKErrorV2 {
+            // Re-throw SDK errors as-is
+            throw error
+        } catch is CancellationError {
+            throw AISDKErrorV2.cancelled()
+        } catch {
+            // Wrap non-SDK errors in toolExecutionFailed for PHI-safe error handling
+            throw AISDKErrorV2.toolExecutionFailed(
+                tool: T.name,
+                reason: "Execution failed: \(error.localizedDescription)"
+            )
         }
 
         // Wrap metadata if present
@@ -276,6 +317,15 @@ public struct AIToolExecutor: Sendable {
 
         return AIToolExecutionResult(content: result.content, metadata: wrappedMetadata)
     }
+
+    /// Validate and clamp timeout to safe bounds
+    private static func validatedTimeout(_ timeout: TimeInterval) -> TimeInterval {
+        guard timeout.isFinite && timeout > 0 else {
+            // Invalid timeout, use default
+            return 60.0
+        }
+        return min(timeout, maxTimeout)
+    }
 }
 
 // MARK: - Type-Erased AITool Wrapper
@@ -284,7 +334,10 @@ public struct AIToolExecutor: Sendable {
 ///
 /// This wrapper allows storing different AITool types in arrays or dictionaries
 /// while preserving their execution capabilities.
-public struct AnyAITool: Sendable {
+///
+/// Note: Marked `@unchecked Sendable` because `ToolSchema` is not yet Sendable.
+/// The schema is immutable after initialization, making this safe in practice.
+public struct AnyAITool: @unchecked Sendable {
     /// The tool's unique name
     public let name: String
 
@@ -317,7 +370,7 @@ public struct AnyAITool: Sendable {
     ///
     /// - Parameter arguments: JSON string containing the tool arguments
     /// - Returns: The tool execution result
-    /// - Throws: If execution fails
+    /// - Throws: AISDKErrorV2 if execution fails
     public func execute(arguments: String) async throws -> AIToolExecutionResult {
         try await _execute(arguments)
     }
@@ -346,6 +399,7 @@ public final class AIToolRegistry: @unchecked Sendable {
     /// Register a tool type
     ///
     /// - Parameter toolType: The AITool type to register
+    /// - Note: Overwrites any existing tool with the same name
     public func register<T: AITool>(_ toolType: T.Type) {
         let wrapped = AnyAITool(toolType)
         lock.lock()
@@ -363,18 +417,18 @@ public final class AIToolRegistry: @unchecked Sendable {
         return tools[name]
     }
 
-    /// Get all registered tool names
+    /// Get all registered tool names (sorted for deterministic ordering)
     public var registeredNames: [String] {
         lock.lock()
         defer { lock.unlock() }
-        return Array(tools.keys)
+        return tools.keys.sorted()
     }
 
-    /// Get all registered tools as schemas
+    /// Get all registered tools as schemas (sorted by name for deterministic ordering)
     public var schemas: [ToolSchema] {
         lock.lock()
         defer { lock.unlock() }
-        return tools.values.map { $0.schema }
+        return tools.keys.sorted().compactMap { tools[$0]?.schema }
     }
 
     /// Execute a tool by name
@@ -383,7 +437,7 @@ public final class AIToolRegistry: @unchecked Sendable {
     ///   - name: The tool name
     ///   - arguments: JSON string containing arguments
     /// - Returns: The tool execution result
-    /// - Throws: AISDKErrorV2.toolNotFound if tool doesn't exist, or execution errors
+    /// - Throws: AISDKErrorV2.toolNotFound if tool doesn't exist, or other AISDKErrorV2 for execution errors
     public func execute(
         name: String,
         arguments: String
