@@ -145,12 +145,29 @@ final class UICatalogTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"children\""))
     }
 
-    func testGeneratePromptContainsChildrenInfo() {
+    func testGeneratePromptContainsChildrenYes() {
         let catalog = UICatalog.core8
         let prompt = catalog.generatePrompt()
 
         // Card, List, Stack have children
         XCTAssertTrue(prompt.contains("Can contain children: Yes"))
+    }
+
+    func testGeneratePromptContainsChildrenNo() {
+        let catalog = UICatalog.core8
+        let prompt = catalog.generatePrompt()
+
+        // Text, Button, Input, Image, Spacer do not have children
+        XCTAssertTrue(prompt.contains("Can contain children: No"))
+    }
+
+    func testGeneratePromptContainsChildrenRules() {
+        let catalog = UICatalog.core8
+        let prompt = catalog.generatePrompt()
+
+        // Verify rules about children handling
+        XCTAssertTrue(prompt.contains("Only components marked \"Can contain children: Yes\" may have a \"children\" array"))
+        XCTAssertTrue(prompt.contains("Components marked \"Can contain children: No\" must omit the \"children\" field"))
     }
 
     func testGeneratePromptContainsActions() {
@@ -261,12 +278,72 @@ final class UICatalogTests: XCTestCase {
         let validPropsData = Data(validPropsJSON.utf8)
         XCTAssertNoThrow(try catalog.validate(type: "Stack", propsData: validPropsData))
 
-        // Invalid direction
+        // Invalid direction (enum validation)
         let invalidPropsJSON = """
         {"direction": "diagonal"}
         """
         let invalidPropsData = Data(invalidPropsJSON.utf8)
-        XCTAssertThrowsError(try catalog.validate(type: "Stack", propsData: invalidPropsData))
+        XCTAssertThrowsError(try catalog.validate(type: "Stack", propsData: invalidPropsData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .decodingFailed(let component, _) = validationError {
+                XCTAssertEqual(component, "Stack")
+            } else {
+                XCTFail("Expected decodingFailed error for invalid enum, got \(validationError)")
+            }
+        }
+    }
+
+    func testValidateStackDirectionRequired() {
+        let catalog = UICatalog.core8
+
+        // Missing direction (required field)
+        let missingDirectionJSON = """
+        {"spacing": 8}
+        """
+        let missingDirectionData = Data(missingDirectionJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Stack", propsData: missingDirectionData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .missingRequiredProp(let component, let prop) = validationError {
+                XCTAssertEqual(component, "Stack")
+                XCTAssertEqual(prop, "direction")
+            } else {
+                XCTFail("Expected missingRequiredProp error for missing direction, got \(validationError)")
+            }
+        }
+    }
+
+    func testValidateStackAlignment() throws {
+        let catalog = UICatalog.core8
+
+        // Valid alignment
+        let validPropsJSON = """
+        {"direction": "vertical", "alignment": "center"}
+        """
+        let validPropsData = Data(validPropsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Stack", propsData: validPropsData))
+
+        // Invalid alignment (enum validation)
+        let invalidAlignmentJSON = """
+        {"direction": "vertical", "alignment": "stretch"}
+        """
+        let invalidAlignmentData = Data(invalidAlignmentJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Stack", propsData: invalidAlignmentData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .decodingFailed(let component, _) = validationError {
+                XCTAssertEqual(component, "Stack")
+            } else {
+                XCTFail("Expected decodingFailed error for invalid alignment, got \(validationError)")
+            }
+        }
     }
 
     func testValidateImageProps() throws {
@@ -312,6 +389,132 @@ final class UICatalogTests: XCTestCase {
         XCTAssertThrowsError(try catalog.validate(type: "Spacer", propsData: negativePropsData))
     }
 
+    func testValidateInputTypeEnum() throws {
+        let catalog = UICatalog.core8
+
+        // Valid input types
+        for inputType in ["text", "email", "password", "number"] {
+            let propsJSON = """
+            {"label": "Test", "name": "test", "type": "\(inputType)"}
+            """
+            let propsData = Data(propsJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Input", propsData: propsData), "Expected \(inputType) to be valid")
+        }
+
+        // Invalid input type
+        let invalidTypeJSON = """
+        {"label": "Test", "name": "test", "type": "phone"}
+        """
+        let invalidTypeData = Data(invalidTypeJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Input", propsData: invalidTypeData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .decodingFailed(let component, _) = validationError {
+                XCTAssertEqual(component, "Input")
+            } else {
+                XCTFail("Expected decodingFailed error for invalid input type, got \(validationError)")
+            }
+        }
+    }
+
+    func testValidateListStyleEnum() throws {
+        let catalog = UICatalog.core8
+
+        // Valid list styles
+        for listStyle in ["ordered", "unordered", "plain"] {
+            let propsJSON = """
+            {"style": "\(listStyle)"}
+            """
+            let propsData = Data(propsJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "List", propsData: propsData), "Expected \(listStyle) to be valid")
+        }
+
+        // Invalid list style
+        let invalidStyleJSON = """
+        {"style": "numbered"}
+        """
+        let invalidStyleData = Data(invalidStyleJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "List", propsData: invalidStyleData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .decodingFailed(let component, _) = validationError {
+                XCTAssertEqual(component, "List")
+            } else {
+                XCTFail("Expected decodingFailed error for invalid list style, got \(validationError)")
+            }
+        }
+    }
+
+    // MARK: - Decoding Error Tests
+
+    func testDecodingMissingRequiredProp() {
+        let catalog = UICatalog.core8
+
+        // Missing required 'content' for Text
+        let missingContentJSON = """
+        {"style": "bold"}
+        """
+        let missingContentData = Data(missingContentJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Text", propsData: missingContentData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .missingRequiredProp(let component, let prop) = validationError {
+                XCTAssertEqual(component, "Text")
+                XCTAssertEqual(prop, "content")
+            } else {
+                XCTFail("Expected missingRequiredProp error, got \(validationError)")
+            }
+        }
+    }
+
+    func testDecodingTypeMismatchThrowsDecodingFailed() {
+        let catalog = UICatalog.core8
+
+        // Type mismatch: spacing should be number, not string
+        let typeMismatchJSON = """
+        {"direction": "vertical", "spacing": "large"}
+        """
+        let typeMismatchData = Data(typeMismatchJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Stack", propsData: typeMismatchData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .decodingFailed(let component, _) = validationError {
+                XCTAssertEqual(component, "Stack")
+            } else {
+                XCTFail("Expected decodingFailed error for type mismatch, got \(validationError)")
+            }
+        }
+    }
+
+    func testDecodingInvalidJSON() {
+        let catalog = UICatalog.core8
+
+        // Invalid JSON
+        let invalidJSON = """
+        {not valid json}
+        """
+        let invalidData = Data(invalidJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Text", propsData: invalidData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .decodingFailed(let component, _) = validationError {
+                XCTAssertEqual(component, "Text")
+            } else {
+                XCTFail("Expected decodingFailed error for invalid JSON, got \(validationError)")
+            }
+        }
+    }
+
     // MARK: - Error Description Tests
 
     func testValidationErrorDescriptions() {
@@ -332,6 +535,13 @@ final class UICatalogTests: XCTestCase {
 
         let unknownTypeError = UIComponentValidationError.unknownComponentType("Custom")
         XCTAssertTrue(unknownTypeError.errorDescription?.contains("Custom") ?? false)
+
+        let decodingFailedError = UIComponentValidationError.decodingFailed(
+            component: "Input",
+            reason: "Invalid type value"
+        )
+        XCTAssertTrue(decodingFailedError.errorDescription?.contains("Input") ?? false)
+        XCTAssertTrue(decodingFailedError.errorDescription?.contains("decoding failed") ?? false)
     }
 
     // MARK: - Component Definition Tests
@@ -376,6 +586,28 @@ final class UICatalogTests: XCTestCase {
         """
         let invalidPropsData = Data(invalidPropsJSON.utf8)
         XCTAssertThrowsError(try wrapped.validate(propsData: invalidPropsData))
+    }
+
+    func testAnyUIComponentDefinitionDecodingError() throws {
+        let wrapped = AnyUIComponentDefinition(TextComponentDefinitionPlaceholder.self)
+
+        // Missing required prop
+        let missingPropJSON = """
+        {}
+        """
+        let missingPropData = Data(missingPropJSON.utf8)
+        XCTAssertThrowsError(try wrapped.validate(propsData: missingPropData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .missingRequiredProp(let component, let prop) = validationError {
+                XCTAssertEqual(component, "Text")
+                XCTAssertEqual(prop, "content")
+            } else {
+                XCTFail("Expected missingRequiredProp error, got \(validationError)")
+            }
+        }
     }
 
     // MARK: - Snake Case Decoding Tests
