@@ -82,17 +82,17 @@ final class UICatalogTests: XCTestCase {
         var catalog = UICatalog()
         XCTAssertEqual(catalog.registeredComponentTypes.count, 0)
 
-        try catalog.register(TextComponentDefinitionPlaceholder.self)
+        try catalog.register(TextComponentDefinition.self)
         XCTAssertEqual(catalog.registeredComponentTypes.count, 1)
         XCTAssertTrue(catalog.hasComponent("Text"))
     }
 
     func testRegisterDuplicateComponentThrows() throws {
         var catalog = UICatalog()
-        try catalog.register(TextComponentDefinitionPlaceholder.self)
+        try catalog.register(TextComponentDefinition.self)
 
         // Attempting to register again should throw
-        XCTAssertThrowsError(try catalog.register(TextComponentDefinitionPlaceholder.self)) { error in
+        XCTAssertThrowsError(try catalog.register(TextComponentDefinition.self)) { error in
             guard let validationError = error as? UIComponentValidationError else {
                 XCTFail("Expected UIComponentValidationError, got \(error)")
                 return
@@ -577,7 +577,7 @@ final class UICatalogTests: XCTestCase {
     func testButtonWithActionInEmptyCatalogRejected() throws {
         // When catalog has no actions registered, any action should be rejected
         var catalog = UICatalog()
-        try catalog.register(ButtonComponentDefinitionPlaceholder.self)
+        try catalog.register(ButtonComponentDefinition.self)
 
         let anyActionJSON = """
         {"title": "Click", "action": "anyAction"}
@@ -648,7 +648,7 @@ final class UICatalogTests: XCTestCase {
     func testInputWithValidatorInEmptyCatalogRejected() throws {
         // When catalog has no validators registered, any validator should be rejected
         var catalog = UICatalog()
-        try catalog.register(InputComponentDefinitionPlaceholder.self)
+        try catalog.register(InputComponentDefinition.self)
 
         let anyValidatorJSON = """
         {"label": "Email", "name": "email", "validation": "anyValidator"}
@@ -794,25 +794,50 @@ final class UICatalogTests: XCTestCase {
     // MARK: - Component Definition Tests
 
     func testTextComponentDefinition() {
-        XCTAssertEqual(TextComponentDefinitionPlaceholder.type, "Text")
-        XCTAssertEqual(TextComponentDefinitionPlaceholder.description, "Display text content")
-        XCTAssertFalse(TextComponentDefinitionPlaceholder.hasChildren)
+        XCTAssertEqual(TextComponentDefinition.type, "Text")
+        XCTAssertEqual(TextComponentDefinition.description, "Display text content")
+        XCTAssertFalse(TextComponentDefinition.hasChildren)
     }
 
     func testButtonComponentDefinition() {
-        XCTAssertEqual(ButtonComponentDefinitionPlaceholder.type, "Button")
-        XCTAssertFalse(ButtonComponentDefinitionPlaceholder.hasChildren)
+        XCTAssertEqual(ButtonComponentDefinition.type, "Button")
+        XCTAssertFalse(ButtonComponentDefinition.hasChildren)
     }
 
     func testStackComponentDefinition() {
-        XCTAssertEqual(StackComponentDefinitionPlaceholder.type, "Stack")
-        XCTAssertTrue(StackComponentDefinitionPlaceholder.hasChildren)
+        XCTAssertEqual(StackComponentDefinition.type, "Stack")
+        XCTAssertTrue(StackComponentDefinition.hasChildren)
+    }
+
+    func testCardComponentDefinition() {
+        XCTAssertEqual(CardComponentDefinition.type, "Card")
+        XCTAssertTrue(CardComponentDefinition.hasChildren)
+    }
+
+    func testInputComponentDefinition() {
+        XCTAssertEqual(InputComponentDefinition.type, "Input")
+        XCTAssertFalse(InputComponentDefinition.hasChildren)
+    }
+
+    func testListComponentDefinition() {
+        XCTAssertEqual(ListComponentDefinition.type, "List")
+        XCTAssertTrue(ListComponentDefinition.hasChildren)
+    }
+
+    func testImageComponentDefinition() {
+        XCTAssertEqual(ImageComponentDefinition.type, "Image")
+        XCTAssertFalse(ImageComponentDefinition.hasChildren)
+    }
+
+    func testSpacerComponentDefinition() {
+        XCTAssertEqual(SpacerComponentDefinition.type, "Spacer")
+        XCTAssertFalse(SpacerComponentDefinition.hasChildren)
     }
 
     // MARK: - AnyUIComponentDefinition Tests
 
     func testAnyUIComponentDefinitionWrapping() {
-        let wrapped = AnyUIComponentDefinition(TextComponentDefinitionPlaceholder.self)
+        let wrapped = AnyUIComponentDefinition(TextComponentDefinition.self)
 
         XCTAssertEqual(wrapped.type, "Text")
         XCTAssertEqual(wrapped.description, "Display text content")
@@ -820,7 +845,7 @@ final class UICatalogTests: XCTestCase {
     }
 
     func testAnyUIComponentDefinitionValidation() throws {
-        let wrapped = AnyUIComponentDefinition(TextComponentDefinitionPlaceholder.self)
+        let wrapped = AnyUIComponentDefinition(TextComponentDefinition.self)
 
         let validPropsJSON = """
         {"content": "Hello"}
@@ -836,7 +861,7 @@ final class UICatalogTests: XCTestCase {
     }
 
     func testAnyUIComponentDefinitionDecodingError() throws {
-        let wrapped = AnyUIComponentDefinition(TextComponentDefinitionPlaceholder.self)
+        let wrapped = AnyUIComponentDefinition(TextComponentDefinition.self)
 
         // Missing required prop
         let missingPropJSON = """
@@ -855,6 +880,380 @@ final class UICatalogTests: XCTestCase {
                 XCTFail("Expected missingRequiredProp error, got \(validationError)")
             }
         }
+    }
+
+    // MARK: - Accessibility Props Tests
+
+    func testTextAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        // Valid accessibility props
+        let propsJSON = """
+        {
+            "content": "Hello, World!",
+            "accessibilityLabel": "Greeting text",
+            "accessibilityHint": "A welcome message",
+            "accessibilityTraits": ["staticText"]
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Text", propsData: propsData))
+    }
+
+    func testTextInvalidAccessibilityTrait() {
+        let catalog = UICatalog.core8
+
+        // Invalid accessibility trait
+        let propsJSON = """
+        {
+            "content": "Hello",
+            "accessibilityTraits": ["invalid_trait"]
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Text", propsData: propsData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .invalidPropValue(let component, let prop, _) = validationError {
+                XCTAssertEqual(component, "Text")
+                XCTAssertEqual(prop, "accessibilityTraits")
+            } else {
+                XCTFail("Expected invalidPropValue error, got \(validationError)")
+            }
+        }
+    }
+
+    func testButtonAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        // Valid accessibility props
+        let propsJSON = """
+        {
+            "title": "Submit",
+            "action": "submit",
+            "accessibilityLabel": "Submit button",
+            "accessibilityHint": "Double-tap to submit the form",
+            "accessibilityTraits": ["button"]
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Button", propsData: propsData))
+    }
+
+    func testButtonStyleValidation() throws {
+        let catalog = UICatalog.core8
+
+        // Valid button styles
+        for style in ["primary", "secondary", "destructive", "plain"] {
+            let propsJSON = """
+            {"title": "Click", "action": "submit", "style": "\(style)"}
+            """
+            let propsData = Data(propsJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Button", propsData: propsData), "Expected style '\(style)' to be valid")
+        }
+
+        // Invalid button style
+        let invalidStyleJSON = """
+        {"title": "Click", "action": "submit", "style": "danger"}
+        """
+        let invalidStyleData = Data(invalidStyleJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Button", propsData: invalidStyleData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .invalidPropValue(let component, let prop, _) = validationError {
+                XCTAssertEqual(component, "Button")
+                XCTAssertEqual(prop, "style")
+            } else {
+                XCTFail("Expected invalidPropValue error for invalid style, got \(validationError)")
+            }
+        }
+    }
+
+    func testCardAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        // Card with all accessibility props
+        let propsJSON = """
+        {
+            "title": "Welcome",
+            "subtitle": "Get started",
+            "style": "elevated",
+            "accessibilityLabel": "Welcome card",
+            "accessibilityHint": "Shows getting started options"
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Card", propsData: propsData))
+    }
+
+    func testCardStyleValidation() throws {
+        let catalog = UICatalog.core8
+
+        // Valid card styles
+        for style in ["elevated", "outlined", "filled"] {
+            let propsJSON = """
+            {"style": "\(style)"}
+            """
+            let propsData = Data(propsJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Card", propsData: propsData), "Expected style '\(style)' to be valid")
+        }
+
+        // Invalid card style
+        let invalidStyleJSON = """
+        {"style": "flat"}
+        """
+        let invalidStyleData = Data(invalidStyleJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Card", propsData: invalidStyleData))
+    }
+
+    func testInputAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        let propsJSON = """
+        {
+            "label": "Email",
+            "name": "email",
+            "type": "email",
+            "validation": "email",
+            "accessibilityLabel": "Email input field",
+            "accessibilityHint": "Enter your email address"
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Input", propsData: propsData))
+    }
+
+    func testImageAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        let propsJSON = """
+        {
+            "url": "https://example.com/photo.jpg",
+            "alt": "Profile photo",
+            "width": 200,
+            "height": 200,
+            "contentMode": "fit",
+            "accessibilityLabel": "User profile picture",
+            "accessibilityTraits": ["image"]
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Image", propsData: propsData))
+    }
+
+    func testImageContentModeValidation() throws {
+        let catalog = UICatalog.core8
+
+        // Valid content modes
+        for mode in ["fit", "fill", "stretch"] {
+            let propsJSON = """
+            {"url": "https://example.com/img.png", "contentMode": "\(mode)"}
+            """
+            let propsData = Data(propsJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Image", propsData: propsData), "Expected contentMode '\(mode)' to be valid")
+        }
+
+        // Invalid content mode
+        let invalidModeJSON = """
+        {"url": "https://example.com/img.png", "contentMode": "cover"}
+        """
+        let invalidModeData = Data(invalidModeJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Image", propsData: invalidModeData))
+    }
+
+    func testStackAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        let propsJSON = """
+        {
+            "direction": "vertical",
+            "spacing": 16,
+            "alignment": "center",
+            "accessibilityLabel": "Main content stack"
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Stack", propsData: propsData))
+    }
+
+    func testListAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        let propsJSON = """
+        {
+            "style": "ordered",
+            "accessibilityLabel": "Todo list"
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "List", propsData: propsData))
+    }
+
+    func testSpacerAccessibilityProps() throws {
+        let catalog = UICatalog.core8
+
+        let propsJSON = """
+        {
+            "size": 32,
+            "accessibilityLabel": "Visual separator"
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Spacer", propsData: propsData))
+    }
+
+    func testTextStyleValidation() throws {
+        let catalog = UICatalog.core8
+
+        // Valid text styles
+        for style in ["body", "headline", "subheadline", "caption", "title"] {
+            let propsJSON = """
+            {"content": "Hello", "style": "\(style)"}
+            """
+            let propsData = Data(propsJSON.utf8)
+            XCTAssertNoThrow(try catalog.validate(type: "Text", propsData: propsData), "Expected style '\(style)' to be valid")
+        }
+
+        // Invalid text style
+        let invalidStyleJSON = """
+        {"content": "Hello", "style": "large"}
+        """
+        let invalidStyleData = Data(invalidStyleJSON.utf8)
+        XCTAssertThrowsError(try catalog.validate(type: "Text", propsData: invalidStyleData)) { error in
+            guard let validationError = error as? UIComponentValidationError else {
+                XCTFail("Expected UIComponentValidationError, got \(error)")
+                return
+            }
+            if case .invalidPropValue(let component, let prop, _) = validationError {
+                XCTAssertEqual(component, "Text")
+                XCTAssertEqual(prop, "style")
+            } else {
+                XCTFail("Expected invalidPropValue error for invalid style, got \(validationError)")
+            }
+        }
+    }
+
+    // MARK: - Props Struct Direct Tests
+
+    func testTextPropsInitialization() {
+        let props = TextComponentDefinition.Props(
+            content: "Hello",
+            style: "headline",
+            accessibilityLabel: "Greeting",
+            accessibilityHint: "A greeting message",
+            accessibilityTraits: ["header", "staticText"]
+        )
+
+        XCTAssertEqual(props.content, "Hello")
+        XCTAssertEqual(props.style, "headline")
+        XCTAssertEqual(props.accessibilityLabel, "Greeting")
+        XCTAssertEqual(props.accessibilityHint, "A greeting message")
+        XCTAssertEqual(props.accessibilityTraits, ["header", "staticText"])
+    }
+
+    func testButtonPropsInitialization() {
+        let props = ButtonComponentDefinition.Props(
+            title: "Submit",
+            action: "submit",
+            style: "primary",
+            disabled: false,
+            accessibilityLabel: "Submit form button",
+            accessibilityHint: "Double-tap to submit",
+            accessibilityTraits: ["button"]
+        )
+
+        XCTAssertEqual(props.title, "Submit")
+        XCTAssertEqual(props.action, "submit")
+        XCTAssertEqual(props.style, "primary")
+        XCTAssertEqual(props.disabled, false)
+        XCTAssertEqual(props.accessibilityLabel, "Submit form button")
+    }
+
+    func testCardPropsInitialization() {
+        let props = CardComponentDefinition.Props(
+            title: "Welcome",
+            subtitle: "Get started today",
+            style: "elevated",
+            accessibilityLabel: "Welcome card"
+        )
+
+        XCTAssertEqual(props.title, "Welcome")
+        XCTAssertEqual(props.subtitle, "Get started today")
+        XCTAssertEqual(props.style, "elevated")
+        XCTAssertEqual(props.accessibilityLabel, "Welcome card")
+    }
+
+    func testInputPropsInitialization() {
+        let props = InputComponentDefinition.Props(
+            label: "Email",
+            name: "email",
+            placeholder: "Enter email",
+            type: .email,
+            required: true,
+            validation: "email",
+            accessibilityLabel: "Email field"
+        )
+
+        XCTAssertEqual(props.label, "Email")
+        XCTAssertEqual(props.name, "email")
+        XCTAssertEqual(props.placeholder, "Enter email")
+        XCTAssertEqual(props.type, .email)
+        XCTAssertEqual(props.required, true)
+        XCTAssertEqual(props.validation, "email")
+    }
+
+    func testImagePropsInitialization() {
+        let props = ImageComponentDefinition.Props(
+            url: "https://example.com/image.png",
+            alt: "Example image",
+            width: 100,
+            height: 100,
+            contentMode: "fit",
+            accessibilityLabel: "Example image"
+        )
+
+        XCTAssertEqual(props.url, "https://example.com/image.png")
+        XCTAssertEqual(props.alt, "Example image")
+        XCTAssertEqual(props.width, 100)
+        XCTAssertEqual(props.height, 100)
+        XCTAssertEqual(props.contentMode, "fit")
+    }
+
+    func testStackPropsInitialization() {
+        let props = StackComponentDefinition.Props(
+            direction: .horizontal,
+            spacing: 8,
+            alignment: .center,
+            accessibilityLabel: "Horizontal stack"
+        )
+
+        XCTAssertEqual(props.direction, .horizontal)
+        XCTAssertEqual(props.spacing, 8)
+        XCTAssertEqual(props.alignment, .center)
+    }
+
+    func testListPropsInitialization() {
+        let props = ListComponentDefinition.Props(
+            style: .ordered,
+            accessibilityLabel: "Ordered list"
+        )
+
+        XCTAssertEqual(props.style, .ordered)
+        XCTAssertEqual(props.accessibilityLabel, "Ordered list")
+    }
+
+    func testSpacerPropsInitialization() {
+        let props = SpacerComponentDefinition.Props(
+            size: 16,
+            accessibilityLabel: "Spacer"
+        )
+
+        XCTAssertEqual(props.size, 16)
+        XCTAssertEqual(props.accessibilityLabel, "Spacer")
     }
 
     // MARK: - Snake Case Decoding Tests
