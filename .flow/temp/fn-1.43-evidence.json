@@ -1,0 +1,10 @@
+{
+  "commits": [
+    "2634ece",
+    "ae09b93"
+  ],
+  "tests": [
+    "swift test --filter UIComponentRegistryTests"
+  ],
+  "prs": []
+}

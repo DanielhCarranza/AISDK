@@ -16,21 +16,17 @@ Implement the UITree model for the json-render pattern used in generative UI. Th
 - [x] All tests passing (32 tests)
 
 ## Done summary
-Implemented UITree model in `Sources/AISDK/GenerativeUI/Models/UITree.swift`:
-- `UINode`: Sendable/Equatable struct with key, type, propsData (raw JSON), childKeys, and hadChildrenField
-- `UITreeError`: Comprehensive error enum with 13 cases covering structural issues (invalidStructure, rootNotFound, childNotFound, circularReference, duplicateKey, invalidNodeKey, multipleParents, depthExceeded, nodeCountExceeded, unreachableNode) and validation issues (unknownComponentType, childrenNotAllowed, validationFailed)
-- `UITree`: Main model with static `parse(from:validatingWith:)` methods that parse JSON in json-render format with:
-  - Iterative DFS traversal (prevents stack overflow on deep/malicious input)
-  - True tree enforcement (no DAGs - rejects diamond dependencies)
-  - Security limits (max depth 100, max nodes 10,000)
-  - Strict props validation (must be object if present)
-  - Unreachable node pruning
-  - Deterministic validation order (depth-first from root)
-- Tree utilities: rootNode, children(of:), node(forKey:), traverse(_:), allNodes(), nodeCount, maxDepth
+Addressed all codex impl-review feedback for UITree model:
 
-Tests: 32 tests in UITreeTests.swift covering basic parsing, catalog validation, structural errors, tree enforcement, and traversal utilities.
+- Security hardening: iterative DFS traversal, max depth 100, max nodes 10,000
+- True tree enforcement: DAGs rejected with multipleParents error
+- Proper props validation: must be object if present
+- hadChildrenField tracking: empty children array on leaf components rejected
+- Deterministic validation: depth-first from root
+- Unreachable node pruning: orphan nodes removed from final tree
 
+All 32 tests pass. Implementation ready for production.
 ## Evidence
-- Commits: b96a11b + subsequent impl-review fixes
+- Commits: 1d26531, b96a11b
 - Tests: {'command': 'swift test --filter UITreeTests', 'result': '32 tests passed'}
 - PRs:

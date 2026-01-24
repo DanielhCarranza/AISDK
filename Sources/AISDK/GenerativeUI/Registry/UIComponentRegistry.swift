@@ -26,6 +26,35 @@ public typealias UIActionHandler = @Sendable (String) -> Void
 /// ensuring the full registry is used (not an early snapshot).
 public typealias ChildViewBuilder = @Sendable (UINode) -> AnyView
 
+// MARK: - Accessibility Traits Helper
+
+/// Maps string trait names to SwiftUI AccessibilityTraits
+private func accessibilityTraits(from traits: [String]?) -> AccessibilityTraits {
+    guard let traits else { return [] }
+    var result: AccessibilityTraits = []
+    for trait in traits {
+        switch trait.lowercased() {
+        case "header":
+            result.formUnion(.isHeader)
+        case "link":
+            result.formUnion(.isLink)
+        case "button":
+            result.formUnion(.isButton)
+        case "image":
+            result.formUnion(.isImage)
+        case "statictext":
+            result.formUnion(.isStaticText)
+        case "selected":
+            result.formUnion(.isSelected)
+        case "summary":
+            result.formUnion(.isSummaryElement)
+        default:
+            break
+        }
+    }
+    return result
+}
+
 // MARK: - UIComponentRegistry
 
 /// Registry mapping element types to SwiftUI views
@@ -41,10 +70,19 @@ public typealias ChildViewBuilder = @Sendable (UINode) -> AnyView
 /// triggering unauthorized actions. When actions are registered via `allowAction`,
 /// only those actions will be passed through to the handler.
 ///
+/// **Important**: For production use with LLM-generated UI, always configure
+/// an explicit allowlist using `allowAction(_:)` or use `secureDefault` which
+/// pre-populates the allowlist with standard actions.
+///
 /// ## Usage
 /// ```swift
-/// // Use default registry
-/// let registry = UIComponentRegistry.default
+/// // Use secure default registry (recommended for production)
+/// var registry = UIComponentRegistry.secureDefault
+///
+/// // Or use default registry and configure allowlist manually
+/// var registry = UIComponentRegistry.default
+/// registry.allowAction("submit")
+/// registry.allowAction("navigate")
 ///
 /// // Build a view for a UINode
 /// let view = registry.build(
@@ -68,7 +106,7 @@ public typealias ChildViewBuilder = @Sendable (UINode) -> AnyView
 /// registry.allowAction("submit")
 /// registry.allowAction("navigate")
 /// ```
-public struct UIComponentRegistry: Sendable {
+public struct UIComponentRegistry: @unchecked Sendable {
     /// Type-erased view builder that creates SwiftUI views from UINode data
     ///
     /// - Parameters:
@@ -89,7 +127,7 @@ public struct UIComponentRegistry: Sendable {
     /// Registered view builders by component type name
     private var builders: [String: ViewBuilder]
 
-    /// Set of allowed action names (empty = allow all)
+    /// Set of allowed action names (empty = allow all in pass-through mode)
     private var allowedActions: Set<String>
 
     // MARK: - Initialization
@@ -98,6 +136,10 @@ public struct UIComponentRegistry: Sendable {
     ///
     /// Use `register(_:builder:)` to add component view builders and
     /// `allowAction(_:)` to configure the action allowlist.
+    ///
+    /// - Note: By default, an empty allowlist means all actions pass through.
+    ///   For production use with LLM-generated UI, always configure explicit
+    ///   allowed actions or use `secureDefault`.
     public init() {
         self.builders = [:]
         self.allowedActions = []
@@ -131,9 +173,11 @@ public struct UIComponentRegistry: Sendable {
     /// through to the action handler. If no actions are registered (empty set),
     /// all actions are allowed (pass-through mode).
     ///
-    /// - Parameter action: The action name to allow
+    /// - Parameter action: The action name to allow (trimmed of whitespace)
     public mutating func allowAction(_ action: String) {
-        allowedActions.insert(action)
+        let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        allowedActions.insert(trimmed)
     }
 
     /// Allow multiple actions to be triggered by components
@@ -141,7 +185,7 @@ public struct UIComponentRegistry: Sendable {
     /// - Parameter actions: Collection of action names to allow
     public mutating func allowActions<C: Collection>(_ actions: C) where C.Element == String {
         for action in actions {
-            allowedActions.insert(action)
+            allowAction(action)
         }
     }
 
@@ -149,7 +193,8 @@ public struct UIComponentRegistry: Sendable {
     ///
     /// - Parameter action: The action name to remove
     public mutating func disallowAction(_ action: String) {
-        allowedActions.remove(action)
+        let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        allowedActions.remove(trimmed)
     }
 
     /// Clear all allowed actions (reverts to pass-through mode)
@@ -162,7 +207,8 @@ public struct UIComponentRegistry: Sendable {
     /// - Parameter action: The action name to check
     /// - Returns: True if the action is allowed (or if allowlist is empty)
     public func isActionAllowed(_ action: String) -> Bool {
-        allowedActions.isEmpty || allowedActions.contains(action)
+        let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allowedActions.isEmpty || allowedActions.contains(trimmed)
     }
 
     /// Get the set of currently allowed actions
@@ -195,16 +241,23 @@ public struct UIComponentRegistry: Sendable {
         // Capture allowedActions as value to avoid capturing self
         let allowedActionsCopy = allowedActions
 
-        // Wrap action handler with security check
+        // Wrap action handler with security check (normalizes action names)
         let secureHandler: UIActionHandler = { action in
-            let isAllowed = allowedActionsCopy.isEmpty || allowedActionsCopy.contains(action)
-            guard isAllowed else {
+            let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
                 #if DEBUG
-                print("[UIComponentRegistry] Blocked action: \(action)")
+                print("[UIComponentRegistry] Ignored empty action")
                 #endif
                 return
             }
-            actionHandler(action)
+            let isAllowed = allowedActionsCopy.isEmpty || allowedActionsCopy.contains(trimmed)
+            guard isAllowed else {
+                #if DEBUG
+                print("[UIComponentRegistry] Blocked action: \(trimmed)")
+                #endif
+                return
+            }
+            actionHandler(trimmed)
         }
 
         // Create child builder that uses THIS registry (not a snapshot)
@@ -302,10 +355,32 @@ extension UIComponentRegistry {
     /// The default registry starts with an empty action allowlist,
     /// meaning all actions are passed through. Configure security
     /// by calling `allowAction(_:)` after obtaining the registry.
+    ///
+    /// - Note: For production use with LLM-generated UI, use `secureDefault`
+    ///   or explicitly configure allowed actions.
     public static var `default`: UIComponentRegistry {
         var registry = UIComponentRegistry()
+        registerCore8Components(in: &registry)
+        return registry
+    }
 
-        // Register all Core 8 component views
+    /// Secure default registry with Core 8 component views and standard actions allowed
+    ///
+    /// This registry is pre-configured with the standard action allowlist:
+    /// - submit
+    /// - navigate
+    /// - dismiss
+    ///
+    /// Use this for production deployments with LLM-generated UI.
+    public static var secureDefault: UIComponentRegistry {
+        var registry = UIComponentRegistry()
+        registerCore8Components(in: &registry)
+        registry.allowActions(["submit", "navigate", "dismiss"])
+        return registry
+    }
+
+    /// Register all Core 8 component views in the registry
+    private static func registerCore8Components(in registry: inout UIComponentRegistry) {
         // Container views receive buildChild closure to render children
         // using the full registry (avoiding early snapshot issues)
 
@@ -355,8 +430,6 @@ extension UIComponentRegistry {
         registry.register("Spacer") { node, _, decoder, _, _ in
             GenerativeSpacerView(node: node, decoder: decoder)
         }
-
-        return registry
     }
 }
 
@@ -375,6 +448,7 @@ private struct GenerativeTextView: View {
         textView(content: content, style: style)
             .accessibilityLabel(props?.accessibilityLabel ?? content)
             .accessibilityHint(props?.accessibilityHint ?? "")
+            .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
     }
 
     @ViewBuilder
@@ -410,6 +484,7 @@ private struct GenerativeButtonView: View {
         buttonView(title: title, action: action, style: style, disabled: disabled)
             .accessibilityLabel(props?.accessibilityLabel ?? title)
             .accessibilityHint(props?.accessibilityHint ?? "")
+            .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
     }
 
     @ViewBuilder
@@ -421,6 +496,8 @@ private struct GenerativeButtonView: View {
 
         // Apply style-specific modifiers
         switch style {
+        case "primary":
+            button.buttonStyle(.borderedProminent)
         case "destructive":
             button.foregroundColor(.red)
         case "secondary":
@@ -433,6 +510,12 @@ private struct GenerativeButtonView: View {
     }
 }
 
+/// Helper struct to make UINode usable as ForEach ID
+private struct IdentifiedNode: Identifiable {
+    let node: UINode
+    var id: String { node.key }
+}
+
 /// Internal view for Card component
 private struct GenerativeCardView: View {
     let node: UINode
@@ -442,7 +525,7 @@ private struct GenerativeCardView: View {
 
     var body: some View {
         let props = try? decoder.decode(CardComponentDefinition.Props.self, from: node.propsData)
-        let childNodes = tree.children(of: node)
+        let childNodes = tree.children(of: node).map { IdentifiedNode(node: $0) }
 
         VStack(alignment: .leading, spacing: 8) {
             if let title = props?.title {
@@ -456,8 +539,8 @@ private struct GenerativeCardView: View {
                     .foregroundColor(.secondary)
             }
 
-            ForEach(Array(childNodes.enumerated()), id: \.offset) { _, childNode in
-                buildChild(childNode)
+            ForEach(childNodes) { child in
+                buildChild(child.node)
             }
         }
         .padding()
@@ -465,6 +548,7 @@ private struct GenerativeCardView: View {
         .cornerRadius(12)
         .accessibilityLabel(props?.accessibilityLabel ?? props?.title ?? "Card")
         .accessibilityHint(props?.accessibilityHint ?? "")
+        .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
         .accessibilityElement(children: .contain)
     }
 
@@ -510,6 +594,7 @@ private struct GenerativeInputView: View {
         }
         .accessibilityLabel(props?.accessibilityLabel ?? label)
         .accessibilityHint(props?.accessibilityHint ?? "")
+        .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
     }
 }
 
@@ -525,16 +610,21 @@ private struct GenerativeListView: View {
         let style = props?.style ?? .unordered
         let childNodes = tree.children(of: node)
 
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(childNodes.enumerated()), id: \.offset) { index, childNode in
-                HStack(alignment: .top, spacing: 8) {
-                    listMarker(style: style, index: index)
+        VStack(alignment: .leading, spacing: style == .plain ? 0 : 4) {
+            ForEach(Array(childNodes.enumerated()), id: \.element.key) { index, childNode in
+                if style == .plain {
                     buildChild(childNode)
+                } else {
+                    HStack(alignment: .top, spacing: 8) {
+                        listMarker(style: style, index: index)
+                        buildChild(childNode)
+                    }
                 }
             }
         }
         .accessibilityLabel(props?.accessibilityLabel ?? "List")
         .accessibilityHint(props?.accessibilityHint ?? "")
+        .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
         .accessibilityElement(children: .contain)
     }
 
@@ -566,29 +656,41 @@ private struct GenerativeImageView: View {
         let height = props?.height
         let contentMode = props?.contentMode
 
-        AsyncImage(url: URL(string: urlString)) { phase in
-            switch phase {
-            case .empty:
-                ProgressView()
-            case .success(let image):
-                imageView(image: image, contentMode: contentMode)
-            case .failure:
+        Group {
+            if let url = URL(string: urlString), !urlString.isEmpty {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                    case .success(let image):
+                        imageView(image: image, contentMode: contentMode, hasFrame: width != nil || height != nil)
+                    case .failure:
+                        Image(systemName: "photo")
+                            .foregroundColor(.secondary)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
                 Image(systemName: "photo")
                     .foregroundColor(.secondary)
-            @unknown default:
-                EmptyView()
             }
         }
         .frame(width: width.map { CGFloat($0) }, height: height.map { CGFloat($0) })
         .accessibilityLabel(props?.accessibilityLabel ?? alt)
         .accessibilityHint(props?.accessibilityHint ?? "")
+        .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
     }
 
     @ViewBuilder
-    private func imageView(image: Image, contentMode: String?) -> some View {
+    private func imageView(image: Image, contentMode: String?, hasFrame: Bool) -> some View {
         switch contentMode {
         case "fill":
-            image.resizable().scaledToFill()
+            if hasFrame {
+                image.resizable().scaledToFill().clipped()
+            } else {
+                image.resizable().scaledToFill()
+            }
         case "stretch":
             image.resizable()
         default:
@@ -615,13 +717,13 @@ private struct GenerativeStackView: View {
             switch direction {
             case .horizontal:
                 HStack(alignment: verticalAlignment(from: alignment), spacing: CGFloat(spacing)) {
-                    ForEach(Array(childNodes.enumerated()), id: \.offset) { _, childNode in
+                    ForEach(childNodes, id: \.key) { childNode in
                         buildChild(childNode)
                     }
                 }
             case .vertical:
                 VStack(alignment: horizontalAlignment(from: alignment), spacing: CGFloat(spacing)) {
-                    ForEach(Array(childNodes.enumerated()), id: \.offset) { _, childNode in
+                    ForEach(childNodes, id: \.key) { childNode in
                         buildChild(childNode)
                     }
                 }
@@ -629,6 +731,7 @@ private struct GenerativeStackView: View {
         }
         .accessibilityLabel(props?.accessibilityLabel ?? (direction == .horizontal ? "Horizontal stack" : "Vertical stack"))
         .accessibilityHint(props?.accessibilityHint ?? "")
+        .accessibilityAddTraits(accessibilityTraits(from: props?.accessibilityTraits))
         .accessibilityElement(children: .contain)
     }
 
@@ -664,10 +767,14 @@ private struct GenerativeSpacerView: View {
         let props = try? decoder.decode(SpacerComponentDefinition.Props.self, from: node.propsData)
 
         if let size = props?.size {
-            Spacer()
+            // Fixed-size spacer using Color.clear for predictable sizing
+            Color.clear
                 .frame(width: CGFloat(size), height: CGFloat(size))
+                .accessibilityHidden(true)
         } else {
+            // Flexible spacer
             Spacer()
+                .accessibilityHidden(true)
         }
     }
 }

@@ -1,14 +1,57 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-24T04:24:59.902440Z",
   "created_at": "2026-01-23T03:06:02.638243Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "build": {
+      "command": "swift build",
+      "result": "success"
+    },
+    "commits": [
+      "ae09b937561ee5ba15047b390ab0a2b014ecfd74"
+    ],
+    "files_created": [
+      "Sources/AISDK/GenerativeUI/Registry/UIComponentRegistry.swift",
+      "Tests/AISDKTests/GenerativeUI/UIComponentRegistryTests.swift"
+    ],
+    "task_id": "fn-1.42",
+    "tests": {
+      "command": "swift test --filter UIComponentRegistryTests",
+      "result": "23 tests passed",
+      "test_names": [
+        "test_default_registry_has_core8",
+        "test_default_registry_types_sorted",
+        "test_custom_component_registration",
+        "test_multiple_custom_registrations",
+        "test_registration_overwrites_existing",
+        "test_unknown_type_handled",
+        "test_hasComponent_returns_false_for_unknown",
+        "test_empty_allowlist_allows_all_actions",
+        "test_allow_action_restricts_to_allowlist",
+        "test_allow_multiple_actions",
+        "test_allowActions_collection",
+        "test_disallow_action",
+        "test_clear_allowed_actions_reverts_to_passthrough",
+        "test_action_blocked_when_not_in_allowlist",
+        "test_action_allowed_when_in_allowlist",
+        "test_action_passthrough_with_empty_allowlist",
+        "test_build_with_valid_text_node",
+        "test_buildChildren_returns_child_views",
+        "test_default_props_decoder_uses_snake_case",
+        "test_registry_is_sendable",
+        "test_action_handler_is_sendable",
+        "test_integration_render_complete_tree",
+        "test_integration_allowlist_with_catalog_actions"
+      ]
+    }
+  },
   "id": "fn-1.42",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.42.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 5.4: UIComponentRegistry",
-  "updated_at": "2026-01-23T03:06:02.638405Z"
+  "updated_at": "2026-01-24T04:25:00.103473Z"
 }
