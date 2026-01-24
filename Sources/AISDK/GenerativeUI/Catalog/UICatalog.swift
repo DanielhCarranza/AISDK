@@ -707,7 +707,7 @@ struct CardComponentDefinitionPlaceholder: UIComponentDefinition {
 }
 
 /// Input type enum for validation
-enum InputType: String, Codable, Sendable {
+public enum InputType: String, Codable, Sendable {
     case text
     case email
     case password
@@ -789,7 +789,7 @@ struct InputComponentDefinitionPlaceholder: UIComponentDefinition {
 }
 
 /// List style enum for validation
-enum ListStyle: String, Codable, Sendable {
+public enum ListStyle: String, Codable, Sendable {
     case ordered
     case unordered
     case plain
@@ -861,13 +861,13 @@ struct ImageComponentDefinitionPlaceholder: UIComponentDefinition {
 }
 
 /// Stack direction enum for validation
-enum StackDirection: String, Codable, Sendable {
+public enum StackDirection: String, Codable, Sendable {
     case horizontal
     case vertical
 }
 
 /// Stack alignment enum for validation
-enum StackAlignment: String, Codable, Sendable {
+public enum StackAlignment: String, Codable, Sendable {
     case leading
     case center
     case trailing
@@ -951,15 +951,15 @@ extension UICatalog {
     public static let core8: UICatalog = {
         var catalog = UICatalog()
 
-        // Register Core 8 components (using unchecked for internal initialization)
-        catalog.registerUnchecked(TextComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(ButtonComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(CardComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(InputComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(ListComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(ImageComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(StackComponentDefinitionPlaceholder.self)
-        catalog.registerUnchecked(SpacerComponentDefinitionPlaceholder.self)
+        // Register Core 8 components (public definitions from Core8Components.swift)
+        catalog.registerUnchecked(TextComponentDefinition.self)
+        catalog.registerUnchecked(ButtonComponentDefinition.self)
+        catalog.registerUnchecked(CardComponentDefinition.self)
+        catalog.registerUnchecked(InputComponentDefinition.self)
+        catalog.registerUnchecked(ListComponentDefinition.self)
+        catalog.registerUnchecked(ImageComponentDefinition.self)
+        catalog.registerUnchecked(StackComponentDefinition.self)
+        catalog.registerUnchecked(SpacerComponentDefinition.self)
 
         // Register common actions
         catalog.registerAction(UIActionDefinition(
