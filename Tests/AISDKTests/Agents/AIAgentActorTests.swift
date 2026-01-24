@@ -771,6 +771,212 @@ final class ObservableAgentStateTests: XCTestCase {
             _ = type(of: state)
         }
     }
+
+    // MARK: - State Stream Tests
+
+    @MainActor
+    func test_stateStream_emits_current_state_immediately() async throws {
+        // Given
+        let observableState = ObservableAgentState()
+        observableState.state = .thinking
+
+        // When
+        var receivedStates: [AgentState] = []
+        let task = Task {
+            for await state in observableState.stateStream {
+                receivedStates.append(state)
+                if receivedStates.count >= 1 {
+                    break
+                }
+            }
+        }
+
+        // Wait for subscription to receive initial state
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        task.cancel()
+
+        // Then - Should have received the current state immediately
+        XCTAssertEqual(receivedStates.count, 1)
+        XCTAssertEqual(receivedStates.first, .thinking)
+    }
+
+    @MainActor
+    func test_stateStream_emits_state_changes() async throws {
+        // Given
+        let observableState = ObservableAgentState()
+        var receivedStates: [AgentState] = []
+
+        let task = Task {
+            for await state in observableState.stateStream {
+                receivedStates.append(state)
+                if receivedStates.count >= 4 {
+                    break
+                }
+            }
+        }
+
+        // When - Wait for subscription, then change states
+        try await Task.sleep(nanoseconds: 20_000_000) // 20ms - wait for subscription
+        observableState.state = .thinking
+        try await Task.sleep(nanoseconds: 10_000_000)
+        observableState.state = .executingTool("search")
+        try await Task.sleep(nanoseconds: 10_000_000)
+        observableState.state = .idle
+
+        // Wait for task to collect states
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        task.cancel()
+
+        // Then
+        XCTAssertEqual(receivedStates.count, 4)
+        XCTAssertEqual(receivedStates[0], .idle) // initial
+        XCTAssertEqual(receivedStates[1], .thinking)
+        XCTAssertEqual(receivedStates[2], .executingTool("search"))
+        XCTAssertEqual(receivedStates[3], .idle)
+    }
+
+    @MainActor
+    func test_stateStream_supports_multiple_subscribers() async throws {
+        // Given
+        let observableState = ObservableAgentState()
+        var subscriber1States: [AgentState] = []
+        var subscriber2States: [AgentState] = []
+
+        // When - Create two subscribers
+        let task1 = Task {
+            for await state in observableState.stateStream {
+                subscriber1States.append(state)
+                if subscriber1States.count >= 2 {
+                    break
+                }
+            }
+        }
+
+        let task2 = Task {
+            for await state in observableState.stateStream {
+                subscriber2States.append(state)
+                if subscriber2States.count >= 2 {
+                    break
+                }
+            }
+        }
+
+        // Wait for subscriptions
+        try await Task.sleep(nanoseconds: 30_000_000) // 30ms
+
+        // Change state
+        observableState.state = .thinking
+
+        // Wait for tasks to collect states
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        task1.cancel()
+        task2.cancel()
+
+        // Then - Both subscribers should have received the same states
+        XCTAssertEqual(subscriber1States.count, 2)
+        XCTAssertEqual(subscriber2States.count, 2)
+        XCTAssertEqual(subscriber1States[0], .idle)
+        XCTAssertEqual(subscriber1States[1], .thinking)
+        XCTAssertEqual(subscriber2States[0], .idle)
+        XCTAssertEqual(subscriber2States[1], .thinking)
+    }
+
+    @MainActor
+    func test_stateStream_cleans_up_on_task_cancellation() async throws {
+        // Given
+        let observableState = ObservableAgentState()
+        var receivedStates: [AgentState] = []
+
+        // When - Create and cancel a subscriber
+        let task = Task {
+            for await state in observableState.stateStream {
+                receivedStates.append(state)
+                // Break after first state to avoid waiting forever
+                break
+            }
+        }
+
+        // Wait for subscription and initial state
+        try await Task.sleep(nanoseconds: 30_000_000) // 30ms
+
+        // Cancel the task
+        task.cancel()
+
+        // Wait for cleanup
+        try await Task.sleep(nanoseconds: 20_000_000) // 20ms
+
+        // Then - State changes after cancellation should not crash
+        observableState.state = .thinking
+        observableState.state = .idle
+
+        // The test passes if no crash occurs
+        XCTAssertTrue(receivedStates.count >= 1) // At least got initial state
+    }
+
+    func test_stateStream_integration_with_agent_execution() async throws {
+        // Given
+        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+            let provider = "mock"
+            let modelId = "mock-model"
+            let capabilities: LLMCapabilities = []
+            var callCount = 0
+
+            func generateText(request: AITextRequest) async throws -> AITextResult {
+                callCount += 1
+                // Simulate some processing time
+                try await Task.sleep(nanoseconds: 30_000_000) // 30ms
+                return AITextResult(
+                    text: "Response",
+                    usage: AIUsage(promptTokens: 10, completionTokens: 5),
+                    finishReason: .stop
+                )
+            }
+
+            func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.textDelta("Response"))
+                    continuation.yield(.finish(finishReason: .stop, usage: AIUsage.zero))
+                    continuation.finish()
+                }
+            }
+
+            func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error> {
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        let model = MockLanguageModel()
+        let agent = AIAgentActor(model: model)
+        var observedStates: [AgentState] = []
+
+        // When - Subscribe to state stream and execute
+        let streamTask = Task {
+            for await state in agent.observableState.stateStream {
+                observedStates.append(state)
+                // Stop after seeing idle again (execution complete) or after max states
+                if (observedStates.count > 1 && state == .idle) || observedStates.count >= 5 {
+                    break
+                }
+            }
+        }
+
+        // Wait for subscription
+        try await Task.sleep(nanoseconds: 30_000_000) // 30ms
+
+        // Execute agent
+        _ = try await agent.execute(messages: [.user("Hello")])
+
+        // Wait for stream to receive final state
+        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        streamTask.cancel()
+
+        // Then - Should have observed state transitions
+        XCTAssertGreaterThanOrEqual(observedStates.count, 2) // At least initial idle + thinking
+        XCTAssertEqual(observedStates.first, .idle) // Initial state
+        XCTAssertTrue(observedStates.contains(.thinking)) // Saw thinking state
+    }
 }
 
 // MARK: - Streaming Tests

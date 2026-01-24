@@ -750,10 +750,35 @@ public struct AIAgentResult: Sendable {
 ///
 /// This class bridges actor-isolated state to SwiftUI's observation system.
 /// All properties are MainActor-isolated for safe UI access.
+///
+/// In addition to SwiftUI's `@Observable` integration, this class provides an
+/// `AsyncStream<AgentState>` via the `stateStream` property for reactive programming
+/// patterns outside of SwiftUI contexts.
+///
+/// ## Usage
+/// ```swift
+/// // SwiftUI observation
+/// @MainActor
+/// var body: some View {
+///     Text(agent.observableState.state.statusMessage)
+/// }
+///
+/// // Async stream subscription
+/// Task {
+///     for await state in agent.observableState.stateStream {
+///         print("State changed to: \(state)")
+///     }
+/// }
+/// ```
 @Observable
 public final class ObservableAgentState: @unchecked Sendable {
     /// Current state of the agent
-    @MainActor public internal(set) var state: AgentState = .idle
+    @MainActor public internal(set) var state: AgentState = .idle {
+        didSet {
+            // Broadcast state change to all subscribers
+            broadcastState(state)
+        }
+    }
 
     /// Current step index in the agent loop
     @MainActor public internal(set) var currentStep: Int = 0
@@ -764,7 +789,91 @@ public final class ObservableAgentState: @unchecked Sendable {
     /// Whether the agent is currently processing
     @MainActor public internal(set) var isProcessing: Bool = false
 
+    // MARK: - State Stream Management
+
+    /// Lock for thread-safe subscriber management
+    private let subscribersLock = NSLock()
+
+    /// Active stream continuations for state updates
+    private var subscribers: [UUID: AsyncStream<AgentState>.Continuation] = [:]
+
     public init() {}
+
+    // MARK: - State Stream
+
+    /// Creates an async stream that emits agent state changes
+    ///
+    /// The stream emits the current state immediately upon subscription, then
+    /// emits each subsequent state change. The stream completes when the
+    /// `ObservableAgentState` is deallocated.
+    ///
+    /// Multiple subscribers can listen concurrently, each receiving their own
+    /// copy of state updates.
+    ///
+    /// - Returns: An `AsyncStream<AgentState>` that yields state changes
+    ///
+    /// ## Example
+    /// ```swift
+    /// for await state in observableState.stateStream {
+    ///     switch state {
+    ///     case .idle:
+    ///         print("Agent is idle")
+    ///     case .thinking:
+    ///         print("Agent is thinking...")
+    ///     case .executingTool(let name):
+    ///         print("Executing tool: \(name)")
+    ///     case .responding:
+    ///         print("Agent is responding")
+    ///     case .error(let error):
+    ///         print("Error: \(error.detailedDescription)")
+    ///     }
+    /// }
+    /// ```
+    public var stateStream: AsyncStream<AgentState> {
+        let subscriberId = UUID()
+
+        return AsyncStream { continuation in
+            // Register subscriber
+            self.subscribersLock.lock()
+            self.subscribers[subscriberId] = continuation
+            self.subscribersLock.unlock()
+
+            // Emit current state immediately
+            Task { @MainActor in
+                continuation.yield(self.state)
+            }
+
+            // Set up cleanup on termination
+            continuation.onTermination = { @Sendable _ in
+                self.subscribersLock.lock()
+                self.subscribers.removeValue(forKey: subscriberId)
+                self.subscribersLock.unlock()
+            }
+        }
+    }
+
+    /// Broadcast state change to all active subscribers
+    private func broadcastState(_ newState: AgentState) {
+        subscribersLock.lock()
+        let activeSubscribers = subscribers.values
+        subscribersLock.unlock()
+
+        for continuation in activeSubscribers {
+            continuation.yield(newState)
+        }
+    }
+
+    deinit {
+        // Finish all active streams when deallocated
+        subscribersLock.lock()
+        let activeSubscribers = subscribers.values
+        subscribers.removeAll()
+        subscribersLock.unlock()
+
+        for continuation in activeSubscribers {
+            continuation.finish()
+        }
+    }
 }
 
 // MARK: - AIOperation
