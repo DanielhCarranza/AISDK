@@ -900,14 +900,14 @@ final class UICatalogTests: XCTestCase {
         XCTAssertNoThrow(try catalog.validate(type: "Text", propsData: propsData))
     }
 
-    func testTextInvalidAccessibilityTrait() {
+    func testTextEmptyAccessibilityTrait() {
         let catalog = UICatalog.core8
 
-        // Invalid accessibility trait
+        // Empty accessibility trait should be rejected
         let propsJSON = """
         {
             "content": "Hello",
-            "accessibilityTraits": ["invalid_trait"]
+            "accessibilityTraits": ["button", "", "link"]
         }
         """
         let propsData = Data(propsJSON.utf8)
@@ -923,6 +923,20 @@ final class UICatalogTests: XCTestCase {
                 XCTFail("Expected invalidPropValue error, got \(validationError)")
             }
         }
+    }
+
+    func testTextCustomAccessibilityTraitsAllowed() throws {
+        let catalog = UICatalog.core8
+
+        // Custom/non-standard trait strings should be allowed (flexible for platform variations)
+        let propsJSON = """
+        {
+            "content": "Hello",
+            "accessibilityTraits": ["button", "custom_trait", "link"]
+        }
+        """
+        let propsData = Data(propsJSON.utf8)
+        XCTAssertNoThrow(try catalog.validate(type: "Text", propsData: propsData))
     }
 
     func testButtonAccessibilityProps() throws {
@@ -1238,11 +1252,11 @@ final class UICatalogTests: XCTestCase {
 
     func testListPropsInitialization() {
         let props = ListComponentDefinition.Props(
-            style: .ordered,
+            style: UIListStyle.ordered,
             accessibilityLabel: "Ordered list"
         )
 
-        XCTAssertEqual(props.style, .ordered)
+        XCTAssertEqual(props.style, UIListStyle.ordered)
         XCTAssertEqual(props.accessibilityLabel, "Ordered list")
     }
 
