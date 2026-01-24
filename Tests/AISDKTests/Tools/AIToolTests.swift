@@ -226,7 +226,8 @@ final class AIToolTests: XCTestCase {
             )
             XCTFail("Expected error to be thrown")
         } catch let error as AISDKErrorV2 {
-            XCTAssertEqual(error.code, .toolExecutionFailed)
+            // Argument parsing errors should use invalidToolArguments
+            XCTAssertEqual(error.code, .invalidToolArguments)
             XCTAssertTrue(error.message.contains("Failed to decode"))
         } catch {
             XCTFail("Unexpected error type: \(error)")
@@ -241,7 +242,8 @@ final class AIToolTests: XCTestCase {
             )
             XCTFail("Expected error to be thrown")
         } catch let error as AISDKErrorV2 {
-            XCTAssertEqual(error.code, .toolExecutionFailed)
+            // Argument parsing errors should use invalidToolArguments
+            XCTAssertEqual(error.code, .invalidToolArguments)
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
@@ -275,6 +277,43 @@ final class AIToolTests: XCTestCase {
             XCTAssertTrue(error.message.contains("slow_tool"))
         } catch {
             XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func test_AIToolExecutor_decodesSnakeCaseKeys() async throws {
+        // Test that snake_case keys are automatically converted to camelCase
+        // SlowTool.SlowArguments has `delaySeconds` which should accept `delay_seconds`
+        let result = try await AIToolExecutor.execute(
+            SlowTool.self,
+            arguments: #"{"delay_seconds": 0.001}"#  // snake_case should work
+        )
+        XCTAssertTrue(result.content.contains("0.001"))
+    }
+
+    func test_AIToolExecutor_handlesEmptyArguments() async throws {
+        // FailingTool takes empty arguments - verify empty string works
+        do {
+            _ = try await AIToolExecutor.execute(
+                FailingTool.self,
+                arguments: ""  // Empty string should be treated as {}
+            )
+            // FailingTool will throw, but we expect it to parse successfully first
+        } catch let error as AISDKErrorV2 {
+            // Should get toolExecutionFailed from the tool, not invalidToolArguments from parsing
+            XCTAssertEqual(error.code, .toolExecutionFailed)
+        }
+    }
+
+    func test_AIToolExecutor_handlesWhitespaceArguments() async throws {
+        // Verify whitespace-only string is treated as {}
+        do {
+            _ = try await AIToolExecutor.execute(
+                FailingTool.self,
+                arguments: "   \n\t  "  // Whitespace should be treated as {}
+            )
+        } catch let error as AISDKErrorV2 {
+            // Should get toolExecutionFailed from the tool, not invalidToolArguments from parsing
+            XCTAssertEqual(error.code, .toolExecutionFailed)
         }
     }
 
