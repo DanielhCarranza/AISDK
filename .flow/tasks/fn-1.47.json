@@ -1,14 +1,23 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-24T07:50:02.189556Z",
   "created_at": "2026-01-23T03:06:10.530703Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "c03a535da83d4c99a6aab98144db1b734bb919b6"
+    ],
+    "prs": [],
+    "tests": [
+      "swift test --filter UISnapshotTests"
+    ]
+  },
   "id": "fn-1.47",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.47.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 6.2: UI Snapshot Tests",
-  "updated_at": "2026-01-23T03:06:10.530884Z"
+  "updated_at": "2026-01-24T07:53:10.900962Z"
 }
