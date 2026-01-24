@@ -84,17 +84,14 @@ public struct TextComponentDefinition: UIComponentDefinition {
             }
         }
 
-        // Validate accessibility traits if provided
+        // Validate accessibility traits if provided (check for non-empty strings)
         if let traits = props.accessibilityTraits {
-            let validTraits = ["header", "link", "staticText", "button", "image", "adjustable", "searchField"]
-            for trait in traits {
-                if !validTraits.contains(trait) {
-                    throw UIComponentValidationError.invalidPropValue(
-                        component: type,
-                        prop: "accessibilityTraits",
-                        reason: "Unknown trait '\(trait)'. Valid traits: \(validTraits.joined(separator: ", "))"
-                    )
-                }
+            for trait in traits where trait.trimmingCharacters(in: .whitespaces).isEmpty {
+                throw UIComponentValidationError.invalidPropValue(
+                    component: type,
+                    prop: "accessibilityTraits",
+                    reason: "Accessibility trait cannot be empty"
+                )
             }
         }
     }
@@ -185,17 +182,14 @@ public struct ButtonComponentDefinition: UIComponentDefinition {
             }
         }
 
-        // Validate accessibility traits if provided
+        // Validate accessibility traits if provided (check for non-empty strings)
         if let traits = props.accessibilityTraits {
-            let validTraits = ["button", "link", "header"]
-            for trait in traits {
-                if !validTraits.contains(trait) {
-                    throw UIComponentValidationError.invalidPropValue(
-                        component: type,
-                        prop: "accessibilityTraits",
-                        reason: "Unknown trait '\(trait)'. Valid button traits: \(validTraits.joined(separator: ", "))"
-                    )
-                }
+            for trait in traits where trait.trimmingCharacters(in: .whitespaces).isEmpty {
+                throw UIComponentValidationError.invalidPropValue(
+                    component: type,
+                    prop: "accessibilityTraits",
+                    reason: "Accessibility trait cannot be empty"
+                )
             }
         }
     }
@@ -379,11 +373,19 @@ public struct InputComponentDefinition: UIComponentDefinition {
         try validate(props: props)
 
         // Catalog-aware validation: check validator exists in registered validators
-        if let validation = props.validation, !validation.isEmpty {
-            if !validators.contains(validation) {
+        if let validation = props.validation {
+            let trimmedValidation = validation.trimmingCharacters(in: .whitespaces)
+            if trimmedValidation.isEmpty {
+                throw UIComponentValidationError.invalidPropValue(
+                    component: type,
+                    prop: "validation",
+                    reason: "Validation cannot be empty when specified"
+                )
+            }
+            if !validators.contains(trimmedValidation) {
                 throw UIComponentValidationError.unknownValidator(
                     component: type,
-                    validator: validation
+                    validator: trimmedValidation
                 )
             }
         }
@@ -396,7 +398,7 @@ public struct InputComponentDefinition: UIComponentDefinition {
 public struct ListComponentDefinition: UIComponentDefinition {
     public struct Props: Codable, Sendable, AccessibilityProps {
         /// List style: "ordered", "unordered", "plain"
-        public let style: ListStyle?
+        public let style: UIListStyle?
 
         /// Accessibility label for screen readers
         public let accessibilityLabel: String?
@@ -408,7 +410,7 @@ public struct ListComponentDefinition: UIComponentDefinition {
         public let accessibilityTraits: [String]?
 
         public init(
-            style: ListStyle? = nil,
+            style: UIListStyle? = nil,
             accessibilityLabel: String? = nil,
             accessibilityHint: String? = nil,
             accessibilityTraits: [String]? = nil
@@ -452,7 +454,7 @@ public struct ImageComponentDefinition: UIComponentDefinition {
         /// Content mode: "fit", "fill", "stretch"
         public let contentMode: String?
 
-        /// Accessibility label for screen readers (defaults to alt if not provided)
+        /// Accessibility label for screen readers (renderers may use alt as fallback)
         public let accessibilityLabel: String?
 
         /// Accessibility hint describing the result of the action
