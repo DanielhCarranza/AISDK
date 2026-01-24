@@ -1,0 +1,1 @@
+Created public Core 8 Component Definitions for Generative UI with comprehensive accessibility support. All 8 components (Text, Button, Card, Input, List, Image, Stack, Spacer) now have full accessibility props (label, hint, traits) and style validation. Updated UICatalog to use new public definitions. Test coverage increased from 52 to 78 tests.

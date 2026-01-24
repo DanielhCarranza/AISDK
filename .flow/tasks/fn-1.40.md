@@ -28,28 +28,8 @@ Each component includes accessibility props:
 - [x] Props struct initialization tests for all components
 
 ## Done summary
-Created `Core8Components.swift` with public component definitions for all 8 core components:
-
-1. **TextComponentDefinition**: text content with style validation (body, headline, subheadline, caption, title) and accessibility trait validation
-2. **ButtonComponentDefinition**: interactive button with style validation (primary, secondary, destructive, plain) and catalog-aware action validation
-3. **CardComponentDefinition**: container with style validation (elevated, outlined, filled)
-4. **InputComponentDefinition**: text input with InputType enum and catalog-aware validator validation
-5. **ListComponentDefinition**: list container with ListStyle enum
-6. **ImageComponentDefinition**: image display with contentMode validation (fit, fill, stretch)
-7. **StackComponentDefinition**: layout container with StackDirection and StackAlignment enums
-8. **SpacerComponentDefinition**: flexible spacing element
-
-Updated UICatalog.swift to:
-- Use new public component definitions instead of internal placeholders
-- Made InputType, ListStyle, StackDirection, StackAlignment enums public
-
-Added comprehensive test coverage:
-- Accessibility props tests for all components
-- Style validation tests
-- Props struct initialization tests
-- 78 total tests passing (up from 52)
-
+Created public Core 8 Component Definitions for Generative UI with comprehensive accessibility support. All 8 components (Text, Button, Card, Input, List, Image, Stack, Spacer) now have full accessibility props (label, hint, traits) and style validation. Updated UICatalog to use new public definitions. Test coverage increased from 52 to 78 tests.
 ## Evidence
-- Commits: (pending)
-- Tests: swift test --filter UICatalogTests - 78 passed, 0 failed
+- Commits: df1265e953c929ff43a0d951e66eff7dcbca2519
+- Tests: command, passed, failed
 - PRs:

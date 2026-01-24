@@ -35,13 +35,30 @@ private func validateRequiredString(
     }
 }
 
+/// Helper to validate that a string has no leading/trailing whitespace
+/// Use this for identifiers that must match registry keys exactly
+private func validateNoSurroundingWhitespace(
+    _ value: String,
+    prop: String,
+    component: String
+) throws {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if value != trimmed {
+        throw UIComponentValidationError.invalidPropValue(
+            component: component,
+            prop: prop,
+            reason: "\(prop.capitalized) cannot have leading or trailing whitespace"
+        )
+    }
+}
+
 /// Helper to validate accessibility traits (check for non-empty strings)
 private func validateAccessibilityTraits(
     _ traits: [String]?,
     component: String
 ) throws {
     guard let traits else { return }
-    for trait in traits where trait.trimmingCharacters(in: .whitespaces).isEmpty {
+    for trait in traits where trait.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         throw UIComponentValidationError.invalidPropValue(
             component: component,
             prop: "accessibilityTraits",
