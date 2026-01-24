@@ -7,9 +7,8 @@ TBD
 - [ ] TBD
 
 ## Done summary
-TBD
-
+Implemented GenerativeUIViewModel with true throttle batching (not debounce), MainActor-isolated state, off-main JSON parsing via Task.detached, proper subscription management, and CancellationError handling. 48 comprehensive tests covering all edge cases.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 0e43340
+- Tests: swift test --filter GenerativeUIViewModelTests (48 tests passed)
 - PRs:
