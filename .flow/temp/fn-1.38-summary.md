@@ -1,25 +1,3 @@
-# fn-1.38 Task 4.5: AgentState Observable
-
-## Description
-Add an `AsyncStream<AgentState>` to ObservableAgentState for reactive UI integration. This allows consumers to subscribe to real-time state updates from agents without relying on SwiftUI's @Observable mechanism. The stream provides a reactive way to observe agent state changes programmatically.
-
-Key components:
-- `stateStream` property on ObservableAgentState returning AsyncStream<AgentState>
-- Thread-safe state broadcasting using SafeAsyncStream patterns
-- Proper cleanup when stream consumers stop listening
-- Integration with existing state update paths in AIAgentActor
-
-## Acceptance
-- [ ] ObservableAgentState has `stateStream` property returning AsyncStream<AgentState>
-- [ ] Stream emits current state immediately upon subscription
-- [ ] Stream emits state changes as they occur during agent execution
-- [ ] Multiple subscribers can listen concurrently
-- [ ] Stream properly terminates when observableState is deallocated
-- [ ] No memory leaks from stream subscriptions
-- [ ] Unit tests verify stream behavior
-- [ ] Code compiles without errors
-
-## Done summary
 # fn-1.38 Task 4.5: AgentState Observable - Done Summary
 
 ## Implementation
@@ -53,7 +31,3 @@ Added `stateStream` property to `ObservableAgentState` returning `AsyncStream<Ag
 - [x] No memory leaks from stream subscriptions
 - [x] Unit tests verify stream behavior
 - [x] Code compiles without errors
-## Evidence
-- Commits: 050bb9d
-- Tests: test_stateStream_emits_current_state_immediately, test_stateStream_emits_state_changes, test_stateStream_supports_multiple_subscribers, test_stateStream_cleans_up_on_task_cancellation, test_stateStream_integration_with_agent_execution
-- PRs:

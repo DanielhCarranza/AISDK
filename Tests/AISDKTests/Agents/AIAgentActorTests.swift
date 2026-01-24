@@ -885,19 +885,19 @@ final class ObservableAgentStateTests: XCTestCase {
     func test_stateStream_cleans_up_on_task_cancellation() async throws {
         // Given
         let observableState = ObservableAgentState()
-        var receivedStates: [AgentState] = []
+        let receivedFirstState = expectation(description: "Received first state")
 
         // When - Create and cancel a subscriber
         let task = Task {
-            for await state in observableState.stateStream {
-                receivedStates.append(state)
+            for await _ in observableState.stateStream {
+                receivedFirstState.fulfill()
                 // Break after first state to avoid waiting forever
                 break
             }
         }
 
-        // Wait for subscription and initial state
-        try await Task.sleep(nanoseconds: 30_000_000) // 30ms
+        // Wait for subscription to receive first state
+        await fulfillment(of: [receivedFirstState], timeout: 1.0)
 
         // Cancel the task
         task.cancel()
@@ -910,7 +910,38 @@ final class ObservableAgentStateTests: XCTestCase {
         observableState.state = .idle
 
         // The test passes if no crash occurs
-        XCTAssertTrue(receivedStates.count >= 1) // At least got initial state
+    }
+
+    func test_stateStream_terminates_when_observableState_deallocated() async throws {
+        // Given - Use a class to track deallocation
+        let streamTerminated = expectation(description: "Stream should terminate")
+
+        // Create observableState in a scope so it can be deallocated
+        var stream: AsyncStream<AgentState>?
+        autoreleasepool {
+            let observableState = ObservableAgentState()
+            stream = observableState.stateStream
+        }
+
+        // When - Start iterating and wait for termination
+        let iterationTask = Task {
+            guard let stream = stream else { return }
+            for await _ in stream {
+                // Just iterate
+            }
+            // Stream finished (either naturally or due to deallocation)
+            streamTerminated.fulfill()
+        }
+
+        // Give some time for iteration to start
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+
+        // Force cleanup
+        stream = nil
+
+        // Then - Stream should terminate (with timeout to avoid hanging)
+        await fulfillment(of: [streamTerminated], timeout: 2.0)
+        iterationTask.cancel()
     }
 
     func test_stateStream_integration_with_agent_execution() async throws {
@@ -947,32 +978,50 @@ final class ObservableAgentStateTests: XCTestCase {
             }
         }
 
+        // Thread-safe state collection actor
+        actor StateCollector {
+            var states: [AgentState] = []
+
+            func append(_ state: AgentState) {
+                states.append(state)
+            }
+
+            func getStates() -> [AgentState] {
+                return states
+            }
+
+            var count: Int {
+                return states.count
+            }
+        }
+
         let model = MockLanguageModel()
         let agent = AIAgentActor(model: model)
-        var observedStates: [AgentState] = []
+        let stateCollector = StateCollector()
+        let collectedEnoughStates = expectation(description: "Collected enough states")
 
         // When - Subscribe to state stream and execute
         let streamTask = Task {
             for await state in agent.observableState.stateStream {
-                observedStates.append(state)
+                await stateCollector.append(state)
+                let currentCount = await stateCollector.count
                 // Stop after seeing idle again (execution complete) or after max states
-                if (observedStates.count > 1 && state == .idle) || observedStates.count >= 5 {
+                if (currentCount > 1 && state == .idle) || currentCount >= 5 {
+                    collectedEnoughStates.fulfill()
                     break
                 }
             }
         }
 
-        // Wait for subscription
-        try await Task.sleep(nanoseconds: 30_000_000) // 30ms
-
         // Execute agent
         _ = try await agent.execute(messages: [.user("Hello")])
 
-        // Wait for stream to receive final state
-        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        // Wait for stream to collect states with proper expectation
+        await fulfillment(of: [collectedEnoughStates], timeout: 2.0)
         streamTask.cancel()
 
         // Then - Should have observed state transitions
+        let observedStates = await stateCollector.getStates()
         XCTAssertGreaterThanOrEqual(observedStates.count, 2) // At least initial idle + thinking
         XCTAssertEqual(observedStates.first, .idle) // Initial state
         XCTAssertTrue(observedStates.contains(.thinking)) // Saw thinking state
