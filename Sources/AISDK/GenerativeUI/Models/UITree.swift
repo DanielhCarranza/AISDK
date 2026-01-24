@@ -8,6 +8,15 @@
 
 import Foundation
 
+// MARK: - Constants
+
+private enum TreeLimits {
+    /// Maximum tree depth to prevent stack overflow from malicious input
+    static let maxDepth = 100
+    /// Maximum number of nodes to prevent resource exhaustion
+    static let maxNodes = 10_000
+}
+
 // MARK: - UINode
 
 /// Represents a single node in the UI tree
@@ -27,6 +36,9 @@ public struct UINode: Sendable, Equatable {
     /// Keys of child nodes (only valid for container components)
     public let childKeys: [String]
 
+    /// Whether the "children" field was present in the JSON (even if empty)
+    public let hadChildrenField: Bool
+
     /// Creates a new UI node
     ///
     /// - Parameters:
@@ -34,16 +46,19 @@ public struct UINode: Sendable, Equatable {
     ///   - type: Component type identifier
     ///   - propsData: Raw JSON data for component props
     ///   - childKeys: Array of child node keys
+    ///   - hadChildrenField: Whether the children field was present in JSON
     public init(
         key: String,
         type: String,
         propsData: Data,
-        childKeys: [String] = []
+        childKeys: [String] = [],
+        hadChildrenField: Bool = false
     ) {
         self.key = key
         self.type = type
         self.propsData = propsData
         self.childKeys = childKeys
+        self.hadChildrenField = hadChildrenField
     }
 }
 
@@ -72,11 +87,23 @@ public enum UITreeError: Error, Sendable {
     /// Component type is not registered in the catalog
     case unknownComponentType(key: String, type: String)
 
-    /// Component does not support children but has children array
+    /// Component does not support children but has children field
     case childrenNotAllowed(key: String, type: String)
 
     /// Component validation failed
     case validationFailed(key: String, error: UIComponentValidationError)
+
+    /// Node is referenced by multiple parents (not a tree)
+    case multipleParents(key: String)
+
+    /// Tree exceeds maximum depth limit
+    case depthExceeded(maxAllowed: Int)
+
+    /// Tree exceeds maximum node count
+    case nodeCountExceeded(maxAllowed: Int)
+
+    /// Node is not reachable from root
+    case unreachableNode(key: String)
 }
 
 extension UITreeError: LocalizedError {
@@ -100,6 +127,14 @@ extension UITreeError: LocalizedError {
             return "Element '\(key)' of type '\(type)' does not support children"
         case .validationFailed(let key, let error):
             return "Element '\(key)' validation failed: \(error.localizedDescription)"
+        case .multipleParents(let key):
+            return "Element '\(key)' is referenced by multiple parents (must be a tree, not a DAG)"
+        case .depthExceeded(let maxAllowed):
+            return "Tree depth exceeds maximum allowed (\(maxAllowed))"
+        case .nodeCountExceeded(let maxAllowed):
+            return "Tree node count exceeds maximum allowed (\(maxAllowed))"
+        case .unreachableNode(let key):
+            return "Element '\(key)' is not reachable from the root"
         }
     }
 }
@@ -110,7 +145,7 @@ extension UITreeError: LocalizedError {
 ///
 /// `UITree` is the parsed representation of LLM-generated UI in the json-render pattern.
 /// It provides:
-/// - Structural validation (valid keys, no cycles, children correctness)
+/// - Structural validation (valid keys, no cycles, true tree structure, children correctness)
 /// - Component type validation against a `UICatalog`
 /// - Props validation for each component
 ///
@@ -145,6 +180,11 @@ extension UITreeError: LocalizedError {
 /// let root = tree.rootNode
 /// let children = tree.children(of: root)
 /// ```
+///
+/// ## Constraints
+/// - The structure must be a true tree (each node has exactly one parent, except root)
+/// - Maximum depth: 100 levels
+/// - Maximum nodes: 10,000
 public struct UITree: Sendable, Equatable {
     /// Key of the root element
     public let rootKey: String
@@ -173,8 +213,8 @@ public struct UITree: Sendable, Equatable {
     /// - Parameters:
     ///   - data: JSON data in json-render format
     ///   - catalog: Optional catalog for component validation
-    /// - Returns: A validated UITree
-    /// - Throws: `UITreeError` for structural issues, `UIComponentValidationError` for props issues
+    /// - Returns: A validated UITree containing only reachable nodes from root
+    /// - Throws: `UITreeError` for structural or validation issues
     public static func parse(
         from data: Data,
         validatingWith catalog: UICatalog? = nil
@@ -210,8 +250,13 @@ public struct UITree: Sendable, Equatable {
             throw UITreeError.invalidStructure(reason: "Missing or invalid 'elements' field")
         }
 
+        // Check node count limit
+        if elements.count > TreeLimits.maxNodes {
+            throw UITreeError.nodeCountExceeded(maxAllowed: TreeLimits.maxNodes)
+        }
+
         // Parse all nodes
-        var nodes: [String: UINode] = [:]
+        var allNodes: [String: UINode] = [:]
 
         for (key, element) in elements {
             // Validate key
@@ -222,7 +267,7 @@ public struct UITree: Sendable, Equatable {
             if key != trimmedKey {
                 throw UITreeError.invalidNodeKey(key: key)
             }
-            if nodes[key] != nil {
+            if allNodes[key] != nil {
                 throw UITreeError.duplicateKey(key: key)
             }
 
@@ -231,20 +276,31 @@ public struct UITree: Sendable, Equatable {
                 throw UITreeError.invalidStructure(reason: "Element '\(key)' missing 'type' field")
             }
 
-            // Extract props (default to empty object)
-            let props = element["props"] as? [String: Any] ?? [:]
+            // Extract props - require it to be an object if present
             let propsData: Data
-            do {
-                propsData = try JSONSerialization.data(withJSONObject: props)
-            } catch {
-                throw UITreeError.invalidStructure(
-                    reason: "Element '\(key)' has invalid props: \(error.localizedDescription)"
-                )
+            if let propsValue = element["props"] {
+                guard let props = propsValue as? [String: Any] else {
+                    throw UITreeError.invalidStructure(
+                        reason: "Element '\(key)' has invalid 'props' field (must be an object)"
+                    )
+                }
+                do {
+                    propsData = try JSONSerialization.data(withJSONObject: props)
+                } catch {
+                    throw UITreeError.invalidStructure(
+                        reason: "Element '\(key)' has invalid props: \(error.localizedDescription)"
+                    )
+                }
+            } else {
+                // Default to empty object when props is absent
+                propsData = Data("{}".utf8)
             }
 
-            // Extract children (default to empty array)
+            // Extract children - track whether field was present
             let childKeys: [String]
+            let hadChildrenField: Bool
             if let children = element["children"] {
+                hadChildrenField = true
                 guard let childArray = children as? [String] else {
                     throw UITreeError.invalidStructure(
                         reason: "Element '\(key)' has invalid 'children' field (must be array of strings)"
@@ -252,27 +308,29 @@ public struct UITree: Sendable, Equatable {
                 }
                 childKeys = childArray
             } else {
+                hadChildrenField = false
                 childKeys = []
             }
 
-            nodes[key] = UINode(
+            allNodes[key] = UINode(
                 key: key,
                 type: type,
                 propsData: propsData,
-                childKeys: childKeys
+                childKeys: childKeys,
+                hadChildrenField: hadChildrenField
             )
         }
 
         // Validate root exists
-        guard nodes[rootKey] != nil else {
+        guard allNodes[rootKey] != nil else {
             throw UITreeError.rootNotFound(key: rootKey)
         }
 
-        // Validate all child references and check for cycles
-        try validateReferences(rootKey: rootKey, nodes: nodes)
+        // Validate tree structure and get reachable nodes
+        let reachableNodes = try validateAndPruneTree(rootKey: rootKey, allNodes: allNodes)
 
-        // Create tree
-        let tree = UITree(rootKey: rootKey, nodes: nodes)
+        // Create tree with only reachable nodes
+        let tree = UITree(rootKey: rootKey, nodes: reachableNodes)
 
         // Validate against catalog if provided
         if let catalog {
@@ -282,72 +340,100 @@ public struct UITree: Sendable, Equatable {
         return tree
     }
 
-    /// Validate all node references and detect cycles
-    private static func validateReferences(
+    /// Validate tree structure and return only reachable nodes
+    /// Uses iterative traversal to avoid stack overflow
+    private static func validateAndPruneTree(
         rootKey: String,
-        nodes: [String: UINode]
-    ) throws {
-        // Track visited nodes to detect cycles
+        allNodes: [String: UINode]
+    ) throws -> [String: UINode] {
+        var reachableNodes: [String: UINode] = [:]
         var visited: Set<String> = []
+
+        // Iterative DFS using explicit stack
+        // Stack entries: (key, parentKey, depth, phase)
+        // phase 0 = entering, phase 1 = exiting (after children processed)
+        var stack: [(key: String, parentKey: String?, depth: Int, phase: Int)] = [(rootKey, nil, 0, 0)]
         var inStack: Set<String> = []
 
-        func visit(_ key: String, parentKey: String?) throws {
-            // Check if node exists
-            guard let node = nodes[key] else {
-                if let parent = parentKey {
-                    throw UITreeError.childNotFound(parentKey: parent, childKey: key)
-                } else {
-                    throw UITreeError.rootNotFound(key: key)
+        while !stack.isEmpty {
+            var entry = stack.removeLast()
+
+            if entry.phase == 0 {
+                // Entering phase
+                let key = entry.key
+
+                // Check if node exists
+                guard let node = allNodes[key] else {
+                    if let parent = entry.parentKey {
+                        throw UITreeError.childNotFound(parentKey: parent, childKey: key)
+                    } else {
+                        throw UITreeError.rootNotFound(key: key)
+                    }
                 }
+
+                // Check for cycle
+                if inStack.contains(key) {
+                    throw UITreeError.circularReference(key: key)
+                }
+
+                // Check for multiple parents (DAG detection)
+                if visited.contains(key) {
+                    throw UITreeError.multipleParents(key: key)
+                }
+
+                // Check depth limit
+                if entry.depth > TreeLimits.maxDepth {
+                    throw UITreeError.depthExceeded(maxAllowed: TreeLimits.maxDepth)
+                }
+
+                inStack.insert(key)
+                reachableNodes[key] = node
+
+                // Push exit phase
+                entry.phase = 1
+                stack.append(entry)
+
+                // Push children in reverse order (so they're processed in order)
+                for childKey in node.childKeys.reversed() {
+                    stack.append((childKey, key, entry.depth + 1, 0))
+                }
+            } else {
+                // Exiting phase
+                inStack.remove(entry.key)
+                visited.insert(entry.key)
             }
-
-            // Check for cycle
-            if inStack.contains(key) {
-                throw UITreeError.circularReference(key: key)
-            }
-
-            // Skip if already fully visited
-            if visited.contains(key) {
-                return
-            }
-
-            inStack.insert(key)
-
-            // Visit children
-            for childKey in node.childKeys {
-                try visit(childKey, parentKey: key)
-            }
-
-            inStack.remove(key)
-            visited.insert(key)
         }
 
-        try visit(rootKey, parentKey: nil)
+        return reachableNodes
     }
 
     // MARK: - Validation
 
     /// Validate all nodes against a catalog
     ///
+    /// Validates nodes in deterministic order (depth-first from root).
+    ///
     /// - Parameter catalog: The catalog to validate against
     /// - Throws: `UITreeError` if any node fails validation
     public func validate(with catalog: UICatalog) throws {
-        for (key, node) in nodes {
+        // Validate in deterministic order (depth-first from root)
+        for node in allNodes() {
             // Check component type exists
             guard let definition = catalog.component(forType: node.type) else {
-                throw UITreeError.unknownComponentType(key: key, type: node.type)
+                throw UITreeError.unknownComponentType(key: node.key, type: node.type)
             }
 
-            // Check children are allowed
-            if !node.childKeys.isEmpty && !definition.hasChildren {
-                throw UITreeError.childrenNotAllowed(key: key, type: node.type)
+            // Check children field is not present for leaf components
+            // Per the prompt: "must omit the children field"
+            if !definition.hasChildren && node.hadChildrenField {
+                throw UITreeError.childrenNotAllowed(key: node.key, type: node.type)
             }
 
             // Validate props
             do {
                 try catalog.validate(type: node.type, propsData: node.propsData)
             } catch let error as UIComponentValidationError {
-                throw UITreeError.validationFailed(key: key, error: error)
+                throw UITreeError.validationFailed(key: node.key, error: error)
             }
         }
     }
@@ -372,19 +458,30 @@ public struct UITree: Sendable, Equatable {
 
     /// Traverse the tree depth-first, calling the visitor for each node
     ///
+    /// Uses iterative traversal to avoid stack overflow on deep trees.
+    /// Each node is visited exactly once.
+    ///
     /// - Parameters:
     ///   - visitor: Closure called for each node with the node and its depth
     public func traverse(_ visitor: (UINode, Int) -> Void) {
-        func visit(_ node: UINode, depth: Int) {
+        // Iterative DFS with explicit stack
+        var stack: [(node: UINode, depth: Int)] = [(rootNode, 0)]
+
+        while !stack.isEmpty {
+            let (node, depth) = stack.removeLast()
             visitor(node, depth)
-            for child in children(of: node) {
-                visit(child, depth: depth + 1)
+
+            // Push children in reverse order so they're visited in order
+            let childNodes = children(of: node)
+            for child in childNodes.reversed() {
+                stack.append((child, depth + 1))
             }
         }
-        visit(rootNode, depth: 0)
     }
 
     /// Get all nodes in depth-first order
+    ///
+    /// Each node appears exactly once (tree structure is enforced during parsing).
     ///
     /// - Returns: Array of all nodes starting from root
     public func allNodes() -> [UINode] {
@@ -421,7 +518,7 @@ extension UITree {
     ///   - jsonString: JSON string in json-render format
     ///   - catalog: Optional catalog for component validation
     /// - Returns: A validated UITree
-    /// - Throws: `UITreeError` for structural issues
+    /// - Throws: `UITreeError` for structural or validation issues
     public static func parse(
         from jsonString: String,
         validatingWith catalog: UICatalog? = nil

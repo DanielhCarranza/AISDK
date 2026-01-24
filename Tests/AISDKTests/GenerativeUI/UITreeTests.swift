@@ -211,6 +211,37 @@ final class UITreeTests: XCTestCase {
         }
     }
 
+    func testParseWithCatalogEmptyChildrenArrayOnLeafThrows() {
+        // Even an empty children array should be rejected for leaf components
+        let json = """
+        {
+            "root": "main",
+            "elements": {
+                "main": {
+                    "type": "Text",
+                    "props": { "content": "Hello" },
+                    "children": []
+                }
+            }
+        }
+        """
+
+        let catalog = UICatalog.core8
+
+        XCTAssertThrowsError(try UITree.parse(from: json, validatingWith: catalog)) { error in
+            guard let treeError = error as? UITreeError else {
+                XCTFail("Expected UITreeError, got \(error)")
+                return
+            }
+            if case .childrenNotAllowed(let key, let type) = treeError {
+                XCTAssertEqual(key, "main")
+                XCTAssertEqual(type, "Text")
+            } else {
+                XCTFail("Expected childrenNotAllowed error, got \(treeError)")
+            }
+        }
+    }
+
     func testParseWithCatalogPropsValidation() {
         let json = """
         {
@@ -519,6 +550,59 @@ final class UITreeTests: XCTestCase {
         }
     }
 
+    func testParseInvalidPropsTypeThrows() {
+        // Props must be an object, not an array or string
+        let json = """
+        {
+            "root": "main",
+            "elements": {
+                "main": {
+                    "type": "Text",
+                    "props": ["content", "Hello"]
+                }
+            }
+        }
+        """
+
+        XCTAssertThrowsError(try UITree.parse(from: json)) { error in
+            guard let treeError = error as? UITreeError else {
+                XCTFail("Expected UITreeError, got \(error)")
+                return
+            }
+            if case .invalidStructure(let reason) = treeError {
+                XCTAssertTrue(reason.contains("props"))
+            } else {
+                XCTFail("Expected invalidStructure error, got \(treeError)")
+            }
+        }
+    }
+
+    func testParsePropsAsStringThrows() {
+        let json = """
+        {
+            "root": "main",
+            "elements": {
+                "main": {
+                    "type": "Text",
+                    "props": "not an object"
+                }
+            }
+        }
+        """
+
+        XCTAssertThrowsError(try UITree.parse(from: json)) { error in
+            guard let treeError = error as? UITreeError else {
+                XCTFail("Expected UITreeError, got \(error)")
+                return
+            }
+            if case .invalidStructure(let reason) = treeError {
+                XCTAssertTrue(reason.contains("props"))
+            } else {
+                XCTFail("Expected invalidStructure error, got \(treeError)")
+            }
+        }
+    }
+
     // MARK: - Traversal Tests
 
     func testTraverse() throws {
@@ -689,6 +773,19 @@ final class UITreeTests: XCTestCase {
             error: .invalidPropValue(component: "Text", prop: "content", reason: "empty")
         )
         XCTAssertTrue(validationFailed.errorDescription?.contains("node") ?? false)
+
+        let multipleParents = UITreeError.multipleParents(key: "shared")
+        XCTAssertTrue(multipleParents.errorDescription?.contains("shared") ?? false)
+        XCTAssertTrue(multipleParents.errorDescription?.contains("multiple parents") ?? false)
+
+        let depthExceeded = UITreeError.depthExceeded(maxAllowed: 100)
+        XCTAssertTrue(depthExceeded.errorDescription?.contains("100") ?? false)
+
+        let nodeCountExceeded = UITreeError.nodeCountExceeded(maxAllowed: 10000)
+        XCTAssertTrue(nodeCountExceeded.errorDescription?.contains("10000") ?? false)
+
+        let unreachableNode = UITreeError.unreachableNode(key: "orphan")
+        XCTAssertTrue(unreachableNode.errorDescription?.contains("orphan") ?? false)
     }
 
     // MARK: - Data Parsing Tests
@@ -766,13 +863,11 @@ final class UITreeTests: XCTestCase {
         XCTAssertEqual(tree.maxDepth, 2)
     }
 
-    // MARK: - Diamond Dependency Tests
+    // MARK: - Tree Structure Enforcement Tests
 
-    func testDiamondDependencyAllowed() throws {
-        // A -> B, A -> C, B -> D, C -> D (diamond, not cycle)
-        // However, in a tree structure, each node can only appear once
-        // so D would need to be referenced twice, which means the tree
-        // would need to visit D from both B and C
+    func testDiamondDependencyThrowsMultipleParents() {
+        // A -> B, A -> C, B -> D, C -> D (diamond pattern)
+        // This should fail because D has multiple parents (B and C)
         let json = """
         {
             "root": "a",
@@ -800,8 +895,72 @@ final class UITreeTests: XCTestCase {
         }
         """
 
-        // This should succeed - diamond pattern (shared leaf) is allowed
+        XCTAssertThrowsError(try UITree.parse(from: json)) { error in
+            guard let treeError = error as? UITreeError else {
+                XCTFail("Expected UITreeError, got \(error)")
+                return
+            }
+            if case .multipleParents(let key) = treeError {
+                XCTAssertEqual(key, "d")
+            } else {
+                XCTFail("Expected multipleParents error, got \(treeError)")
+            }
+        }
+    }
+
+    func testUnreachableNodesArePruned() throws {
+        // main -> child, but "orphan" is not connected
+        let json = """
+        {
+            "root": "main",
+            "elements": {
+                "main": {
+                    "type": "Stack",
+                    "props": { "direction": "vertical" },
+                    "children": ["child"]
+                },
+                "child": {
+                    "type": "Text",
+                    "props": { "content": "Connected" }
+                },
+                "orphan": {
+                    "type": "Text",
+                    "props": { "content": "Not connected" }
+                }
+            }
+        }
+        """
+
         let tree = try UITree.parse(from: json)
-        XCTAssertEqual(tree.nodeCount, 4)
+
+        // Only reachable nodes should be in the tree
+        XCTAssertEqual(tree.nodeCount, 2)
+        XCTAssertNotNil(tree.node(forKey: "main"))
+        XCTAssertNotNil(tree.node(forKey: "child"))
+        XCTAssertNil(tree.node(forKey: "orphan"))
+    }
+
+    func testHadChildrenFieldTracking() throws {
+        let json = """
+        {
+            "root": "stack",
+            "elements": {
+                "stack": {
+                    "type": "Stack",
+                    "props": { "direction": "vertical" },
+                    "children": ["text"]
+                },
+                "text": {
+                    "type": "Text",
+                    "props": { "content": "Hello" }
+                }
+            }
+        }
+        """
+
+        let tree = try UITree.parse(from: json)
+
+        XCTAssertTrue(tree.node(forKey: "stack")?.hadChildrenField ?? false)
+        XCTAssertFalse(tree.node(forKey: "text")?.hadChildrenField ?? true)
     }
 }

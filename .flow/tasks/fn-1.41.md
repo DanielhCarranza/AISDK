@@ -5,32 +5,32 @@ Implement the UITree model for the json-render pattern used in generative UI. Th
 
 ## Acceptance
 - [x] UINode struct representing individual tree nodes with key, type, propsData, childKeys
-- [x] UITreeError enum for comprehensive error handling
+- [x] UITreeError enum for comprehensive error handling (13 error cases)
 - [x] UITree struct with parsing from JSON data and string
-- [x] Structural validation (valid keys, no cycles, children correctness)
+- [x] Structural validation (valid keys, no cycles, true tree enforcement)
+- [x] Security limits (max depth 100, max nodes 10,000)
+- [x] Iterative traversal to prevent stack overflow
 - [x] Component type validation against UICatalog
 - [x] Props validation for each component
 - [x] Tree traversal utilities (children, traverse, allNodes, nodeCount, maxDepth)
-- [x] All tests passing (27 tests)
+- [x] All tests passing (32 tests)
 
 ## Done summary
 Implemented UITree model in `Sources/AISDK/GenerativeUI/Models/UITree.swift`:
-- `UINode`: Sendable struct with key, type, propsData (raw JSON), and childKeys
-- `UITreeError`: Comprehensive error enum covering structural issues (invalidStructure, rootNotFound, childNotFound, circularReference, duplicateKey, invalidNodeKey) and validation issues (unknownComponentType, childrenNotAllowed, validationFailed)
-- `UITree`: Main model with static `parse(from:validatingWith:)` methods that:
-  - Parse JSON in json-render format (`root`, `elements`)
-  - Validate structural integrity (keys, cycles via DFS)
-  - Optionally validate against a UICatalog
-- Tree utilities: `rootNode`, `children(of:)`, `node(forKey:)`, `traverse(_:)`, `allNodes()`, `nodeCount`, `maxDepth`
+- `UINode`: Sendable/Equatable struct with key, type, propsData (raw JSON), childKeys, and hadChildrenField
+- `UITreeError`: Comprehensive error enum with 13 cases covering structural issues (invalidStructure, rootNotFound, childNotFound, circularReference, duplicateKey, invalidNodeKey, multipleParents, depthExceeded, nodeCountExceeded, unreachableNode) and validation issues (unknownComponentType, childrenNotAllowed, validationFailed)
+- `UITree`: Main model with static `parse(from:validatingWith:)` methods that parse JSON in json-render format with:
+  - Iterative DFS traversal (prevents stack overflow on deep/malicious input)
+  - True tree enforcement (no DAGs - rejects diamond dependencies)
+  - Security limits (max depth 100, max nodes 10,000)
+  - Strict props validation (must be object if present)
+  - Unreachable node pruning
+  - Deterministic validation order (depth-first from root)
+- Tree utilities: rootNode, children(of:), node(forKey:), traverse(_:), allNodes(), nodeCount, maxDepth
 
-Tests in `Tests/AISDKTests/GenerativeUI/UITreeTests.swift` covering:
-- Basic parsing (simple, with children, nested, empty props)
-- Catalog validation (type checking, children allowed, props validation)
-- Structural errors (missing root/elements, root not found, child not found, circular reference, invalid keys)
-- Traversal utilities
-- Complex form validation
+Tests: 32 tests in UITreeTests.swift covering basic parsing, catalog validation, structural errors, tree enforcement, and traversal utilities.
 
 ## Evidence
-- Commits: See git log
-- Tests: UITreeTests (27 tests passing)
-- PRs: N/A
+- Commits: b96a11b + subsequent impl-review fixes
+- Tests: {'command': 'swift test --filter UITreeTests', 'result': '32 tests passed'}
+- PRs:
