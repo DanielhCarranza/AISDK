@@ -18,6 +18,14 @@ import SwiftUI
 /// The registry can filter actions through an allowlist for security.
 public typealias UIActionHandler = @Sendable (String) -> Void
 
+// MARK: - ChildViewBuilder
+
+/// Closure for building child views within container components
+///
+/// Container components receive this closure to build their children,
+/// ensuring the full registry is used (not an early snapshot).
+public typealias ChildViewBuilder = @Sendable (UINode) -> AnyView
+
 // MARK: - UIComponentRegistry
 
 /// Registry mapping element types to SwiftUI views
@@ -52,8 +60,8 @@ public typealias UIActionHandler = @Sendable (String) -> Void
 /// var registry = UIComponentRegistry()
 ///
 /// // Register a custom component
-/// registry.register("CustomCard") { node, tree, _, handler in
-///     MyCustomCard(node: node, onAction: handler)
+/// registry.register("CustomCard") { node, tree, _, handler, buildChild in
+///     MyCustomCard(node: node, buildChild: buildChild)
 /// }
 ///
 /// // Allow specific actions
@@ -68,12 +76,14 @@ public struct UIComponentRegistry: Sendable {
     ///   - tree: The full UITree for accessing child nodes
     ///   - propsDecoder: JSONDecoder configured for props decoding
     ///   - handler: Action handler (already filtered through allowlist)
+    ///   - buildChild: Closure to build child views (uses full registry)
     /// - Returns: Type-erased SwiftUI view
     public typealias ViewBuilder = @Sendable (
         UINode,
         UITree,
         JSONDecoder,
-        @escaping UIActionHandler
+        @escaping UIActionHandler,
+        @escaping ChildViewBuilder
     ) -> AnyView
 
     /// Registered view builders by component type name
@@ -106,11 +116,12 @@ public struct UIComponentRegistry: Sendable {
             UINode,
             UITree,
             JSONDecoder,
-            @escaping UIActionHandler
+            @escaping UIActionHandler,
+            @escaping ChildViewBuilder
         ) -> V
     ) {
-        builders[type] = { node, tree, decoder, handler in
-            AnyView(builder(node, tree, decoder, handler))
+        builders[type] = { node, tree, decoder, handler, buildChild in
+            AnyView(builder(node, tree, decoder, handler, buildChild))
         }
     }
 
@@ -188,13 +199,25 @@ public struct UIComponentRegistry: Sendable {
         let secureHandler: UIActionHandler = { action in
             let isAllowed = allowedActionsCopy.isEmpty || allowedActionsCopy.contains(action)
             guard isAllowed else {
-                // Silently block disallowed actions in production
+                #if DEBUG
+                print("[UIComponentRegistry] Blocked action: \(action)")
+                #endif
                 return
             }
             actionHandler(action)
         }
 
-        return builder(node, tree, propsDecoder, secureHandler)
+        // Create child builder that uses THIS registry (not a snapshot)
+        let childBuilder: ChildViewBuilder = { childNode in
+            self.build(
+                node: childNode,
+                tree: tree,
+                propsDecoder: propsDecoder,
+                actionHandler: actionHandler
+            )
+        }
+
+        return builder(node, tree, propsDecoder, secureHandler, childBuilder)
     }
 
     /// Build views for all children of a node
@@ -282,57 +305,54 @@ extension UIComponentRegistry {
     public static var `default`: UIComponentRegistry {
         var registry = UIComponentRegistry()
 
-        // Register Core 8 component views
-        registry.register("Text") { node, _, decoder, _ in
+        // Register all Core 8 component views
+        // Container views receive buildChild closure to render children
+        // using the full registry (avoiding early snapshot issues)
+
+        registry.register("Text") { node, _, decoder, _, _ in
             GenerativeTextView(node: node, decoder: decoder)
         }
 
-        registry.register("Button") { node, _, decoder, handler in
+        registry.register("Button") { node, _, decoder, handler, _ in
             GenerativeButtonView(node: node, decoder: decoder, onAction: handler)
         }
 
-        // Capture registry as value for child-rendering components
-        let registryCopy = registry
-
-        registry.register("Card") { node, tree, decoder, handler in
+        registry.register("Card") { node, tree, decoder, _, buildChild in
             GenerativeCardView(
                 node: node,
                 tree: tree,
-                registry: registryCopy,
                 decoder: decoder,
-                onAction: handler
+                buildChild: buildChild
             )
         }
 
-        registry.register("Input") { node, _, decoder, _ in
+        registry.register("Input") { node, _, decoder, _, _ in
             GenerativeInputView(node: node, decoder: decoder)
         }
 
-        registry.register("List") { node, tree, decoder, handler in
+        registry.register("List") { node, tree, decoder, _, buildChild in
             GenerativeListView(
                 node: node,
                 tree: tree,
-                registry: registryCopy,
                 decoder: decoder,
-                onAction: handler
+                buildChild: buildChild
             )
         }
 
-        registry.register("Image") { node, _, decoder, _ in
+        registry.register("Image") { node, _, decoder, _, _ in
             GenerativeImageView(node: node, decoder: decoder)
         }
 
-        registry.register("Stack") { node, tree, decoder, handler in
+        registry.register("Stack") { node, tree, decoder, _, buildChild in
             GenerativeStackView(
                 node: node,
                 tree: tree,
-                registry: registryCopy,
                 decoder: decoder,
-                onAction: handler
+                buildChild: buildChild
             )
         }
 
-        registry.register("Spacer") { node, _, decoder, _ in
+        registry.register("Spacer") { node, _, decoder, _, _ in
             GenerativeSpacerView(node: node, decoder: decoder)
         }
 
@@ -385,13 +405,31 @@ private struct GenerativeButtonView: View {
         let title = props?.title ?? "Button"
         let action = props?.action ?? ""
         let disabled = props?.disabled ?? false
+        let style = props?.style
 
-        Button(title) {
+        buttonView(title: title, action: action, style: style, disabled: disabled)
+            .accessibilityLabel(props?.accessibilityLabel ?? title)
+            .accessibilityHint(props?.accessibilityHint ?? "")
+    }
+
+    @ViewBuilder
+    private func buttonView(title: String, action: String, style: String?, disabled: Bool) -> some View {
+        let button = Button(title) {
             onAction(action)
         }
         .disabled(disabled)
-        .accessibilityLabel(props?.accessibilityLabel ?? title)
-        .accessibilityHint(props?.accessibilityHint ?? "")
+
+        // Apply style-specific modifiers
+        switch style {
+        case "destructive":
+            button.foregroundColor(.red)
+        case "secondary":
+            button.foregroundColor(.secondary)
+        case "plain":
+            button.buttonStyle(.plain)
+        default:
+            button
+        }
     }
 }
 
@@ -399,13 +437,12 @@ private struct GenerativeButtonView: View {
 private struct GenerativeCardView: View {
     let node: UINode
     let tree: UITree
-    let registry: UIComponentRegistry
     let decoder: JSONDecoder
-    let onAction: UIActionHandler
+    let buildChild: ChildViewBuilder
 
     var body: some View {
         let props = try? decoder.decode(CardComponentDefinition.Props.self, from: node.propsData)
-        let children = registry.buildChildren(of: node, tree: tree, propsDecoder: decoder, actionHandler: onAction)
+        let childNodes = tree.children(of: node)
 
         VStack(alignment: .leading, spacing: 8) {
             if let title = props?.title {
@@ -419,8 +456,8 @@ private struct GenerativeCardView: View {
                     .foregroundColor(.secondary)
             }
 
-            ForEach(Array(children.enumerated()), id: \.offset) { _, childView in
-                childView
+            ForEach(Array(childNodes.enumerated()), id: \.offset) { _, childNode in
+                buildChild(childNode)
             }
         }
         .padding()
@@ -435,7 +472,7 @@ private struct GenerativeCardView: View {
     private func cardBackground(style: String?) -> some View {
         switch style {
         case "elevated":
-            Color.white
+            Color.primary.opacity(0.05)
                 .shadow(radius: 4)
         case "outlined":
             Color.clear
@@ -446,7 +483,7 @@ private struct GenerativeCardView: View {
         case "filled":
             Color.secondary.opacity(0.1)
         default:
-            Color.white
+            Color.primary.opacity(0.05)
         }
     }
 }
@@ -480,20 +517,19 @@ private struct GenerativeInputView: View {
 private struct GenerativeListView: View {
     let node: UINode
     let tree: UITree
-    let registry: UIComponentRegistry
     let decoder: JSONDecoder
-    let onAction: UIActionHandler
+    let buildChild: ChildViewBuilder
 
     var body: some View {
         let props = try? decoder.decode(ListComponentDefinition.Props.self, from: node.propsData)
         let style = props?.style ?? .unordered
-        let children = registry.buildChildren(of: node, tree: tree, propsDecoder: decoder, actionHandler: onAction)
+        let childNodes = tree.children(of: node)
 
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(children.enumerated()), id: \.offset) { index, childView in
+            ForEach(Array(childNodes.enumerated()), id: \.offset) { index, childNode in
                 HStack(alignment: .top, spacing: 8) {
                     listMarker(style: style, index: index)
-                    childView
+                    buildChild(childNode)
                 }
             }
         }
@@ -565,29 +601,28 @@ private struct GenerativeImageView: View {
 private struct GenerativeStackView: View {
     let node: UINode
     let tree: UITree
-    let registry: UIComponentRegistry
     let decoder: JSONDecoder
-    let onAction: UIActionHandler
+    let buildChild: ChildViewBuilder
 
     var body: some View {
         let props = try? decoder.decode(StackComponentDefinition.Props.self, from: node.propsData)
         let direction = props?.direction ?? .vertical
         let spacing = props?.spacing ?? 8
         let alignment = props?.alignment ?? .center
-        let children = registry.buildChildren(of: node, tree: tree, propsDecoder: decoder, actionHandler: onAction)
+        let childNodes = tree.children(of: node)
 
         Group {
             switch direction {
             case .horizontal:
                 HStack(alignment: verticalAlignment(from: alignment), spacing: CGFloat(spacing)) {
-                    ForEach(Array(children.enumerated()), id: \.offset) { _, childView in
-                        childView
+                    ForEach(Array(childNodes.enumerated()), id: \.offset) { _, childNode in
+                        buildChild(childNode)
                     }
                 }
             case .vertical:
                 VStack(alignment: horizontalAlignment(from: alignment), spacing: CGFloat(spacing)) {
-                    ForEach(Array(children.enumerated()), id: \.offset) { _, childView in
-                        childView
+                    ForEach(Array(childNodes.enumerated()), id: \.offset) { _, childNode in
+                        buildChild(childNode)
                     }
                 }
             }

@@ -49,7 +49,7 @@ final class UIComponentRegistryTests: XCTestCase {
         var registry = UIComponentRegistry()
 
         // When
-        registry.register("CustomComponent") { _, _, _, _ in
+        registry.register("CustomComponent") { _, _, _, _, _ in
             Text("Custom")
         }
 
@@ -63,9 +63,9 @@ final class UIComponentRegistryTests: XCTestCase {
         var registry = UIComponentRegistry()
 
         // When
-        registry.register("Alpha") { _, _, _, _ in Text("A") }
-        registry.register("Beta") { _, _, _, _ in Text("B") }
-        registry.register("Gamma") { _, _, _, _ in Text("G") }
+        registry.register("Alpha") { _, _, _, _, _ in Text("A") }
+        registry.register("Beta") { _, _, _, _, _ in Text("B") }
+        registry.register("Gamma") { _, _, _, _, _ in Text("G") }
 
         // Then
         XCTAssertEqual(registry.registeredTypes, ["Alpha", "Beta", "Gamma"])
@@ -74,10 +74,10 @@ final class UIComponentRegistryTests: XCTestCase {
     func test_registration_overwrites_existing() {
         // Given
         var registry = UIComponentRegistry()
-        registry.register("Widget") { _, _, _, _ in Text("First") }
+        registry.register("Widget") { _, _, _, _, _ in Text("First") }
 
         // When - register same type again
-        registry.register("Widget") { _, _, _, _ in Text("Second") }
+        registry.register("Widget") { _, _, _, _, _ in Text("Second") }
 
         // Then - should still have the component
         XCTAssertTrue(registry.hasComponent("Widget"))
@@ -210,7 +210,7 @@ final class UIComponentRegistryTests: XCTestCase {
     func test_action_blocked_when_not_in_allowlist() {
         // Given
         var registry = UIComponentRegistry()
-        registry.register("Button") { node, _, decoder, handler in
+        registry.register("Button") { node, _, decoder, handler, _ in
             // Simulate button that triggers action
             let props = try? decoder.decode(ButtonComponentDefinition.Props.self, from: node.propsData)
             handler(props?.action ?? "")
@@ -238,7 +238,7 @@ final class UIComponentRegistryTests: XCTestCase {
     func test_action_allowed_when_in_allowlist() {
         // Given
         var registry = UIComponentRegistry()
-        registry.register("Button") { node, _, decoder, handler in
+        registry.register("Button") { node, _, decoder, handler, _ in
             let props = try? decoder.decode(ButtonComponentDefinition.Props.self, from: node.propsData)
             handler(props?.action ?? "")
             return Text("Button")
@@ -265,7 +265,7 @@ final class UIComponentRegistryTests: XCTestCase {
     func test_action_passthrough_with_empty_allowlist() {
         // Given
         var registry = UIComponentRegistry()
-        registry.register("Button") { node, _, decoder, handler in
+        registry.register("Button") { node, _, decoder, handler, _ in
             let props = try? decoder.decode(ButtonComponentDefinition.Props.self, from: node.propsData)
             handler(props?.action ?? "")
             return Text("Button")
@@ -379,7 +379,7 @@ final class UIComponentRegistryTests: XCTestCase {
     func test_action_handler_is_sendable() {
         // Given
         var registry = UIComponentRegistry()
-        registry.register("Test") { _, _, _, handler in
+        registry.register("Test") { _, _, _, handler, _ in
             // Handler should be callable from any context
             Task {
                 handler("async_action")
