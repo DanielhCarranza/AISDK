@@ -1,14 +1,27 @@
 {
-  "assignee": null,
+  "assignee": "jmush16@gmail.com",
   "claim_note": "",
-  "claimed_at": null,
+  "claimed_at": "2026-01-24T00:24:57.978949Z",
   "created_at": "2026-01-23T03:05:55.196320Z",
   "depends_on": [],
   "epic": "fn-1",
+  "evidence": {
+    "commits": [
+      "2a58f5fd9b0291cfcd2b742defbb4bf94bca1ba8",
+      "c5f2ccf79902bba854dab59a4d2b6d4daa59d55a"
+    ],
+    "files": [
+      "Sources/AISDK/Agents/AIAgentActor.swift",
+      "Tests/AISDKTests/Agents/AIAgentActorTests.swift"
+    ],
+    "tests": [
+      "swift test --filter StopConditionTests"
+    ]
+  },
   "id": "fn-1.35",
   "priority": null,
   "spec_path": ".flow/tasks/fn-1.35.md",
-  "status": "todo",
+  "status": "done",
   "title": "Task 4.2: StopCondition",
-  "updated_at": "2026-01-23T03:05:55.196479Z"
+  "updated_at": "2026-01-24T00:25:01.389985Z"
 }

@@ -15,9 +15,8 @@ Implement the `StopCondition` enum for controlling when the AI agent loop should
 - [x] Code compiles without errors
 
 ## Done summary
-The StopCondition enum was already implemented in `AIAgentActor.swift` (lines 809-821) with all required cases including the new `.tokenBudget(maxTokens: Int)` case. The `shouldStop()` method (lines 657-669) correctly evaluates each condition. Added comprehensive integration test `test_tokenBudget_condition_stops_when_budget_exceeded` to verify the tokenBudget condition actually stops the agent loop when accumulated tokens exceed the budget.
-
+Task 4.2 StopCondition complete. The StopCondition enum with all 4 cases (.stepCount, .noToolCalls, .tokenBudget, .custom) was verified in AIAgentActor.swift. Added comprehensive integration test for tokenBudget condition that verifies the agent loop stops when accumulated tokens exceed the budget. Implementation review feedback addressed.
 ## Evidence
-- Commits: To be added after commit
-- Tests: `Tests/AISDKTests/Agents/AIAgentActorTests.swift` - StopConditionTests class with tests for all 4 condition types including new tokenBudget integration test
+- Commits: 2a58f5fd9b0291cfcd2b742defbb4bf94bca1ba8, c5f2ccf79902bba854dab59a4d2b6d4daa59d55a
+- Tests: swift test --filter StopConditionTests
 - PRs:

@@ -827,7 +827,7 @@ public enum StopCondition: Sendable {
     /// Stop when no tool calls are made
     case noToolCalls
 
-    /// Stop when token budget is exceeded
+    /// Stop when token budget is reached or exceeded
     case tokenBudget(maxTokens: Int)
 
     /// Custom stop condition
