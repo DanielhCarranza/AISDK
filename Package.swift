@@ -49,6 +49,15 @@ let package = Package(
         .executable(
             name: "ToolDemo",
             targets: ["ToolDemo"]
+        ),
+        .executable(
+            name: "OpenRouterDemo",
+            targets: ["OpenRouterDemo"]
+        ),
+        // Comprehensive AISDK Demo - showcases all features
+        .executable(
+            name: "AISDKDemo",
+            targets: ["AISDKDemo"]
         )
     ],
     dependencies: [
@@ -166,6 +175,16 @@ let package = Package(
             name: "ToolDemo",
             dependencies: ["AISDK"],
             path: "Examples/ToolDemo"
+        ),
+        .executableTarget(
+            name: "OpenRouterDemo",
+            dependencies: ["AISDK"],
+            path: "Examples/OpenRouterDemo"
+        ),
+        .executableTarget(
+            name: "AISDKDemo",
+            dependencies: ["AISDK"],
+            path: "Examples/AISDKDemo"
         )
     ]
 )

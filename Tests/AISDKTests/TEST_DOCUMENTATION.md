@@ -167,6 +167,19 @@ Tests/AISDKTests/
 **Status**: Disabled due to API changes, replaced by AgentIntegrationTests  
 **Coverage**: Superseded by comprehensive AgentIntegrationTests
 
+### 8. **OpenRouter Integration Tests** (`OpenRouterIntegrationTests.swift`)
+**Purpose**: Real OpenRouter provider validation with free models  
+**Test Coverage**:
+- Basic chat across multiple OpenRouter models
+- Streaming responses (SSE)
+- JSON response format validation
+- Reasoning prompt behavior (short justification)
+- Tool calling (configurable model)
+
+**Environment**:
+- Requires `OPENROUTER_API_KEY`
+- Optional: `OPENROUTER_TEST_MODELS`, `OPENROUTER_DEFAULT_MODEL`, `OPENROUTER_TOOL_MODEL`
+
 ## 🚀 Usage Instructions
 
 ### Running All Tests
@@ -202,6 +215,9 @@ swift test --filter StructuredOutputTests
 
 # Streaming functionality
 swift test --filter StreamingChatTests
+
+# OpenRouter integration tests
+swift test --filter OpenRouterIntegrationTests
 ```
 
 ### Running Individual Tests
@@ -227,6 +243,13 @@ ANTHROPIC_API_KEY=your_anthropic_key_here
 
 # Optional for specific provider tests
 GROQ_API_KEY=your_groq_key_here
+OPENROUTER_API_KEY=your_openrouter_key_here
+
+# Optional OpenRouter test configuration
+OPENROUTER_TEST_MODELS=model-a,model-b
+OPENROUTER_DEFAULT_MODEL=model-a
+OPENROUTER_STREAM_MODEL=model-a
+OPENROUTER_TOOL_MODEL=model-a
 ```
 
 ### Mock vs Real API Testing
