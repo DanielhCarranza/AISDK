@@ -1,6 +1,6 @@
 # AISDK Architecture Documentation
 
-> **Version:** 1.1.0 | **Last Updated:** January 2025 | **Swift:** 5.9+ | **Platforms:** iOS 17+, macOS 14+, watchOS 10+, tvOS 17+
+> **Version:** 2.0.0 | **Last Updated:** January 2025 | **Swift:** 5.9+ | **Platforms:** iOS 17+, macOS 14+, watchOS 10+, tvOS 17+
 
 ---
 
@@ -8,11 +8,12 @@
 
 | Component | Purpose | Key Types |
 |-----------|---------|-----------|
-| **Core AISDK** | Multi-provider LLM abstraction | `Agent`, `LLM`, `Tool`, `AIInputMessage` |
-| **Providers** | API implementations | `OpenAIProvider`, `AnthropicProvider`, `GeminiProvider` |
-| **Models** | 134+ supported models | `LLMModelProtocol`, `OpenAIModels`, `AnthropicModels`, `GeminiModels` |
-| **Tools** | Function calling framework | `Tool`, `@Parameter`, `ToolMetadata` |
-| **Messages** | Universal message format | `AIInputMessage`, `AIContentPart`, `ChatMessage` |
+| **Core AISDK** | Multi-provider LLM abstraction | `AIAgentActor`, `AILanguageModel`, `AITool`, `AIMessage` |
+| **Providers** | API implementations | `OpenRouterClient`, `LiteLLMClient`, `OpenAIProvider` |
+| **Reliability** | Fault tolerance | `AdaptiveCircuitBreaker`, `FailoverExecutor`, `ProviderHealthMonitor` |
+| **Generative UI** | LLM-generated interfaces | `UICatalog`, `UITree`, `GenerativeUIViewModel` |
+| **Tools** | Function calling framework | `AITool`, `AIToolResult`, `AIToolRegistry` |
+| **Messages** | Universal message format | `AIMessage`, `AITextRequest`, `AITextResult` |
 
 ---
 
@@ -28,7 +29,11 @@
 8. [Model Registry](#8-model-registry)
 9. [API Surface Reference](#9-api-surface-reference)
 10. [Gap Analysis](#10-gap-analysis)
-11. [File Index](#11-file-index)
+11. [Reliability Layer](#11-reliability-layer)
+12. [Generative UI](#12-generative-ui)
+13. [Testing Infrastructure](#13-testing-infrastructure)
+14. [AISDK 2.0 Modernization](#14-aisdk-20-modernization)
+15. [File Index](#15-file-index)
 
 ---
 
@@ -894,7 +899,537 @@ do {
 
 ---
 
-## 11. File Index
+## 11. Reliability Layer
+
+AISDK 2.0 introduces a comprehensive reliability layer for production-grade fault tolerance.
+
+### Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Application"
+        REQ[Request]
+    end
+
+    subgraph "Reliability Layer"
+        FE[FailoverExecutor]
+        CB[CircuitBreaker]
+        RP[RetryPolicy]
+        TP[TimeoutPolicy]
+        HM[HealthMonitor]
+    end
+
+    subgraph "Provider Chain"
+        P1[Provider 1<br/>Primary]
+        P2[Provider 2<br/>Fallback]
+        P3[Provider 3<br/>Last Resort]
+    end
+
+    REQ --> FE
+    FE --> CB
+    CB --> RP
+    RP --> TP
+    TP --> P1
+    P1 -.->|failure| P2
+    P2 -.->|failure| P3
+    CB <--> HM
+```
+
+### 11.1 AdaptiveCircuitBreaker
+
+**File:** `Sources/AISDK/Core/Reliability/AdaptiveCircuitBreaker.swift`
+
+Actor-based circuit breaker with adaptive failure detection.
+
+```swift
+// Create circuit breaker
+let breaker = AdaptiveCircuitBreaker(configuration: .default)
+
+// Execute with circuit breaker protection
+do {
+    let result = try await breaker.execute {
+        try await provider.makeRequest()
+    }
+} catch CircuitBreakerError.circuitOpen(let until) {
+    // Handle circuit open - use fallback provider
+}
+```
+
+**States:**
+
+| State | Description | Traffic |
+|-------|-------------|---------|
+| `closed` | Normal operation, failures counted | Allowed |
+| `open(until:)` | Provider failing, requests rejected | Blocked |
+| `halfOpen` | Testing recovery with probe requests | Limited |
+
+**Configuration Presets:**
+
+| Preset | Failure Threshold | Recovery Timeout | Use Case |
+|--------|-------------------|------------------|----------|
+| `default` | 5 failures | 30 seconds | Standard use |
+| `aggressive` | 3 failures | 15 seconds | Critical paths |
+| `lenient` | 10 failures | 60 seconds | Unstable providers |
+
+### 11.2 FailoverExecutor
+
+**File:** `Sources/AISDK/Core/Reliability/FailoverExecutor.swift`
+
+Execute requests across a failover chain with integrated reliability features.
+
+```swift
+let executor = FailoverExecutorBuilder()
+    .with(providers: [openaiClient, anthropicClient])
+    .with(healthMonitor: monitor)
+    .with(configuration: .default)
+    .build()
+
+let result = try await executor.executeRequest(
+    request: aiRequest,
+    modelId: "gpt-4"
+)
+
+print("Handled by: \(result.provider)")
+print("Attempts: \(result.attempts)")
+print("Latency: \(result.latency)")
+```
+
+**Features:**
+- Circuit breaker per provider
+- Retry policy for transient failures
+- Timeout enforcement
+- PHI allowlist enforcement
+- Health metric recording
+
+### 11.3 FailoverPolicy
+
+**File:** `Sources/AISDK/Core/Reliability/CapabilityAwareFailover.swift`
+
+Capability-aware failover with cost constraints.
+
+```swift
+let policy = FailoverPolicy(
+    maxCostMultiplier: 5.0,      // Max 5x more expensive
+    requireCapabilityMatch: true, // Must match capabilities
+    minimumContextWindow: 8000    // Min context required
+)
+
+// Check if provider is compatible
+let compatible = await policy.isCompatible(
+    request: request,
+    provider: anthropicClient,
+    modelId: "claude-3-sonnet"
+)
+```
+
+### 11.4 RetryPolicy & TimeoutPolicy
+
+**File:** `Sources/AISDK/Core/Reliability/RetryPolicy.swift`, `TimeoutPolicy.swift`
+
+```swift
+// Retry policy with exponential backoff
+let retry = RetryPolicy(
+    maxAttempts: 3,
+    baseDelay: .milliseconds(100),
+    maxDelay: .seconds(5),
+    backoffMultiplier: 2.0
+)
+
+// Timeout policy
+let timeout = TimeoutPolicy(
+    requestTimeout: .seconds(30),
+    streamTimeout: .seconds(120)
+)
+```
+
+### 11.5 ProviderHealthMonitor
+
+**File:** `Sources/AISDK/Core/Reliability/ProviderHealthMonitor.swift`
+
+Track provider health metrics over time.
+
+```swift
+let monitor = ProviderHealthMonitor()
+
+// Record metrics
+await monitor.recordLatency(.milliseconds(150), for: "openai")
+await monitor.recordError(for: "anthropic")
+
+// Query health status
+let status = await monitor.healthStatus(for: "openai")
+// Returns: .healthy, .degraded, or .unhealthy
+```
+
+---
+
+## 12. Generative UI
+
+AISDK provides a json-render pattern for LLM-generated user interfaces.
+
+### Architecture Overview
+
+```mermaid
+graph LR
+    subgraph "LLM Generation"
+        LLM[Language Model]
+        PROMPT[System Prompt<br/>from Catalog]
+    end
+
+    subgraph "Validation Layer"
+        CAT[UICatalog]
+        TREE[UITree Parser]
+        VAL[Props Validation]
+    end
+
+    subgraph "Rendering"
+        VM[ViewModel]
+        VIEW[GenerativeUIView]
+        COMP[UI Components]
+    end
+
+    LLM --> |JSON| TREE
+    PROMPT --> LLM
+    CAT --> PROMPT
+    TREE --> VAL
+    VAL --> CAT
+    TREE --> VM
+    VM --> VIEW
+    VIEW --> COMP
+```
+
+### 12.1 UICatalog
+
+**File:** `Sources/AISDK/GenerativeUI/Catalog/UICatalog.swift`
+
+Central registry for UI component definitions.
+
+```swift
+// Use the default Core 8 catalog
+let catalog = UICatalog.core8
+
+// Generate system prompt for LLM
+let prompt = catalog.generatePrompt()
+
+// Validate a component
+try catalog.validate(type: "Button", propsData: jsonData)
+```
+
+**Core 8 Components:**
+
+| Component | Description | Has Children |
+|-----------|-------------|--------------|
+| `Text` | Display text content | No |
+| `Button` | Interactive button | No |
+| `Card` | Container with title/subtitle | Yes |
+| `Input` | Text input field | No |
+| `List` | Ordered/unordered list | Yes |
+| `Image` | Image display | No |
+| `Stack` | Layout container | Yes |
+| `Spacer` | Flexible space | No |
+
+### 12.2 UITree
+
+**File:** `Sources/AISDK/GenerativeUI/Models/UITree.swift`
+
+Parsed representation of LLM-generated UI.
+
+```swift
+// Parse JSON from LLM response
+let tree = try UITree.parse(
+    from: jsonData,
+    validatingWith: UICatalog.core8
+)
+
+// Traverse the tree
+tree.traverse { node, depth in
+    print(String(repeating: "  ", count: depth) + node.type)
+}
+
+// Access nodes
+let root = tree.rootNode
+let children = tree.children(of: root)
+```
+
+**JSON Format:**
+
+```json
+{
+  "root": "main",
+  "elements": {
+    "main": {
+      "type": "Stack",
+      "props": { "direction": "vertical" },
+      "children": ["title", "button"]
+    },
+    "title": {
+      "type": "Text",
+      "props": { "content": "Hello, World!" }
+    },
+    "button": {
+      "type": "Button",
+      "props": { "title": "Click Me", "action": "submit" }
+    }
+  }
+}
+```
+
+**Validation:**
+- Structural (valid keys, no cycles, true tree structure)
+- Component type validation against catalog
+- Props validation per component
+- Depth limit: 100 levels
+- Node limit: 10,000 nodes
+
+### 12.3 GenerativeUIViewModel
+
+**File:** `Sources/AISDK/GenerativeUI/ViewModels/GenerativeUIViewModel.swift`
+
+Observable view model for SwiftUI integration with batched updates.
+
+```swift
+let viewModel = GenerativeUIViewModel(catalog: .core8)
+
+// Update from LLM response (batched)
+try await viewModel.updateTree(from: jsonData)
+
+// SwiftUI usage
+struct ContentView: View {
+    @StateObject var viewModel: GenerativeUIViewModel
+
+    var body: some View {
+        GenerativeUIView(viewModel: viewModel)
+    }
+}
+```
+
+### 12.4 Custom Component Definition
+
+Create custom components by conforming to `UIComponentDefinition`:
+
+```swift
+// Define props
+struct MyCardProps: Codable, Sendable {
+    let title: String
+    let subtitle: String?
+    let imageURL: String?
+}
+
+// Define component
+struct MyCardDefinition: UIComponentDefinition {
+    typealias Props = MyCardProps
+
+    static let type = "MyCard"
+    static let description = "A custom card with image support"
+    static let hasChildren = true
+    static let propsSchemaDescription = """
+        title (required): Card title
+        subtitle (optional): Card subtitle
+        imageURL (optional): URL for card image
+        """
+
+    static func validate(props: Props) throws {
+        if props.title.isEmpty {
+            throw UIComponentValidationError.invalidPropValue(
+                component: type,
+                prop: "title",
+                reason: "Title cannot be empty"
+            )
+        }
+    }
+}
+
+// Register in catalog
+var catalog = UICatalog.core8
+try catalog.register(MyCardDefinition.self)
+```
+
+---
+
+## 13. Testing Infrastructure
+
+AISDK provides comprehensive testing utilities.
+
+### 13.1 MockAILanguageModel
+
+**File:** `Tests/AISDKTests/Mocks/MockAILanguageModel.swift`
+
+Configurable mock for unit testing.
+
+```swift
+let mock = MockAILanguageModel(
+    responses: [
+        .text("Hello, I'm a mock!"),
+        .toolCall(name: "get_weather", arguments: "{}"),
+        .text("Final response")
+    ]
+)
+
+let agent = AIAgentActor(model: mock, tools: [])
+let result = try await agent.execute(messages: [.user("Test")])
+```
+
+### 13.2 Stress Testing Patterns
+
+**File:** `Tests/AISDKTests/Stress/ConcurrencyStressTests.swift`
+
+```swift
+// Run 100+ concurrent agent executions
+func test_concurrent_agent_executions() async throws {
+    let metrics = StressTestMetrics()
+
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<100 {
+            group.addTask {
+                let agent = AIAgentActor(model: mock, tools: [])
+                do {
+                    _ = try await agent.execute(messages: [.user("Test")])
+                    metrics.recordCompletion()
+                } catch {
+                    metrics.recordError(error)
+                }
+            }
+        }
+    }
+
+    XCTAssertGreaterThan(metrics.completedCount, 90)
+}
+```
+
+### 13.3 Memory Leak Detection
+
+**File:** `Tests/AISDKTests/Memory/StreamMemoryTests.swift`
+
+```swift
+func test_stream_deallocation() async throws {
+    var weakRefs: [WeakRef<Model>] = []
+
+    for _ in 0..<100 {
+        let model = MemoryTestMockModel()
+        weakRefs.append(WeakRef(model))
+
+        Task {
+            for try await _ in model.streamText(request: request) { }
+        }
+    }
+
+    try await Task.sleep(for: .milliseconds(100))
+
+    let aliveCount = weakRefs.filter { $0.value != nil }.count
+    XCTAssertLessThanOrEqual(aliveCount, 10)
+}
+```
+
+### 13.4 Real API Integration Tests
+
+**File:** `Tests/AISDKTests/Stress/OpenRouterStressTests.swift`
+
+Tests against real providers with free models (skipped without API key).
+
+```swift
+func test_concurrent_streaming_requests() async throws {
+    let client = try createClient()  // Skips if no API key
+
+    await withTaskGroup(of: Void.self) { group in
+        for i in 0..<5 {
+            group.addTask {
+                let request = ProviderRequest(
+                    modelId: "google/gemma-3-4b-it:free",
+                    messages: [.user("Count to 3")]
+                )
+                for try await _ in client.stream(request: request) { }
+            }
+        }
+    }
+}
+```
+
+---
+
+## 14. AISDK 2.0 Modernization
+
+### Key Changes in 2.0
+
+| Feature | 1.x | 2.0 |
+|---------|-----|-----|
+| Agent Implementation | Class-based | Actor-based (`AIAgentActor`) |
+| Concurrency | GCD/Closures | Swift Concurrency |
+| Streaming | Completion handlers | `AsyncThrowingStream` |
+| State Management | KVO | `@Observable` pattern |
+| Provider Reliability | None | Full circuit breaker + failover |
+| Generative UI | None | json-render pattern |
+
+### Migration Adapters
+
+**File:** `Sources/AISDK/Adapters/`
+
+Adapters bridge legacy code to modern APIs:
+
+```swift
+// Wrap legacy LLM with modern protocol
+let legacyProvider = OldStyleLLM()
+let adapted = AILanguageModelAdapter(legacyLLM: legacyProvider)
+
+// Now use with modern agent
+let agent = AIAgentActor(model: adapted, tools: [])
+```
+
+### AIAgentActor
+
+The modern, actor-based agent implementation:
+
+```swift
+// Create agent with modern API
+let agent = AIAgentActor(
+    model: openRouterModel,
+    tools: [weatherTool, calculatorTool],
+    systemPrompt: "You are a helpful assistant"
+)
+
+// Execute (non-streaming)
+let result = try await agent.execute(messages: [.user("Hello")])
+
+// Stream execution
+for try await event in agent.streamExecute(messages: [.user("Count to 5")]) {
+    switch event {
+    case .textDelta(let text):
+        print(text, terminator: "")
+    case .toolCallStart(let name):
+        print("\n[Calling \(name)]")
+    case .finish:
+        print("\n[Done]")
+    default:
+        break
+    }
+}
+```
+
+### Observable Agent State
+
+```swift
+@Observable
+final class ObservableAgentState {
+    var isProcessing: Bool = false
+    var currentTool: String? = nil
+    var error: Error? = nil
+    var messages: [AIMessage] = []
+}
+
+// SwiftUI binding
+struct ChatView: View {
+    @State var agentState = ObservableAgentState()
+
+    var body: some View {
+        if agentState.isProcessing {
+            ProgressView()
+        }
+        // ...
+    }
+}
+```
+
+---
+
+## 15. File Index
 
 ### Sources/AISDK/ (66 files)
 
@@ -1008,15 +1543,16 @@ do {
 
 ---
 
-### Examples/ (3 directories)
+### Examples/ (4 directories)
 
 | Directory | Purpose |
 |-----------|---------|
 | `BasicChatDemo/main.swift` | CLI demo: chat, streaming, images, structured output |
 | `ToolDemo/main.swift` | Tool framework demonstration |
+| `OpenRouterDemo/main.swift` | CLI demo: OpenRouter chat, streaming, JSON, tools |
 | `Demos/` | SwiftUI demo views |
 
-### Tests/AISDKTests/ (64 tests)
+### Tests/AISDKTests/ (69 tests)
 
 | Category | Tests | Focus |
 |----------|-------|-------|
@@ -1026,6 +1562,7 @@ do {
 | Streaming | 8 | SSE, chunks, concurrent, interruption |
 | Multimodal | 8 | Images, base64, multiple images |
 | Structured Output | 6 | JSON schema, object generation, types |
+| OpenRouter Integration | 5 | Chat, streaming, JSON, tools, reasoning |
 
 ---
 
@@ -1041,4 +1578,4 @@ do {
 
 ---
 
-*This documentation is auto-generated from codebase analysis. Last updated: January 2025*
+*This documentation reflects AISDK 2.0 architecture. Last updated: January 2025*

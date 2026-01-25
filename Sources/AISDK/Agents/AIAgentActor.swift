@@ -888,14 +888,21 @@ public final class ObservableAgentState: @unchecked Sendable {
 ///
 /// This class wraps a pending operation and provides continuation-based
 /// result delivery for async/await integration.
+///
+/// Handles both scenarios:
+/// 1. If `result` is accessed first, the continuation is stored for later delivery
+/// 2. If `complete()`/`fail()` is called first, the result is stored for later retrieval
 private final class AIOperation: @unchecked Sendable {
     /// The messages for this operation
     let messages: [AIMessage]
 
-    /// The continuation for result delivery
+    /// The continuation for result delivery (set when result is awaited first)
     private var continuation: CheckedContinuation<AIAgentResult, Error>?
 
-    /// Lock for thread-safe continuation access
+    /// Stored result for when complete/fail is called before result is accessed
+    private var storedResult: Result<AIAgentResult, Error>?
+
+    /// Lock for thread-safe access
     private let lock = NSLock()
 
     init(messages: [AIMessage]) {
@@ -907,8 +914,21 @@ private final class AIOperation: @unchecked Sendable {
         get async throws {
             try await withCheckedThrowingContinuation { cont in
                 lock.lock()
-                self.continuation = cont
-                lock.unlock()
+                // Check if result was already delivered (complete/fail called first)
+                if let stored = storedResult {
+                    storedResult = nil
+                    lock.unlock()
+                    switch stored {
+                    case .success(let value):
+                        cont.resume(returning: value)
+                    case .failure(let error):
+                        cont.resume(throwing: error)
+                    }
+                } else {
+                    // Store continuation for later delivery
+                    self.continuation = cont
+                    lock.unlock()
+                }
             }
         }
     }
@@ -916,19 +936,31 @@ private final class AIOperation: @unchecked Sendable {
     /// Complete the operation with a successful result
     func complete(with result: AIAgentResult) {
         lock.lock()
-        let cont = continuation
-        continuation = nil
-        lock.unlock()
-        cont?.resume(returning: result)
+        if let cont = continuation {
+            // Continuation was set first - resume immediately
+            continuation = nil
+            lock.unlock()
+            cont.resume(returning: result)
+        } else {
+            // Store result for later retrieval
+            storedResult = .success(result)
+            lock.unlock()
+        }
     }
 
     /// Fail the operation with an error
     func fail(with error: Error) {
         lock.lock()
-        let cont = continuation
-        continuation = nil
-        lock.unlock()
-        cont?.resume(throwing: error)
+        if let cont = continuation {
+            // Continuation was set first - resume immediately
+            continuation = nil
+            lock.unlock()
+            cont.resume(throwing: error)
+        } else {
+            // Store result for later retrieval
+            storedResult = .failure(error)
+            lock.unlock()
+        }
     }
 }
 
@@ -955,6 +987,10 @@ public enum StopCondition: Sendable {
 ///
 /// This class wraps a pending streaming operation and provides
 /// continuation-based completion signaling.
+///
+/// Handles both scenarios:
+/// 1. If `waitForCompletion` is called first, the continuation is stored for later
+/// 2. If `markCompleted` is called first, the result is stored for later retrieval
 private final class AIStreamingOperation: @unchecked Sendable {
     /// The messages for this operation
     let messages: [AIMessage]
@@ -968,8 +1004,8 @@ private final class AIStreamingOperation: @unchecked Sendable {
     /// Lock for thread-safe access
     private let lock = NSLock()
 
-    /// Whether the operation has completed
-    private var isCompleted = false
+    /// Stored completion result (set when markCompleted is called first)
+    private var storedCompletion: Result<Void, Error>?
 
     init(messages: [AIMessage], continuation: SafeAsyncStream.Continuation<AIStreamEvent>) {
         self.messages = messages
@@ -980,10 +1016,18 @@ private final class AIStreamingOperation: @unchecked Sendable {
     func waitForCompletion() async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             lock.lock()
-            if isCompleted {
+            // Check if markCompleted was called first
+            if let stored = storedCompletion {
+                storedCompletion = nil
                 lock.unlock()
-                cont.resume()
+                switch stored {
+                case .success:
+                    cont.resume()
+                case .failure(let error):
+                    cont.resume(throwing: error)
+                }
             } else {
+                // Store continuation for later
                 completionContinuation = cont
                 lock.unlock()
             }
@@ -993,15 +1037,23 @@ private final class AIStreamingOperation: @unchecked Sendable {
     /// Mark the operation as completed
     func markCompleted(with error: Error?) {
         lock.lock()
-        isCompleted = true
-        let cont = completionContinuation
-        completionContinuation = nil
-        lock.unlock()
-
-        if let error = error {
-            cont?.resume(throwing: error)
+        if let cont = completionContinuation {
+            // Continuation was set first - resume immediately
+            completionContinuation = nil
+            lock.unlock()
+            if let error = error {
+                cont.resume(throwing: error)
+            } else {
+                cont.resume()
+            }
         } else {
-            cont?.resume()
+            // Store result for later retrieval
+            if let error = error {
+                storedCompletion = .failure(error)
+            } else {
+                storedCompletion = .success(())
+            }
+            lock.unlock()
         }
     }
 }

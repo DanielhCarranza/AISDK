@@ -98,6 +98,69 @@ The tests use these environment variables:
 - `OPENAI_API_KEY` - Your OpenAI API key (required)
 - `TEST_MODEL` - Model to use for tests (set automatically by script categories)
 
+## OpenRouter Integration Tests
+
+OpenRouter tests run against real OpenRouter models using `OpenRouterClient`.
+
+### Required
+- `OPENROUTER_API_KEY` - OpenRouter API key
+
+### Optional
+- `OPENROUTER_TEST_MODELS` - Comma-separated model IDs to test
+- `OPENROUTER_DEFAULT_MODEL` - Default model for streaming/JSON/reasoning tests
+- `OPENROUTER_STREAM_MODEL` - Model ID for streaming test
+- `OPENROUTER_TOOL_MODEL` - Model ID for tool-calling test (default: `arcee-ai/trinity-mini:free`)
+
+### OpenRouter Free Tier Model Capabilities
+
+| Model | Chat | Stream | JSON | Reasoning | Tool Calling |
+|-------|------|--------|------|-----------|--------------|
+| `tngtech/deepseek-r1t2-chimera:free` | ✅ | ✅ | ✅ | ✅ | ❌ No providers |
+| `nvidia/nemotron-3-nano-30b-a3b:free` | ✅ | ✅ | ✅ | ✅ | ✅ (`tool_choice: auto` only) |
+| `arcee-ai/trinity-mini:free` | ✅ | ✅ | ✅ | ✅ | ✅ Full support |
+
+**Tool Calling Notes:**
+- **Trinity Mini** has full tool calling support including specific tool forcing
+- **Nemotron** supports tools with `tool_choice: "auto"` but NOT with specific tool forcing
+- **DeepSeek R1T2 Chimera** free tier providers don't support tool calling
+- The SDK uses `tool_choice: .auto` by default for maximum compatibility
+
+### Examples
+
+```bash
+# Run OpenRouter integration tests with default free models
+OPENROUTER_API_KEY=your_key_here swift test --filter OpenRouterIntegrationTests
+
+# Override models under test
+OPENROUTER_API_KEY=your_key_here \
+OPENROUTER_TEST_MODELS="tngtech/deepseek-r1t2-chimera:free,nvidia/nemotron-3-nano-30b-a3b:free" \
+swift test --filter OpenRouterIntegrationTests
+
+# Tool calling test (uses Trinity Mini by default)
+OPENROUTER_API_KEY=your_key_here \
+swift test --filter OpenRouterIntegrationTests.test_tool_calling_with_configured_model
+
+# Override tool model
+OPENROUTER_API_KEY=your_key_here \
+OPENROUTER_TOOL_MODEL="nvidia/nemotron-3-nano-30b-a3b:free" \
+swift test --filter OpenRouterIntegrationTests.test_tool_calling_with_configured_model
+```
+
+### CLI Demo
+
+```bash
+# Run all demo modes (uses smart model selection)
+swift run OpenRouterDemo --mode all
+
+# Run specific modes
+swift run OpenRouterDemo --mode chat
+swift run OpenRouterDemo --mode tools  # Auto-selects Trinity Mini
+swift run OpenRouterDemo --mode tools --model nvidia/nemotron-3-nano-30b-a3b:free
+
+# Show help with model compatibility info
+swift run OpenRouterDemo --help
+```
+
 ## Usage Examples
 
 ### Testing o4-mini Thinking Capabilities
