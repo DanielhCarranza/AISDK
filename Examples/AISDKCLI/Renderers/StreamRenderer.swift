@@ -45,54 +45,29 @@ class StreamRenderer {
         buffer += text
         charCount += text.count
 
+        // Track line stats for currentLine (used by finish() for markdown)
         for char in text {
             if char == "\n" {
-                flushCurrentLine()
                 lineCount += 1
+                currentLine = ""
             } else {
                 currentLine.append(char)
             }
         }
 
-        // Print inline (partial line)
-        if !currentLine.isEmpty {
-            printPartialLine()
-        }
-    }
-
-    /// Flush the current line to output
-    private func flushCurrentLine() {
-        if markdownEnabled {
-            let rendered = renderMarkdown(currentLine)
-            // Clear partial line and print full line
-            ANSIStyles.clearCurrentLine()
-            print(rendered)
-        } else {
-            ANSIStyles.clearCurrentLine()
-            print(currentLine)
-        }
-        currentLine = ""
-    }
-
-    /// Print partial line (for streaming effect)
-    private func printPartialLine() {
-        if markdownEnabled {
-            let rendered = renderMarkdownPartial(currentLine)
-            ANSIStyles.clearCurrentLine()
-            print(rendered, terminator: "")
-        } else {
-            ANSIStyles.clearCurrentLine()
-            print(currentLine, terminator: "")
-        }
+        // Print the delta directly - no clearing, no reprinting accumulated text
+        // This fixes the bug where clear-and-reprint caused duplication when
+        // text wrapped to multiple terminal lines
+        print(text, terminator: "")
         fflush(stdout)
     }
 
-    /// Finish rendering (flush any remaining content)
+    /// Finish rendering (ensure response ends with newline)
     func finish() {
-        if !currentLine.isEmpty {
-            flushCurrentLine()
-        }
-        print("") // Ensure newline at end
+        // Text has already been printed directly in append()
+        // Just ensure we end with a newline
+        print("")
+        currentLine = ""
     }
 
     /// Get statistics about the rendered content
@@ -144,14 +119,6 @@ class StreamRenderer {
         result = applyLinks(result)
 
         return result
-    }
-
-    /// Render markdown for partial line (simpler, no multi-char patterns)
-    private func renderMarkdownPartial(_ line: String) -> String {
-        if inCodeBlock {
-            return ANSIStyles.cyan(line)
-        }
-        return line
     }
 
     /// Apply inline code formatting (`code`)

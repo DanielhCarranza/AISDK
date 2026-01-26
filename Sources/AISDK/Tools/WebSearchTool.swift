@@ -72,8 +72,10 @@ public struct TavilyWebSearchClient: WebSearchClient, Sendable {
         let apiKey = try resolveAPIKey()
         let clampedResults = max(1, min(maxResults, 10))
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("search"))
+        let requestURL = baseURL.appendingPathComponent("search")
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
+        request.timeoutInterval = 30  // 30 second timeout to prevent hanging
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body = TavilySearchRequest(
@@ -87,7 +89,18 @@ public struct TavilyWebSearchClient: WebSearchClient, Sendable {
         )
         request.httpBody = try JSONEncoder().encode(body)
 
+        // Debug: Log request start
+        let startTime = Date()
+        FileHandle.standardError.write("[WebSearch] Starting request to \(requestURL) for query: \"\(query)\"\n".data(using: .utf8)!)
+
         let (data, response) = try await session.data(for: request)
+
+        // Debug: Log response received
+        let elapsed = Date().timeIntervalSince(startTime)
+        if let http = response as? HTTPURLResponse {
+            FileHandle.standardError.write("[WebSearch] Response received in \(String(format: "%.2f", elapsed))s - Status: \(http.statusCode)\n".data(using: .utf8)!)
+        }
+
         try validate(response: response, data: data)
 
         let decoded = try JSONDecoder().decode(TavilySearchResponse.self, from: data)
