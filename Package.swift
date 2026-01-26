@@ -58,6 +58,11 @@ let package = Package(
         .executable(
             name: "AISDKDemo",
             targets: ["AISDKDemo"]
+        ),
+        // AISDK Test Runner - real model testing and validation
+        .executable(
+            name: "AISDKTestRunner",
+            targets: ["AISDKTestRunner"]
         )
     ],
     dependencies: [
@@ -185,6 +190,11 @@ let package = Package(
             name: "AISDKDemo",
             dependencies: ["AISDK"],
             path: "Examples/AISDKDemo"
+        ),
+        .executableTarget(
+            name: "AISDKTestRunner",
+            dependencies: ["AISDK"],
+            path: "Examples/AISDKTestRunner"
         )
     ]
 )
