@@ -38,6 +38,9 @@ import Foundation
 ///     Text(agent.observableState.state.statusMessage)
 /// }
 /// ```
+///
+/// - Note: There is also a `protocol AIAgent` that defines the unified agent interface.
+///   This actor (`AIAgentActor`) is the concrete actor-based implementation.
 public actor AIAgentActor {
     // MARK: - Configuration (immutable after init)
 

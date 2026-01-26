@@ -116,6 +116,40 @@ extension AITool {
     }
 }
 
+// MARK: - AIParameter Schema Support
+
+extension AITool where Arguments: AIParameterSchema {
+    /// Generate schema from Arguments that conform to AIParameterSchema.
+    ///
+    /// This implementation automatically extracts parameter information from
+    /// the Arguments type's `parameterSchemaInfo` property.
+    public static func generateSchema() -> ToolSchema {
+        generateSchemaFromAIParameters(Arguments.self, toolName: name, toolDescription: description)
+    }
+}
+
+extension AITool {
+    /// Generate schema by reflecting on an Arguments instance.
+    ///
+    /// Use this method when your Arguments type uses `@AIParameter` property wrappers
+    /// but doesn't conform to `AIParameterSchema`. You must provide a default-initialized
+    /// instance of your Arguments type.
+    ///
+    /// ## Usage
+    /// ```swift
+    /// struct MyTool: AITool {
+    ///     typealias Arguments = MyArgs
+    ///
+    ///     static func generateSchema() -> ToolSchema {
+    ///         generateSchemaFromArgumentsInstance(MyArgs())
+    ///     }
+    /// }
+    /// ```
+    public static func generateSchemaFromArgumentsInstance(_ instance: Arguments) -> ToolSchema {
+        generateSchemaFromInstance(instance, toolName: name, toolDescription: description)
+    }
+}
+
 // MARK: - AIToolResult
 
 /// The result of an AITool execution
