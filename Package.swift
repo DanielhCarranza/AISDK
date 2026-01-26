@@ -63,6 +63,11 @@ let package = Package(
         .executable(
             name: "AISDKTestRunner",
             targets: ["AISDKTestRunner"]
+        ),
+        // AISDK CLI - Interactive terminal AI assistant
+        .executable(
+            name: "AISDKCLI",
+            targets: ["AISDKCLI"]
         )
     ],
     dependencies: [
@@ -195,6 +200,11 @@ let package = Package(
             name: "AISDKTestRunner",
             dependencies: ["AISDK"],
             path: "Examples/AISDKTestRunner"
+        ),
+        .executableTarget(
+            name: "AISDKCLI",
+            dependencies: ["AISDK"],
+            path: "Examples/AISDKCLI"
         )
     ]
 )
