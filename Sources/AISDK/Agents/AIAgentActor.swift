@@ -767,30 +767,34 @@ public actor AIAgentActor {
     // MARK: - MainActor State Helpers
 
     /// Set observable processing state
+    /// Note: Uses fire-and-forget to avoid blocking in CLI environments without a RunLoop
     private func setObservableIsProcessing(_ processing: Bool) async {
-        await MainActor.run {
+        Task { @MainActor in
             observableState.isProcessing = processing
         }
     }
 
     /// Set observable state to thinking with step index
+    /// Note: Uses fire-and-forget to avoid blocking in CLI environments without a RunLoop
     private func setObservableThinking(step: Int) async {
-        await MainActor.run {
+        Task { @MainActor in
             observableState.state = .thinking
             observableState.currentStep = step
         }
     }
 
     /// Set observable state
+    /// Note: Uses fire-and-forget to avoid blocking in CLI environments without a RunLoop
     private func setObservableState(_ agentState: AgentState) async {
-        await MainActor.run {
+        Task { @MainActor in
             observableState.state = agentState
         }
     }
 
     /// Set observable error state
+    /// Note: Uses fire-and-forget to avoid blocking in CLI environments without a RunLoop
     private func setObservableError(state agentState: AgentState, error: AISDKErrorV2) async {
-        await MainActor.run {
+        Task { @MainActor in
             observableState.state = agentState
             observableState.error = error
         }
