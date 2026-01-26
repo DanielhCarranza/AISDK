@@ -660,8 +660,7 @@ public extension ProviderStreamEvent {
 public extension AITextRequest {
     /// Convert to ProviderRequest for the transport layer
     ///
-    /// Note: Tool conversion is not yet implemented (tracked for Phase 2).
-    /// The `tools` parameter will be nil until tool schema conversion is added.
+    /// Note: Tool schemas are converted to ProviderJSONValue for provider requests.
     ///
     /// - Parameters:
     ///   - modelId: Fallback model ID if request.model is nil
@@ -676,7 +675,7 @@ public extension AITextRequest {
             topP: topP,
             stop: stop,
             stream: stream,
-            tools: nil, // TODO: Convert ToolSchema to [ProviderJSONValue] in Phase 2 task
+            tools: try tools?.map { try $0.toProviderJSONValue() },
             toolChoice: toolChoice?.toProviderToolChoice(),
             responseFormat: try responseFormat?.toProviderResponseFormat(),
             timeout: 120,
@@ -684,6 +683,22 @@ public extension AITextRequest {
             traceContext: nil,
             metadata: metadata
         )
+    }
+}
+
+// MARK: - ToolSchema Conversion
+
+public extension ToolSchema {
+    /// Convert ToolSchema to ProviderJSONValue for ProviderClient requests.
+    /// - Throws: `ResponseFormatConversionError` if JSON encoding fails
+    func toProviderJSONValue() throws -> ProviderJSONValue {
+        let encoder = JSONEncoder()
+        do {
+            let data = try encoder.encode(self)
+            return try JSONDecoder().decode(ProviderJSONValue.self, from: data)
+        } catch {
+            throw ResponseFormatConversionError(message: "Failed to encode tool schema '\(function?.name ?? "unknown")'")
+        }
     }
 }
 

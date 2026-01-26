@@ -42,6 +42,46 @@ import Foundation
 /// - Note: There is also a `protocol AIAgent` that defines the unified agent interface.
 ///   This actor (`AIAgentActor`) is the concrete actor-based implementation.
 public actor AIAgentActor {
+    // MARK: - Request Options
+
+    /// Request-level options applied to each model call
+    public struct RequestOptions: @unchecked Sendable {
+        public var maxTokens: Int?
+        public var temperature: Double?
+        public var topP: Double?
+        public var stop: [String]?
+        public var toolChoice: ToolChoice?
+        public var responseFormat: ResponseFormat?
+        public var allowedProviders: Set<String>?
+        public var sensitivity: DataSensitivity
+        public var bufferPolicy: StreamBufferPolicy?
+        public var metadata: [String: String]?
+
+        public init(
+            maxTokens: Int? = nil,
+            temperature: Double? = nil,
+            topP: Double? = nil,
+            stop: [String]? = nil,
+            toolChoice: ToolChoice? = nil,
+            responseFormat: ResponseFormat? = nil,
+            allowedProviders: Set<String>? = nil,
+            sensitivity: DataSensitivity = .standard,
+            bufferPolicy: StreamBufferPolicy? = nil,
+            metadata: [String: String]? = nil
+        ) {
+            self.maxTokens = maxTokens
+            self.temperature = temperature
+            self.topP = topP
+            self.stop = stop
+            self.toolChoice = toolChoice
+            self.responseFormat = responseFormat
+            self.allowedProviders = allowedProviders
+            self.sensitivity = sensitivity
+            self.bufferPolicy = bufferPolicy
+            self.metadata = metadata
+        }
+    }
+
     // MARK: - Configuration (immutable after init)
 
     /// The language model to use for generation
@@ -52,6 +92,9 @@ public actor AIAgentActor {
 
     /// System instructions for the agent
     private let instructions: String?
+
+    /// Request-level options for each model call
+    private let requestOptions: RequestOptions
 
     /// When to stop the agent loop
     private let stopCondition: StopCondition
@@ -116,6 +159,7 @@ public actor AIAgentActor {
         model: any AILanguageModel,
         tools: [Tool.Type] = [],
         instructions: String? = nil,
+        requestOptions: RequestOptions = RequestOptions(),
         stopCondition: StopCondition = .stepCount(20),
         timeout: TimeoutPolicy = .default,
         maxToolRounds: Int = 10,
@@ -125,6 +169,7 @@ public actor AIAgentActor {
         self.model = model
         self.tools = tools
         self.instructions = instructions
+        self.requestOptions = requestOptions
         self.stopCondition = stopCondition
         self.timeout = timeout
         self.maxToolRounds = maxToolRounds
@@ -281,9 +326,20 @@ public actor AIAgentActor {
             await setObservableThinking(step: stepIndex)
 
             // Build request
+            let toolSchemas = tools.isEmpty ? nil : tools.map { $0.jsonSchema() }
             let request = AITextRequest(
                 messages: workingMessages,
-                tools: tools.map { $0.jsonSchema() }
+                maxTokens: requestOptions.maxTokens,
+                temperature: requestOptions.temperature,
+                topP: requestOptions.topP,
+                stop: requestOptions.stop,
+                tools: toolSchemas,
+                toolChoice: toolSchemas != nil ? requestOptions.toolChoice : nil,
+                responseFormat: requestOptions.responseFormat,
+                allowedProviders: requestOptions.allowedProviders,
+                sensitivity: requestOptions.sensitivity,
+                bufferPolicy: requestOptions.bufferPolicy,
+                metadata: requestOptions.metadata
             )
 
             // Stream the response
@@ -395,11 +451,19 @@ public actor AIAgentActor {
             for toolCall in toolCalls {
                 do {
                     let toolResult = try await executeToolCall(toolCall)
-                    let resultData = AIToolResultData(id: toolCall.id, result: toolResult, metadata: nil)
+                    let resultData = AIToolResultData(
+                        id: toolCall.id,
+                        result: toolResult.content,
+                        metadata: toolResult.metadata
+                    )
                     toolResults.append(resultData)
-                    continuation.yield(.toolResult(id: toolCall.id, result: toolResult, metadata: nil))
+                    continuation.yield(.toolResult(
+                        id: toolCall.id,
+                        result: toolResult.content,
+                        metadata: toolResult.metadata
+                    ))
 
-                    let toolMessage = AIMessage.tool(toolResult, toolCallId: toolCall.id)
+                    let toolMessage = AIMessage.tool(toolResult.content, toolCallId: toolCall.id)
                     workingMessages.append(toolMessage)
                 } catch {
                     // Tool failed, add error message
@@ -520,9 +584,20 @@ public actor AIAgentActor {
             await setObservableThinking(step: stepIndex)
 
             // Build request
+            let toolSchemas = tools.isEmpty ? nil : tools.map { $0.jsonSchema() }
             let request = AITextRequest(
                 messages: workingMessages,
-                tools: tools.map { $0.jsonSchema() }
+                maxTokens: requestOptions.maxTokens,
+                temperature: requestOptions.temperature,
+                topP: requestOptions.topP,
+                stop: requestOptions.stop,
+                tools: toolSchemas,
+                toolChoice: toolSchemas != nil ? requestOptions.toolChoice : nil,
+                responseFormat: requestOptions.responseFormat,
+                allowedProviders: requestOptions.allowedProviders,
+                sensitivity: requestOptions.sensitivity,
+                bufferPolicy: requestOptions.bufferPolicy,
+                metadata: requestOptions.metadata
             )
 
             // Generate response
@@ -581,8 +656,12 @@ public actor AIAgentActor {
             for toolCall in toolCalls {
                 do {
                     let toolResult = try await executeToolCall(toolCall)
-                    toolResults.append(AIToolResultData(id: toolCall.id, result: toolResult, metadata: nil))
-                    let toolMessage = AIMessage.tool(toolResult, toolCallId: toolCall.id)
+                    toolResults.append(AIToolResultData(
+                        id: toolCall.id,
+                        result: toolResult.content,
+                        metadata: toolResult.metadata
+                    ))
+                    let toolMessage = AIMessage.tool(toolResult.content, toolCallId: toolCall.id)
                     workingMessages.append(toolMessage)
                 } catch {
                     // Tool failed, add error message
@@ -631,7 +710,7 @@ public actor AIAgentActor {
     ///
     /// - Parameter toolCall: The tool call to execute
     /// - Returns: The tool result as a string
-    private func executeToolCall(_ toolCall: AIToolCallResult) async throws -> String {
+    private func executeToolCall(_ toolCall: AIToolCallResult) async throws -> (content: String, metadata: ToolMetadata?) {
         // Find tool type by name
         guard let toolType = tools.first(where: { $0.init().name == toolCall.name }) else {
             throw AISDKErrorV2.toolNotFound(toolCall.name)
@@ -653,14 +732,14 @@ public actor AIAgentActor {
 
         // Execute with timeout - capture the configured tool
         let toolToExecute = configuredTool
-        let (content, _) = try await TimeoutExecutor(policy: timeout).execute(
+        let (content, metadata) = try await TimeoutExecutor(policy: timeout).execute(
             timeout: timeout.operationTimeout,
             operationName: "tool:\(toolCall.name)"
         ) {
             try await toolToExecute.execute()
         }
 
-        return content
+        return (content, metadata)
     }
 
     /// Check if the agent should stop based on the current step result
@@ -1088,4 +1167,3 @@ private final class ToolCallBuilder: @unchecked Sendable {
         return AIToolCallResult(id: id, name: name, arguments: args)
     }
 }
-

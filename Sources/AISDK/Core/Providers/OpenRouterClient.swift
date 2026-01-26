@@ -514,9 +514,10 @@ public actor OpenRouterClient: ProviderClient {
         }
 
         var responseId: String?
-        // Key by index for accumulation; store (id, name, arguments, pendingDeltas)
-        // pendingDeltas holds argument fragments before we can emit start
+        // Key by index for accumulation; store (id, name, arguments, startEmitted)
         var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool, pendingDeltas: [String])] = [:]
+        // Track last seen delta per index to detect duplicates
+        var lastArgsDelta: [Int: String] = [:]
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
         var decodeErrorCount = 0
@@ -576,29 +577,63 @@ public actor OpenRouterClient: ProviderClient {
                         let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
                         let existingName = accumulatedToolCalls[index]?.name ?? ""
                         let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
-                        let pendingDeltas = accumulatedToolCalls[index]?.pendingDeltas ?? []
                         let name = newName ?? existingName
 
-                        // Collect argument delta
-                        var newPendingDeltas = pendingDeltas
-                        if let argsDelta = toolCall.function?.arguments, !argsDelta.isEmpty {
-                            newPendingDeltas.append(argsDelta)
+                        // Get the current argument delta
+                        var argsDelta = toolCall.function?.arguments ?? ""
+
+                        // Skip duplicate deltas (some providers may send the same delta multiple times)
+                        if !argsDelta.isEmpty && argsDelta == lastArgsDelta[index] {
+                            continue
+                        }
+                        if !argsDelta.isEmpty {
+                            lastArgsDelta[index] = argsDelta
                         }
 
-                        // Can we emit start? Need a name
-                        if !startEmitted && !name.isEmpty {
+                        // Handle overlapping deltas: some providers send chunks that overlap
+                        // with previous content. Detect and remove the overlap.
+                        if !argsDelta.isEmpty && !existingArgs.isEmpty {
+                            // Check if argsDelta starts with content that's at the end of existingArgs
+                            let overlapCheckLength = min(argsDelta.count, existingArgs.count, 20)
+                            for overlap in stride(from: overlapCheckLength, through: 1, by: -1) {
+                                let existingEnd = String(existingArgs.suffix(overlap))
+                                let deltaStart = String(argsDelta.prefix(overlap))
+                                if existingEnd == deltaStart {
+                                    // Found overlap, remove it from argsDelta
+                                    argsDelta = String(argsDelta.dropFirst(overlap))
+                                    break
+                                }
+                            }
+                        }
+
+                        // Debug: log what we're receiving
+                        #if DEBUG
+                        if !argsDelta.isEmpty {
+                            FileHandle.standardError.write("[TOOL_DEBUG] idx=\(index) argsDelta='\(argsDelta.prefix(50))' existing='\(existingArgs.suffix(30))'\n".data(using: .utf8)!)
+                        }
+                        #endif
+
+                        // Handle tool call state based on whether start has been emitted
+                        if startEmitted {
+                            // Start already emitted - just emit new deltas and accumulate
+                            if !argsDelta.isEmpty {
+                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                            }
+                            let allArgs = existingArgs + argsDelta
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: true, pendingDeltas: [])
+                        } else if !name.isEmpty {
+                            // Can emit start - we have a name
                             continuation.yield(.toolCallStart(id: stableId, name: name))
-                            // Now flush all pending deltas
-                            var allArgs = existingArgs
-                            for delta in newPendingDeltas {
-                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: delta))
-                                allArgs += delta
+                            // Emit the argument delta if we have one
+                            let allArgs = existingArgs + argsDelta
+                            if !allArgs.isEmpty {
+                                continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: allArgs))
                             }
                             accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: true, pendingDeltas: [])
                         } else {
-                            // Buffer until we can emit start
-                            let allArgs = existingArgs + newPendingDeltas.joined()
-                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: false, pendingDeltas: newPendingDeltas)
+                            // Buffer until we have a name to emit start
+                            let allArgs = existingArgs + argsDelta
+                            accumulatedToolCalls[index] = (id: stableId, name: name, arguments: allArgs, startEmitted: false, pendingDeltas: [])
                         }
                     }
                 }
