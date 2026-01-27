@@ -2,6 +2,19 @@
 
 > Agent implementation for multi-step AI workflows
 
+## AIAgent Protocol vs AIAgentActor
+
+AISDK provides two related but distinct types for agent functionality:
+
+- **`AIAgent`** (protocol) - Defines the unified interface for AI agents. Located in `Sources/AISDK/Core/Protocols/AIAgent.swift`.
+- **`AIAgentActor`** (actor) - The concrete actor-based implementation of the agent pattern. Located in `Sources/AISDK/Agents/AIAgentActor.swift`.
+
+The protocol defines the contract (properties like `agentId`, `state`, `messages`, `tools` and methods like `send()`, `sendStream()`, `reset()`), while the actor provides the thread-safe, observable implementation.
+
+In most cases, you'll use `AIAgentActor` directly for creating agents.
+
+---
+
 ## AIAgentActor
 
 The primary agent implementation using Swift actors.

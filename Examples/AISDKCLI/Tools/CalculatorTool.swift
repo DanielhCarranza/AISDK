@@ -16,12 +16,7 @@ struct CalculatorTool: Tool {
     @Parameter(description: "The mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(3.14159/2)')")
     var expression: String = ""
 
-    init() {
-        self._expression = Parameter(
-            wrappedValue: "",
-            description: "The mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(3.14159/2)')"
-        )
-    }
+    init() {}
 
     func execute() async throws -> (content: String, metadata: ToolMetadata?) {
         do {

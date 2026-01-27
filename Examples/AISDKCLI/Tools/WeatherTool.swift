@@ -25,28 +25,10 @@ struct WeatherTool: Tool {
     private let client: WeatherClient
 
     init() {
-        self._city = Parameter(
-            wrappedValue: "",
-            description: "The city name to get weather for (e.g., 'Tokyo', 'New York', 'London')"
-        )
-        self._unit = Parameter(
-            wrappedValue: nil,
-            description: "Temperature unit (celsius or fahrenheit). Defaults to celsius.",
-            validation: ["enum": ["celsius", "fahrenheit"]]
-        )
         self.client = OpenMeteoWeatherClient()
     }
 
-    init(client: WeatherClient = OpenMeteoWeatherClient()) {
-        self._city = Parameter(
-            wrappedValue: "",
-            description: "The city name to get weather for (e.g., 'Tokyo', 'New York', 'London')"
-        )
-        self._unit = Parameter(
-            wrappedValue: nil,
-            description: "Temperature unit (celsius or fahrenheit). Defaults to celsius.",
-            validation: ["enum": ["celsius", "fahrenheit"]]
-        )
+    init(client: WeatherClient) {
         self.client = client
     }
 

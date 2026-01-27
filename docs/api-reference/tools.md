@@ -11,8 +11,8 @@ public protocol AITool: Sendable {
     /// Type for tool arguments
     associatedtype Arguments: Codable & Sendable
 
-    /// Type for execution metadata
-    associatedtype Metadata: Sendable = EmptyMetadata
+    /// Type for result metadata (use EmptyMetadata for none)
+    associatedtype Metadata: AIToolMetadata = EmptyMetadata
 
     /// Unique tool name (snake_case)
     static var name: String { get }
@@ -20,17 +20,14 @@ public protocol AITool: Sendable {
     /// Human-readable description
     static var description: String { get }
 
-    /// JSON Schema for arguments
-    static var argumentsSchema: [String: Any] { get }
-
-    /// Execution timeout
-    static var timeout: Duration { get }
+    /// Execution timeout in seconds
+    static var timeout: TimeInterval { get }
 
     /// Execute the tool
-    static func execute(
-        arguments: Arguments,
-        metadata: Metadata
-    ) async throws -> AIToolResult
+    static func execute(arguments: Arguments) async throws -> AIToolResult<Metadata>
+
+    /// Generate JSON schema for arguments
+    static func generateSchema() -> ToolSchema
 }
 ```
 
@@ -38,14 +35,19 @@ public protocol AITool: Sendable {
 
 ```swift
 extension AITool {
-    // Default 30-second timeout
-    public static var timeout: Duration { .seconds(30) }
-}
+    // Default 60-second timeout
+    public static var timeout: TimeInterval { 60.0 }
 
-extension AITool where Metadata == EmptyMetadata {
-    // Simplified execute without metadata
-    public static func execute(arguments: Arguments) async throws -> AIToolResult {
-        try await execute(arguments: arguments, metadata: EmptyMetadata())
+    // Default schema generation (override for detailed schemas)
+    public static func generateSchema() -> ToolSchema {
+        ToolSchema(
+            type: "function",
+            function: ToolFunction(
+                name: name,
+                description: description,
+                parameters: Parameters(type: "object", properties: [:])
+            )
+        )
     }
 }
 ```
@@ -65,23 +67,27 @@ struct CalculatorTool: AITool {
     static let name = "calculator"
     static let description = "Evaluate mathematical expressions"
 
-    static var argumentsSchema: [String: Any] {
-        [
-            "type": "object",
-            "properties": [
-                "expression": [
-                    "type": "string",
-                    "description": "Math expression to evaluate"
-                ]
-            ],
-            "required": ["expression"]
-        ]
+    static func generateSchema() -> ToolSchema {
+        ToolSchema(
+            type: "function",
+            function: ToolFunction(
+                name: name,
+                description: description,
+                parameters: Parameters(
+                    type: "object",
+                    properties: [
+                        "expression": PropertyDefinition(
+                            type: "string",
+                            description: "Math expression to evaluate"
+                        )
+                    ],
+                    required: ["expression"]
+                )
+            )
+        )
     }
 
-    static func execute(
-        arguments: Arguments,
-        metadata: EmptyMetadata
-    ) async throws -> AIToolResult {
+    static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
         let result = try evaluate(arguments.expression)
         return AIToolResult(content: "\(result)")
     }
@@ -101,31 +107,35 @@ struct SearchTool: AITool {
     static let name = "web_search"
     static let description = "Search the web for information"
 
-    static var argumentsSchema: [String: Any] {
-        [
-            "type": "object",
-            "properties": [
-                "query": [
-                    "type": "string",
-                    "description": "Search query"
-                ],
-                "maxResults": [
-                    "type": "integer",
-                    "description": "Maximum results (default: 10)"
-                ],
-                "language": [
-                    "type": "string",
-                    "description": "Language code (default: en)"
-                ]
-            ],
-            "required": ["query"]
-        ]
+    static func generateSchema() -> ToolSchema {
+        ToolSchema(
+            type: "function",
+            function: ToolFunction(
+                name: name,
+                description: description,
+                parameters: Parameters(
+                    type: "object",
+                    properties: [
+                        "query": PropertyDefinition(
+                            type: "string",
+                            description: "Search query"
+                        ),
+                        "max_results": PropertyDefinition(
+                            type: "integer",
+                            description: "Maximum results (default: 10)"
+                        ),
+                        "language": PropertyDefinition(
+                            type: "string",
+                            description: "Language code (default: en)"
+                        )
+                    ],
+                    required: ["query"]
+                )
+            )
+        )
     }
 
-    static func execute(
-        arguments: Arguments,
-        metadata: EmptyMetadata
-    ) async throws -> AIToolResult {
+    static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
         let results = await search(
             query: arguments.query,
             limit: arguments.maxResults ?? 10,
@@ -140,37 +150,46 @@ struct SearchTool: AITool {
 
 ```swift
 struct DatabaseQueryTool: AITool {
+    typealias Metadata = QueryMetadata
+
     struct Arguments: Codable, Sendable {
         let query: String
     }
 
-    struct Metadata: Sendable {
-        let connection: DatabaseConnection
-        let userId: String
+    struct QueryMetadata: AIToolMetadata {
+        let rowCount: Int
+        let executionTime: TimeInterval
     }
 
     static let name = "database_query"
     static let description = "Execute a database query"
 
-    static var argumentsSchema: [String: Any] {
-        [
-            "type": "object",
-            "properties": [
-                "query": ["type": "string"]
-            ],
-            "required": ["query"]
-        ]
+    static func generateSchema() -> ToolSchema {
+        ToolSchema(
+            type: "function",
+            function: ToolFunction(
+                name: name,
+                description: description,
+                parameters: Parameters(
+                    type: "object",
+                    properties: [
+                        "query": PropertyDefinition(type: "string", description: "SQL query")
+                    ],
+                    required: ["query"]
+                )
+            )
+        )
     }
 
-    static func execute(
-        arguments: Arguments,
-        metadata: Metadata
-    ) async throws -> AIToolResult {
-        let results = try await metadata.connection.execute(
-            arguments.query,
-            userId: metadata.userId
+    static func execute(arguments: Arguments) async throws -> AIToolResult<QueryMetadata> {
+        let start = Date()
+        let results = try await database.execute(arguments.query)
+        let elapsed = Date().timeIntervalSince(start)
+
+        return AIToolResult(
+            content: results.description,
+            metadata: QueryMetadata(rowCount: results.count, executionTime: elapsed)
         )
-        return AIToolResult(content: results.description)
     }
 }
 ```
@@ -182,61 +201,45 @@ struct DatabaseQueryTool: AITool {
 Result returned from tool execution.
 
 ```swift
-public struct AIToolResult: Sendable, Equatable {
-    /// Text content
+public struct AIToolResult<M: AIToolMetadata>: Sendable {
+    /// Text content returned to the LLM
     public let content: String
 
-    /// Whether this is an error
-    public let isError: Bool
-
-    /// Optional artifacts
-    public let artifacts: [AIToolArtifact]
+    /// Optional metadata for UI rendering or other purposes
+    public let metadata: M?
 
     // Initializers
-    public init(
-        content: String,
-        isError: Bool = false,
-        artifacts: [AIToolArtifact] = []
-    )
-
-    // Convenience methods
-    public static func error(_ message: String) -> AIToolResult
-    public static func success(_ content: String) -> AIToolResult
+    public init(content: String) where M == EmptyMetadata
+    public init(content: String, metadata: M?)
 }
 ```
 
-### AIToolArtifact
+### AIToolMetadata Protocol
 
 ```swift
-public struct AIToolArtifact: Sendable, Equatable {
-    public let name: String
-    public let mimeType: String
-    public let data: Data
+public protocol AIToolMetadata: Codable, Sendable {}
 
-    public init(name: String, mimeType: String, data: Data)
+/// Empty metadata type for tools that don't return metadata
+public struct EmptyMetadata: AIToolMetadata, Equatable {
+    public init() {}
 }
 ```
 
 ### Usage
 
 ```swift
-// Simple result
+// Simple result (no metadata)
 return AIToolResult(content: "Temperature: 72F")
 
-// Error result
-return AIToolResult.error("City not found")
+// Result with metadata
+struct WeatherMetadata: AIToolMetadata {
+    let source: String
+    let timestamp: Date
+}
 
-// Result with artifact
-let imageData = try await generateChart(data)
 return AIToolResult(
-    content: "Chart generated successfully",
-    artifacts: [
-        AIToolArtifact(
-            name: "chart.png",
-            mimeType: "image/png",
-            data: imageData
-        )
-    ]
+    content: "Temperature: 72F, sunny",
+    metadata: WeatherMetadata(source: "OpenMeteo", timestamp: Date())
 )
 ```
 
@@ -247,24 +250,21 @@ return AIToolResult(
 Thread-safe registry for tool management.
 
 ```swift
-public actor AIToolRegistry {
+public final class AIToolRegistry: @unchecked Sendable {
     /// Register a tool type
     public func register<T: AITool>(_ toolType: T.Type)
 
     /// Get tool by name
     public func tool(named name: String) -> AnyAITool?
 
-    /// Get all registered tool names
+    /// Get all registered tool names (sorted)
     public var registeredNames: [String]
 
-    /// Check if tool is registered
-    public func isRegistered(_ name: String) -> Bool
+    /// Get all registered tools as schemas (sorted by name)
+    public var schemas: [ToolSchema]
 
-    /// Unregister a tool
-    public func unregister(_ name: String)
-
-    /// Clear all tools
-    public func clear()
+    /// Execute a tool by name
+    public func execute(name: String, arguments: String) async throws -> AIToolExecutionResult
 }
 ```
 
@@ -274,19 +274,21 @@ public actor AIToolRegistry {
 let registry = AIToolRegistry()
 
 // Register tools
-await registry.register(WeatherTool.self)
-await registry.register(SearchTool.self)
+registry.register(WeatherTool.self)
+registry.register(SearchTool.self)
 
 // Look up tool
-if let tool = await registry.tool(named: "weather") {
-    let result = try await tool.execute(
-        arguments: Data(#"{"city":"Tokyo"}"#.utf8)
-    )
+if let tool = registry.tool(named: "get_weather") {
+    let result = try await tool.execute(arguments: #"{"city":"Tokyo"}"#)
+    print(result.content)
 }
 
 // List all tools
-let names = await registry.registeredNames
-// ["weather", "search"]
+let names = registry.registeredNames
+// ["get_weather", "web_search"]
+
+// Get schemas for LLM function calling
+let schemas = registry.schemas
 ```
 
 ---
@@ -296,21 +298,21 @@ let names = await registry.registeredNames
 Type-erased wrapper for AITool types.
 
 ```swift
-public struct AnyAITool: Sendable {
+public struct AnyAITool: @unchecked Sendable {
     /// Tool name
     public let name: String
 
     /// Tool description
     public let description: String
 
-    /// Arguments schema
-    public let argumentsSchema: [String: Any]
+    /// Tool's JSON schema
+    public let schema: ToolSchema
 
-    /// Timeout duration
-    public let timeout: Duration
+    /// Timeout in seconds
+    public let timeout: TimeInterval
 
-    /// Execute with raw JSON arguments
-    public func execute(arguments: Data) async throws -> AIToolResult
+    /// Execute with raw JSON arguments string
+    public func execute(arguments: String) async throws -> AIToolExecutionResult
 
     /// Create from a tool type
     public init<T: AITool>(_ toolType: T.Type)
@@ -326,11 +328,9 @@ let tools: [AnyAITool] = [
     AnyAITool(SearchTool.self)
 ]
 
-// Use with agent
-let agent = AIAgentActor(
-    model: model,
-    tools: tools
-)
+// Execute a tool
+let result = try await tools[0].execute(arguments: #"{"city":"Tokyo"}"#)
+print(result.content)
 ```
 
 ---
@@ -341,62 +341,95 @@ Utility for executing tools with timeout and argument parsing.
 
 ```swift
 public struct AIToolExecutor: Sendable {
-    /// Execute a tool by name
+    /// Execute a tool with raw JSON arguments
     public static func execute<T: AITool>(
         _ toolType: T.Type,
-        arguments: Data,
-        metadata: T.Metadata
-    ) async throws -> AIToolResult
+        arguments: String
+    ) async throws -> AIToolExecutionResult
+}
+```
 
-    /// Execute with timeout
-    public static func executeWithTimeout<T: AITool>(
-        _ toolType: T.Type,
-        arguments: Data,
-        metadata: T.Metadata,
-        timeout: Duration
-    ) async throws -> AIToolResult
+The executor handles:
+- JSON argument parsing with snake_case key support
+- Timeout enforcement via the tool's static `timeout` property
+- Error wrapping in `AISDKErrorV2` for consistent error handling
+
+### AIToolExecutionResult
+
+```swift
+public struct AIToolExecutionResult: Sendable {
+    /// Text content returned to the LLM
+    public let content: String
+
+    /// Optional type-erased metadata
+    public let metadata: AnyAIToolMetadata?
 }
 ```
 
 ### Error Types
 
+Tool execution errors are represented using `AISDKErrorV2`:
+
 ```swift
-public enum AIToolError: Error, Sendable {
-    /// Arguments failed to decode
-    case invalidArguments(String)
+// Tool argument parsing failed
+AISDKErrorV2(code: .invalidToolArguments, message: "...")
 
-    /// Tool execution timed out
-    case timeout(Duration)
+// Tool execution timed out
+AISDKErrorV2.toolTimeout(tool: "get_weather", after: 60.0)
 
-    /// Tool not found
-    case notFound(String)
+// Tool not found
+AISDKErrorV2.toolNotFound("unknown_tool")
 
-    /// Execution failed
-    case executionFailed(Error)
-}
+// Tool execution failed
+AISDKErrorV2.toolExecutionFailed(tool: "get_weather", reason: "...")
 ```
 
 ---
 
 ## Tool Schema Generation
 
-### JSON Schema Format
+### Using generateSchema()
 
 ```swift
-static var argumentsSchema: [String: Any] {
-    [
-        "type": "object",
-        "properties": [
-            "paramName": [
-                "type": "string",        // string, number, integer, boolean, array, object
-                "description": "...",
-                "enum": ["a", "b"],       // Optional: allowed values
-                "default": "a"            // Optional: default value
-            ]
-        ],
-        "required": ["paramName"]         // Required parameters
-    ]
+static func generateSchema() -> ToolSchema {
+    ToolSchema(
+        type: "function",
+        function: ToolFunction(
+            name: name,
+            description: description,
+            parameters: Parameters(
+                type: "object",
+                properties: [
+                    "city": PropertyDefinition(
+                        type: "string",
+                        description: "City name"
+                    ),
+                    "unit": PropertyDefinition(
+                        type: "string",
+                        description: "Temperature unit",
+                        enumValues: ["celsius", "fahrenheit"]
+                    )
+                ],
+                required: ["city"]
+            )
+        )
+    )
 }
+```
+
+### PropertyDefinition Options
+
+```swift
+PropertyDefinition(
+    type: "string",           // string, number, integer, boolean, array, object
+    description: "...",       // Human-readable description
+    minimum: 1.0,             // For numbers
+    maximum: 100.0,           // For numbers
+    minLength: 1,             // For strings
+    maxLength: 1000,          // For strings
+    pattern: "^[a-z]+$",      // Regex for strings
+    enumValues: ["a", "b"]    // Allowed values
+)
 ```
 
 ### Supported Types
@@ -435,13 +468,13 @@ static let description = """
 ### 3. Handle Errors Gracefully
 
 ```swift
-static func execute(arguments: Arguments, metadata: EmptyMetadata) async throws -> AIToolResult {
+static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
     do {
         let result = try await fetchData(arguments.query)
         return AIToolResult(content: result)
     } catch {
         // Return error as content so agent can adapt
-        return AIToolResult.error("Failed to fetch data: \(error.localizedDescription)")
+        return AIToolResult(content: "Error: Failed to fetch data")
     }
 }
 ```
@@ -450,24 +483,76 @@ static func execute(arguments: Arguments, metadata: EmptyMetadata) async throws 
 
 ```swift
 struct SlowAPITool: AITool {
-    // Override for slow operations
-    static var timeout: Duration { .seconds(60) }
+    // Override for slow operations (default is 60 seconds)
+    static var timeout: TimeInterval { 120.0 }
 }
 ```
 
 ### 5. Validate Arguments
 
 ```swift
-static func execute(arguments: Arguments, metadata: EmptyMetadata) async throws -> AIToolResult {
+static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
     guard !arguments.query.isEmpty else {
-        return AIToolResult.error("Query cannot be empty")
+        return AIToolResult(content: "Error: Query cannot be empty")
     }
     // ...
 }
 ```
 
+---
+
+## Legacy Tool Protocol
+
+For backward compatibility, AISDK also provides a mutable, instance-based `Tool` protocol.
+
+```swift
+public protocol Tool {
+    var name: String { get }
+    var description: String { get }
+    var returnToolResponse: Bool { get }
+
+    init()
+    static func jsonSchema() -> ToolSchema
+    func execute() async throws -> (content: String, metadata: ToolMetadata?)
+    mutating func setParameters(from arguments: [String: Any]) throws
+}
+```
+
+### Using @Parameter Property Wrapper
+
+The legacy `Tool` protocol uses `@Parameter` property wrappers:
+
+```swift
+struct WeatherTool: Tool {
+    let name = "get_weather"
+    let description = "Get weather for a city"
+
+    @Parameter(description: "City name")
+    var city: String = ""
+
+    @Parameter(
+        description: "Temperature unit",
+        validation: ["enum": ["celsius", "fahrenheit"]]
+    )
+    var unit: String? = nil
+
+    init() {}
+
+    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        // Access parameters via self.city, self.unit
+        return ("Weather in \(city): sunny", nil)
+    }
+}
+```
+
+**Note**: When using `@Parameter`, you do NOT need to re-initialize parameters in `init()`. The property wrapper declarations are sufficient.
+
+### Bridging Legacy Tools
+
+Use `ToolAdapter` to bridge legacy `Tool` types with the new agent system.
+
 ## See Also
 
 - [Core Protocols](core-protocols.md) - AITool protocol
 - [Agents](agents.md) - Using tools with agents
-- [Errors](errors.md) - AIToolError details
+- [Errors](errors.md) - Error details
