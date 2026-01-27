@@ -99,21 +99,22 @@ final class OpenRouterIntegrationTests: IntegrationTestBase {
         try skipIfNoAPIKey()
 
         struct WeatherTool: AITool {
-            static let name = "get_weather"
-            static let description = "Get weather for a location"
+            let name = "get_weather"
+            let description = "Get weather for a location"
 
-            struct Arguments: Codable, Sendable {
-                let location: String
-            }
+            @AIParameter(description: "Location")
+            var location: String = ""
 
-            static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
-                AIToolResult(content: "Sunny, 72F in \(arguments.location)")
+            init() {}
+
+            func execute() async throws -> AIToolResult {
+                AIToolResult(content: "Sunny, 72F in \(location)")
             }
         }
 
         let request = AITextRequest(
             messages: [.user("What's the weather in Tokyo?")],
-            tools: [WeatherTool.self],
+            tools: [WeatherTool.jsonSchema()],
             model: "openai/gpt-4o-mini"
         )
 
@@ -289,22 +290,22 @@ final class ConcurrencyStressTests: XCTestCase {
     func test_stream_cancellation_during_tool_execution() async throws {
         // Create tool that takes a while
         struct SlowTool: AITool {
-            static let name = "slow"
-            static let description = "Takes time"
+            let name = "slow"
+            let description = "Takes time"
 
-            struct Arguments: Codable, Sendable {}
+            init() {}
 
-            static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
+            func execute() async throws -> AIToolResult {
                 try await Task.sleep(for: .seconds(10))
                 return AIToolResult(content: "Done")
             }
         }
 
         let mock = MockAILanguageModel.withToolCall("slow", arguments: "{}")
-        let agent = AIAgent(model: mock, tools: [SlowTool.self])
+        let agent = AIAgentActor(model: mock, tools: [SlowTool.self])
 
         let task = Task {
-            let stream = agent.executeStream(messages: [.user("Run slow tool")])
+            let stream = agent.streamExecute(messages: [.user("Run slow tool")])
             for try await _ in stream {}
         }
 

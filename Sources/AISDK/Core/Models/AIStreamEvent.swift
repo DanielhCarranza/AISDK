@@ -159,11 +159,13 @@ public struct AIToolResultData: Sendable, Codable, Equatable {
     public let id: String
     public let result: String
     public let metadata: ToolMetadata?
+    public let artifacts: [ToolArtifact]?
 
-    public init(id: String, result: String, metadata: ToolMetadata? = nil) {
+    public init(id: String, result: String, metadata: ToolMetadata? = nil, artifacts: [ToolArtifact]? = nil) {
         self.id = id
         self.result = result
         self.metadata = metadata
+        self.artifacts = artifacts
     }
 
     // MARK: - Codable
@@ -171,6 +173,7 @@ public struct AIToolResultData: Sendable, Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id
         case result
+        case artifacts
         // Note: metadata is intentionally not encoded as ToolMetadata is not Codable-safe
     }
 
@@ -179,12 +182,14 @@ public struct AIToolResultData: Sendable, Codable, Equatable {
         self.id = try container.decode(String.self, forKey: .id)
         self.result = try container.decode(String.self, forKey: .result)
         self.metadata = nil  // Metadata cannot be decoded
+        self.artifacts = try container.decodeIfPresent([ToolArtifact].self, forKey: .artifacts)
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(result, forKey: .result)
+        try container.encodeIfPresent(artifacts, forKey: .artifacts)
         // Note: metadata is intentionally not encoded
     }
 
@@ -192,6 +197,6 @@ public struct AIToolResultData: Sendable, Codable, Equatable {
 
     public static func == (lhs: AIToolResultData, rhs: AIToolResultData) -> Bool {
         // Compare id and result only; metadata excluded as it may contain non-Equatable types
-        lhs.id == rhs.id && lhs.result == rhs.result
+        lhs.id == rhs.id && lhs.result == rhs.result && lhs.artifacts == rhs.artifacts
     }
 }

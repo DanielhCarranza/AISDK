@@ -79,7 +79,7 @@ struct BasicChatDemo {
             await testAnthropicGenerateObject(provider: anthropicProvider)
         }
         
-        // Test 5: Tool Calling Tests
+        // Test 5: AITool Calling Tests
         await testDirectToolCalls()
         await testToolWithLLM(provider: openAIProvider, providerName: "OpenAI")
         await testAgentWithTools(provider: openAIProvider)
@@ -615,59 +615,70 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
 // MARK: - Tool Testing Functions (Phase 3)
 
 // Demo tools for testing
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a city"
     
-    @Parameter(description: "City name")
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
+
+    @AIParameter(description: "City name")
     var city: String = ""
     
-    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-    var unit: String = "celsius"
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Simulate API delay
         try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
         // Generate realistic weather data
-        let temps = unit == "celsius" ? (15...25) : (59...77)
+        let temps = unit == .celsius ? (15...25) : (59...77)
         let temp = Int.random(in: temps)
         let conditions = ["sunny", "partly cloudy", "cloudy", "light rain"]
         let condition = conditions.randomElement()!
         
-        return ("Weather in \(city): \(temp)°\(unit == "celsius" ? "C" : "F"), \(condition)", nil)
+        return AIToolResult(content: "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)")
     }
 }
 
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculate"
     let description = "Perform basic arithmetic calculations"
     
-    @Parameter(description: "First number")
+    @AIParameter(description: "First number")
     var a: Double = 0.0
     
-    @Parameter(description: "Second number")
+    @AIParameter(description: "Second number")
     var b: Double = 0.0
     
-    @Parameter(description: "Operation", validation: ["enum": ["+", "-", "*", "/"]])
-    var operation: String = "+"
+    enum Operation: String, Codable, CaseIterable {
+        case plus = "+"
+        case minus = "-"
+        case multiply = "*"
+        case divide = "/"
+    }
+
+    @AIParameter(description: "Operation")
+    var operation: Operation = .plus
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let result: Double
         switch operation {
-        case "+": result = a + b
-        case "-": result = a - b
-        case "*": result = a * b
-        case "/":
+        case .plus: result = a + b
+        case .minus: result = a - b
+        case .multiply: result = a * b
+        case .divide:
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
-        default: throw ToolError.executionFailed("Invalid operation")
         }
-        return ("Result: \(a) \(operation) \(b) = \(result)", nil)
+        return AIToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 
@@ -675,15 +686,15 @@ func testDirectToolCalls() async {
     print("\n🔧 Testing Direct Tool Calls...")
     
     // Register tools
-    ToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
+    AIToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
     
     // Test Weather Tool
     do {
         print("   🌤️  Testing Weather Tool:")
         var weatherTool = WeatherTool()
         try weatherTool.setParameters(from: ["city": "San Francisco", "unit": "fahrenheit"])
-        let (result, _) = try await weatherTool.execute()
-        print("   ✅ \(result)")
+        let result = try await weatherTool.execute()
+        print("   ✅ \(result.content)")
     } catch {
         print("   ❌ Weather tool failed: \(error)")
     }
@@ -693,8 +704,8 @@ func testDirectToolCalls() async {
         print("   🧮 Testing Calculator Tool:")
         var calcTool = CalculatorTool()
         try calcTool.setParameters(from: ["a": 15.5, "b": 4.2, "operation": "*"])
-        let (result, _) = try await calcTool.execute()
-        print("   ✅ \(result)")
+        let result = try await calcTool.execute()
+        print("   ✅ \(result.content)")
     } catch {
         print("   ❌ Calculator tool failed: \(error)")
     }
@@ -736,8 +747,8 @@ func testToolWithLLM(provider: LLM, providerName: String) async {
                     let jsonData = function.arguments.data(using: .utf8)!
                     var tool = WeatherTool()
                     tool = try tool.validateAndSetParameters(jsonData)
-                    let (result, _) = try await tool.execute()
-                    print("   ✅ Tool Result: \(result)")
+                    let result = try await tool.execute()
+                    print("   ✅ Tool Result: \(result.content)")
                 }
             }
         } else if let content = response.choices.first?.message.content {

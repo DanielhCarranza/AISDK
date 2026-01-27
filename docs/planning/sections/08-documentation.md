@@ -96,11 +96,11 @@ for try await event in stream {
 
 **Before (1.x)**:
 ```swift
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     @Parameter(description: "City name")
     var location: String
 
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // ...
     }
 }
@@ -109,14 +109,15 @@ struct WeatherTool: Tool {
 **After (2.0)**:
 ```swift
 struct WeatherTool: AITool {
-    static let name = "get_weather"
-    static let description = "Get weather for a city"
+    let name = "get_weather"
+    let description = "Get weather for a city"
 
-    struct Arguments: Codable, Sendable {
-        let location: String
-    }
+    @AIParameter(description: "City name")
+    var location: String = ""
 
-    static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
+    init() {}
+
+    func execute() async throws -> AIToolResult {
         // ...
     }
 }
@@ -135,8 +136,7 @@ let modernModel = AILanguageModelAdapter(legacyProvider: legacyProvider, modelIn
 let legacyAgent = Agent(provider: legacyProvider, tools: tools)
 let modernAgent = AIAgentAdapter(legacyAgent: legacyAgent)
 
-// Wrap legacy tools
-let legacyToolAdapter = LegacyToolAdapter(WeatherTool.self)
+// Tools migrate directly to AITool (no adapter layer)
 ```
 
 ## Step-by-Step Migration
@@ -159,7 +159,7 @@ Convert @Parameter-based tools to AITool protocol.
 
 ### Step 5: Update Agent Usage
 
-Replace Agent with AIAgent.
+Replace Agent with AIAgentActor.
 
 ### Step 6: Update Streaming Code
 

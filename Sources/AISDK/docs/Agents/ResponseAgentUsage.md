@@ -131,7 +131,7 @@ let agent = try ResponseAgent(
 
 ```swift
 // Define custom tools
-let customTools: [Tool.Type] = [
+let customTools: [AITool.Type] = [
     WeatherTool.self,
     DatabaseQueryTool.self,
     EmailSenderTool.self

@@ -117,18 +117,18 @@ let toolResult = AIMessage.tool(
 Request for text generation.
 
 ```swift
-public struct AITextRequest: Sendable {
+public struct AITextRequest: @unchecked Sendable {
     /// Conversation messages
     public let messages: [AIMessage]
 
     /// Model identifier (optional, uses default)
     public let model: String?
 
-    /// Sampling temperature (0.0-2.0)
-    public let temperature: Double?
-
     /// Maximum tokens to generate
     public let maxTokens: Int?
+
+    /// Sampling temperature (0.0-2.0)
+    public let temperature: Double?
 
     /// Top-p sampling parameter
     public let topP: Double?
@@ -137,19 +137,28 @@ public struct AITextRequest: Sendable {
     public let stop: [String]?
 
     /// Tools available for the model
-    public let tools: [AnyAITool]?
+    public let tools: [ToolSchema]?
 
     /// Tool choice behavior
     public let toolChoice: ToolChoice?
 
-    /// Data sensitivity level
-    public let sensitivity: DataSensitivity
+    /// Response format specification
+    public let responseFormat: ResponseFormat?
 
     /// Allowed providers for PHI protection
     public let allowedProviders: Set<String>?
 
+    /// Allowed providers for PHI protection
+    public let allowedProviders: Set<String>?
+
+    /// Data sensitivity level
+    public let sensitivity: DataSensitivity
+
     /// Stream buffer policy
-    public let bufferPolicy: StreamBufferPolicy
+    public let bufferPolicy: StreamBufferPolicy?
+
+    /// Request metadata for tracing
+    public let metadata: [String: String]?
 }
 ```
 
@@ -158,7 +167,7 @@ public struct AITextRequest: Sendable {
 Controls PHI protection behavior:
 
 ```swift
-public enum DataSensitivity: Sendable {
+public enum DataSensitivity: String, Sendable, Codable {
     /// Standard data, any provider allowed
     case standard
 
@@ -175,29 +184,26 @@ public enum DataSensitivity: Sendable {
 Controls streaming buffer behavior:
 
 ```swift
-public enum StreamBufferPolicy: Sendable {
-    /// Buffer until complete
-    case complete
-
-    /// Unbounded buffer
+public enum StreamBufferPolicy: Sendable, Equatable {
+    /// Unbounded buffer - no limit on events (use with caution for memory)
     case unbounded
 
-    /// Buffer up to N elements
-    case bufferingOldest(Int)
+    /// Bounded buffer that drops oldest events when full
+    case dropOldest(capacity: Int)
 
-    /// Drop oldest when full
-    case bufferingNewest(Int)
+    /// Bounded buffer that drops newest events when full
+    case dropNewest(capacity: Int)
 }
 ```
 
 ### ToolChoice
 
 ```swift
-public enum ToolChoice: Sendable {
-    case auto      // Model decides
-    case none      // Disable tools
-    case required  // Must use a tool
-    case tool(String)  // Use specific tool
+public enum ToolChoice: Codable, Equatable {
+    case none
+    case auto
+    case required
+    case function(FunctionChoice)
 }
 ```
 
@@ -207,15 +213,17 @@ public enum ToolChoice: Sendable {
 public init(
     messages: [AIMessage],
     model: String? = nil,
-    temperature: Double? = nil,
     maxTokens: Int? = nil,
+    temperature: Double? = nil,
     topP: Double? = nil,
     stop: [String]? = nil,
-    tools: [AnyAITool]? = nil,
+    tools: [ToolSchema]? = nil,
     toolChoice: ToolChoice? = nil,
-    sensitivity: DataSensitivity = .standard,
+    responseFormat: ResponseFormat? = nil,
     allowedProviders: Set<String>? = nil,
-    bufferPolicy: StreamBufferPolicy = .unbounded
+    sensitivity: DataSensitivity = .standard,
+    bufferPolicy: StreamBufferPolicy? = nil,
+    metadata: [String: String]? = nil
 )
 ```
 
@@ -226,9 +234,12 @@ public init(
 Result from non-streaming text generation.
 
 ```swift
-public struct AITextResult: Sendable {
+public struct AITextResult: Sendable, Equatable {
     /// Generated text
     public let text: String
+
+    /// Tool calls made by the model
+    public let toolCalls: [AIToolCallResult]
 
     /// Token usage statistics
     public let usage: AIUsage
@@ -236,11 +247,14 @@ public struct AITextResult: Sendable {
     /// Reason generation stopped
     public let finishReason: AIFinishReason
 
-    /// Tool calls made (if any)
-    public let toolCalls: [AIToolCall]?
+    /// Request ID for tracing
+    public let requestId: String?
 
     /// Model that generated the response
     public let model: String?
+
+    /// Provider that handled the request
+    public let provider: String?
 }
 ```
 
@@ -284,18 +298,19 @@ Events emitted during streaming operations.
 public enum AIStreamEvent: Sendable {
     // Text generation
     case textDelta(String)
+    case textCompletion(String)
 
     // Reasoning (chain-of-thought)
     case reasoningStart
     case reasoningDelta(String)
-    case reasoningFinish
+    case reasoningFinish(String)
 
     // Tool calls
     case toolCallStart(id: String, name: String)
     case toolCallDelta(id: String, argumentsDelta: String)
-    case toolCall(AIToolCall)  // Complete tool call
+    case toolCall(id: String, name: String, arguments: String)  // Complete tool call
     case toolCallFinish(id: String, name: String, arguments: String)
-    case toolResult(id: String, result: AIToolResultData)
+    case toolResult(id: String, result: String, metadata: ToolMetadata?)
 
     // Object generation
     case objectDelta(Data)
@@ -310,32 +325,30 @@ public enum AIStreamEvent: Sendable {
     case usage(AIUsage)
 
     // Stream lifecycle
-    case start(id: String, model: String)
-    case stepStart(Int)
-    case stepFinish(Int)
-    case heartbeat
-    case finish(finishReason: AIFinishReason, usage: AIUsage?)
+    case start(metadata: AIStreamMetadata?)
+    case stepStart(stepIndex: Int)
+    case stepFinish(stepIndex: Int, result: AIStepResult)
+    case heartbeat(timestamp: Date)
+    case finish(finishReason: AIFinishReason, usage: AIUsage)
     case error(Error)
 }
 ```
 
-### AIToolCall
+### AIToolCallResult
 
 ```swift
-public struct AIToolCall: Sendable, Equatable, Codable {
+public struct AIToolCallResult: Sendable, Equatable, Codable {
     public let id: String
     public let name: String
     public let arguments: String
-
-    /// Parse arguments as a specific type
-    public func parseArguments<T: Codable>() throws -> T
 }
 ```
 
 ### AISource
 
 ```swift
-public struct AISource: Sendable, Equatable {
+public struct AISource: Sendable, Codable {
+    public let id: String
     public let title: String?
     public let url: String?
     public let snippet: String?
@@ -345,8 +358,8 @@ public struct AISource: Sendable, Equatable {
 ### AIFileEvent
 
 ```swift
-public struct AIFileEvent: Sendable, Equatable {
-    public let name: String
+public struct AIFileEvent: Sendable {
+    public let id: String
     public let mimeType: String
     public let data: Data
 }
@@ -410,7 +423,7 @@ AITextRequest
     └── produces ──► AITextResult
                         ├── AIUsage
                         ├── AIFinishReason
-                        └── AIToolCall[]
+                        └── AIToolCallResult[]
 
 AITextRequest (streaming)
     │

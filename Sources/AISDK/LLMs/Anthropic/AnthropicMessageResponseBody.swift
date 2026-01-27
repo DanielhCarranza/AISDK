@@ -125,7 +125,7 @@ public struct AnthropicToolUseBlock: Decodable {
     }
     
     /// Execute this tool use block with the provided tool registry
-    public func execute<T: Tool>(with toolType: T.Type) async throws -> String {
+    public func execute<T: AITool>(with toolType: T.Type) async throws -> String {
         // Create tool instance
         var tool = T()
         
@@ -133,7 +133,8 @@ public struct AnthropicToolUseBlock: Decodable {
         try tool.setParameters(from: typedInput)
         
         // Execute tool
-        return try await tool.execute()
+        let result = try await tool.execute()
+        return result.content
     }
     
     /// Create a tool result content block for success

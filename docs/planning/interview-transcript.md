@@ -29,7 +29,7 @@ Required event types:
 - `finish` - Generation complete with usage
 - `error` - Stream errors
 
-### Q3: Tool Call Repair
+### Q3: AITool Call Repair
 **Question**: How should AISDK handle malformed tool calls?
 
 **Answer**: **Hybrid approach** - Auto-repair once (LLM fixes its own mistakes), then fail with detailed error if second attempt also fails.

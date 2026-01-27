@@ -102,7 +102,7 @@ public enum ResponseAgentError: Error, LocalizedError, Equatable {
             return "ResponseAgent initialization parameters are invalid"
             
         case .toolNotFound:
-            return "The requested tool has not been registered with the ToolRegistry"
+            return "The requested tool has not been registered with the AIToolRegistry"
         case .toolExecutionFailed:
             return "The tool failed to execute successfully"
         case .toolValidationFailed:
@@ -150,7 +150,7 @@ public enum ResponseAgentError: Error, LocalizedError, Equatable {
             return "Check ResponseAgent initialization parameters and try again"
             
         case .toolNotFound:
-            return "Register the tool with ToolRegistry.register(tool:) before using ResponseAgent"
+            return "Register the tool with AIToolRegistry.register(tool:) before using ResponseAgent"
         case .toolExecutionFailed:
             return "Check tool implementation and ensure all required parameters are provided"
         case .toolValidationFailed:

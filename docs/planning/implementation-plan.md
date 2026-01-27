@@ -696,15 +696,15 @@ Tests/AISDKTests/Tools/ToolCallRepairTests.swift
 
 ### Task 4.4: Enhance Tool Protocol
 
-- **Location**: `Sources/AISDK/Tools/Tool.swift` (modify existing)
+- **Location**: `Sources/AISDK/Tools/AITool.swift`
 - **Dependencies**: None
 - **Complexity**: 5/10
 - **Description**: Add validation and artifact support
 
 **Implementation**:
 - Add static validate() method
-- Add ToolExecutionResult with artifacts
-- Keep existing @Parameter wrapper
+- Use `AIToolResult` with optional artifacts
+- Keep `@AIParameter`/`@Parameter` wrapper
 
 **Test-First**:
 ```
@@ -717,7 +717,7 @@ Tests/AISDKTests/Tools/EnhancedToolTests.swift
 **Acceptance Criteria**:
 - [ ] Validation works
 - [ ] Artifacts supported
-- [ ] Existing tools still work
+- [ ] Tools use instance-based `AITool`
 
 ---
 

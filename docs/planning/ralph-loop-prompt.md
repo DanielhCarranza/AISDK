@@ -168,19 +168,22 @@ public class AITextRequest {
 
 ### 4. Tool Protocol Pattern
 
-Tools must be stateless with static execution:
+Tools are instance-based with `@AIParameter` binding:
 
 ```swift
 // CORRECT
 public protocol AITool: Sendable {
-    associatedtype Arguments: Codable & Sendable
-    static func execute(arguments: Arguments) async throws -> AIToolResult<Metadata>
-}
+    var name: String { get }
+    var description: String { get }
+    var returnToolResponse: Bool { get }
 
-// WRONG - mutable state
-public protocol Tool {
-    mutating func setParameters(_ params: [String: Any])
-    func execute() async throws -> String
+    init()
+    static func jsonSchema() -> ToolSchema
+    static func validate(arguments: [String: Any]) throws
+    mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
+
+    func execute() async throws -> AIToolResult
 }
 ```
 

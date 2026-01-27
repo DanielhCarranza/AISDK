@@ -13,14 +13,14 @@ final class WebSearchToolTests: XCTestCase {
         {"query":"Swift AI","num_results":2}
         """
         tool = try tool.validateAndSetParameters(Data(arguments.utf8))
-        let (content, metadata) = try await tool.execute()
+        let result = try await tool.execute()
 
-        XCTAssertTrue(content.contains("Web search results for: \"Swift AI\""))
-        XCTAssertTrue(content.contains("[1] Result One"))
-        XCTAssertTrue(content.contains("https://example.com/1"))
-        XCTAssertTrue(content.contains("[2] Result Two"))
+        XCTAssertTrue(result.content.contains("Web search results for: \"Swift AI\""))
+        XCTAssertTrue(result.content.contains("[1] Result One"))
+        XCTAssertTrue(result.content.contains("https://example.com/1"))
+        XCTAssertTrue(result.content.contains("[2] Result Two"))
 
-        guard let searchMetadata = metadata as? WebSearchMetadata else {
+        guard let searchMetadata = result.metadata as? WebSearchMetadata else {
             XCTFail("Expected WebSearchMetadata")
             return
         }

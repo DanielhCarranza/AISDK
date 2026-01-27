@@ -660,7 +660,7 @@ public extension ProviderStreamEvent {
 public extension AITextRequest {
     /// Convert to ProviderRequest for the transport layer
     ///
-    /// Note: Tool schemas are converted to ProviderJSONValue for provider requests.
+    /// Note: AITool schemas are converted to ProviderJSONValue for provider requests.
     ///
     /// - Parameters:
     ///   - modelId: Fallback model ID if request.model is nil

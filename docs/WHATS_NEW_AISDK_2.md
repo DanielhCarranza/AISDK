@@ -231,8 +231,9 @@ let stream = SafeAsyncStream<String>(bufferSize: 1000)
 |---------|-------|---------|
 | `AIAgentAdapter.swift` | 544 | Wrap old Agent for new API |
 | `AILanguageModelAdapter.swift` | 528 | Wrap old LLM for new API |
-| `ToolAdapter.swift` | 470 | Wrap old Tool for new API |
 | `AIUsage+Legacy.swift` | 26 | Usage conversion |
+
+> Tools are now unified under `AITool`. Migrate legacy tools to `AITool` directly (there is no ToolAdapter).
 
 **Migration path:**
 ```swift

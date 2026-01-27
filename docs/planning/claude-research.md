@@ -162,7 +162,7 @@ public protocol Tool {
 
     init()
     static func jsonSchema() -> ToolSchema
-    func execute() async throws -> (content: String, metadata: ToolMetadata?)
+    func execute() async throws -> AIToolResult
     mutating func setParameters(from arguments: [String: Any]) throws
 }
 ```
@@ -404,7 +404,7 @@ enum AIStreamEvent: Sendable {
 ```swift
 actor AIAgent {
     let model: AILanguageModel
-    let tools: [Tool.Type]
+    let tools: [AITool.Type]
     let instructions: String?
     let stopWhen: StopCondition
 

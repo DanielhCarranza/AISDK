@@ -131,7 +131,7 @@ sequenceDiagram
 
     Agent->>Agent: setState(.executingTool)
     Agent->>Tool: execute()
-    Tool-->>Agent: (content, metadata)
+    Tool-->>Agent: AIToolResult
 
     Agent->>LLM: sendChatCompletion(with tool result)
     LLM->>API: POST /v1/chat/completions
@@ -149,12 +149,12 @@ stateDiagram-v2
     [*] --> idle
     idle --> thinking: send() / sendStream()
     thinking --> responding: Received content
-    thinking --> executingTool: Tool call detected
-    executingTool --> thinking: Tool executed, get final response
+    thinking --> executingTool: AITool call detected
+    executingTool --> thinking: AITool executed, get final response
     executingTool --> idle: returnToolResponse = true
     responding --> idle: Stream complete
     thinking --> error: Error occurred
-    executingTool --> error: Tool failed
+    executingTool --> error: AITool failed
     error --> idle: Reset
 ```
 
@@ -416,60 +416,56 @@ The SDK automatically converts `AIInputMessage` to provider-specific formats:
 
 ## 6. Tool Framework
 
-### Tool Protocol
+### AITool Protocol
 
-**File:** `Sources/AISDK/Tools/Tool.swift`
+**Files:** `Sources/AISDK/Tools/AITool.swift`, `Sources/AISDK/Tools/Tool.swift`
 
 ```swift
-public protocol Tool {
+public protocol AITool: Sendable {
     var name: String { get }
     var description: String { get }
-    var returnToolResponse: Bool { get }  // Skip LLM interpretation if true
+    var returnToolResponse: Bool { get }
 
     init()
     static func jsonSchema() -> ToolSchema
-    func execute() async throws -> (content: String, metadata: ToolMetadata?)
+    static func validate(arguments: [String: Any]) throws
     mutating func setParameters(from arguments: [String: Any]) throws
     mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
+    func execute() async throws -> AIToolResult
 }
 ```
 
-### @Parameter Property Wrapper
+### @AIParameter Property Wrapper
 
 ```swift
-@propertyWrapper
-public class Parameter<Value> {
-    public let description: String
-    public var wrappedValue: Value
-    public var validation: [String: Any]?
-
-    // Type inference for JSON Schema
-    internal static func inferType(from valueType: Any.Type) -> JSONType
-}
+@AIParameter(description: "City name")
+var city: String = ""
 ```
 
 ### Complete Tool Example
 
 ```swift
-class WeatherTool: Tool {
+struct WeatherTool: AITool {
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
+
     let name = "get_weather"
     let description = "Get current weather for a city"
 
-    @Parameter(description: "City name (e.g., San Francisco)")
+    @AIParameter(description: "City name (e.g., San Francisco)")
     var city: String = ""
 
-    @Parameter(
-        description: "Temperature unit",
-        validation: ["enum": ["celsius", "fahrenheit"]]
-    )
-    var unit: String = "fahrenheit"
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .fahrenheit
 
-    required init() {}
+    init() {}
 
-    func execute() async throws -> (String, ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Fetch weather data...
         let result = "Weather in \(city): 72°F, sunny"
-        return (result, nil)
+        return AIToolResult(content: result)
     }
 }
 
@@ -495,7 +491,7 @@ class WeatherTool: Tool {
 
 ```swift
 // Base protocol
-public protocol ToolMetadata: Codable {}
+public protocol ToolMetadata: Codable, Sendable {}
 
 // Render metadata for UI
 public struct RenderMetadata: ToolMetadata {
@@ -516,7 +512,7 @@ ToolMetadataDecoderRegistry.register(MyCustomMetadata.self)
 ### RenderableTool Protocol
 
 ```swift
-public protocol RenderableTool: Tool {
+public protocol RenderableTool: AITool {
     func render(from data: Data) -> AnyView
 }
 ```
@@ -1531,8 +1527,8 @@ struct ChatView: View {
 #### Tools/ (2 files)
 | File | Purpose |
 |------|---------|
-| `Tool.swift` | Tool protocol, @Parameter, ToolMetadata |
-| `ToolRegistry.swift` | Tool type registry |
+| `Tool.swift` | Parameter wrapper, ToolMetadata, RenderableTool |
+| `AIToolRegistry.swift` | Tool type registry |
 
 #### Utilities/ (3 files)
 | File | Purpose |

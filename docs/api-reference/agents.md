@@ -20,23 +20,24 @@ In most cases, you'll use `AIAgentActor` directly for creating agents.
 The primary agent implementation using Swift actors.
 
 ```swift
-public actor AIAgentActor: AIAgent {
-    // MARK: - Properties
+public actor AIAgentActor {
+    /// Execute a non-streaming agent loop
+    public func execute(messages: [AIMessage]) async throws -> AIAgentResult
 
-    /// The underlying language model
-    public let model: any AILanguageModel
+    /// Execute a streaming agent loop
+    public nonisolated func streamExecute(messages: [AIMessage]) -> AsyncThrowingStream<AIStreamEvent, Error>
 
-    /// Available tools
-    public let tools: [AnyAITool]
+    /// Current state of the agent
+    public var state: AgentState { get }
 
-    /// System prompt for the agent
-    public let systemPrompt: String?
+    /// Message history
+    public var messages: [AIMessage] { get }
 
-    /// Maximum steps before stopping
-    public let maxSteps: Int
+    /// Step history
+    public var steps: [AIStepResult] { get }
 
-    /// Whether to execute tools in parallel
-    public let parallelToolCalls: Bool
+    /// Observable state for SwiftUI
+    public nonisolated let observableState: ObservableAgentState
 }
 ```
 
@@ -45,19 +46,14 @@ public actor AIAgentActor: AIAgent {
 ```swift
 public init(
     model: any AILanguageModel,
-    tools: [any AITool.Type] = [],
-    systemPrompt: String? = nil,
-    maxSteps: Int = 10,
-    parallelToolCalls: Bool = true,
-    configuration: AIAgentConfiguration = .default
-)
-
-// Convenience initializer with tool type array
-public init(
-    model: any AILanguageModel,
-    tools: [AnyAITool],
-    systemPrompt: String? = nil,
-    maxSteps: Int = 10
+    tools: [AITool.Type] = [],
+    instructions: String? = nil,
+    requestOptions: AIAgentActor.RequestOptions = AIAgentActor.RequestOptions(),
+    stopCondition: StopCondition = .stepCount(20),
+    timeout: TimeoutPolicy = .default,
+    maxToolRounds: Int = 10,
+    name: String? = nil,
+    agentId: String? = nil
 )
 ```
 
@@ -68,8 +64,7 @@ public init(
 let agent = AIAgentActor(
     model: openRouterClient,
     tools: [WeatherTool.self, SearchTool.self],
-    systemPrompt: "You are a helpful assistant.",
-    maxSteps: 10
+    instructions: "You are a helpful assistant."
 )
 
 // Execute (non-streaming)
@@ -85,6 +80,8 @@ for try await event in agent.streamExecute(messages: messages) {
         print(text, terminator: "")
     case .toolCallStart(_, let name):
         print("\n[Calling \(name)...]")
+    case .toolResult(_, let result, _):
+        print("\n[Tool result: \(result)]")
     case .finish:
         print("\n[Done]")
     default:
@@ -104,23 +101,14 @@ public struct AIAgentResult: Sendable {
     /// Final text response
     public let text: String
 
+    /// Steps executed during the agent loop
+    public let steps: [AIStepResult]
+
     /// All messages in the conversation
     public let messages: [AIMessage]
 
-    /// Tool calls made during execution
-    public let toolCalls: [AIToolCall]
-
-    /// Tool results from execution
-    public let toolResults: [AIToolResult]
-
     /// Total token usage
     public let usage: AIUsage
-
-    /// Final finish reason
-    public let finishReason: AIFinishReason
-
-    /// Number of steps taken
-    public let steps: Int
 }
 ```
 
@@ -139,13 +127,10 @@ public enum StopCondition: Sendable {
     case noToolCalls
 
     /// Stop when token budget is exceeded
-    case tokenBudget(Int)
-
-    /// Stop when specific tool is called
-    case toolCalled(String)
+    case tokenBudget(maxTokens: Int)
 
     /// Custom stop condition
-    case custom(@Sendable (AIAgentResult) -> Bool)
+    case custom(@Sendable (AIStepResult) -> Bool)
 }
 ```
 
@@ -240,44 +225,51 @@ struct ChatView: View {
 
 ## AIAgentConfiguration
 
-Configuration options for agent behavior.
+Configuration options for creating an agent.
 
 ```swift
 public struct AIAgentConfiguration: Sendable {
-    /// Default timeout for operations
-    public let timeout: Duration
+    /// The language model to use
+    public let model: AILanguageModel
 
-    /// Whether to include tool results in response
-    public let includeToolResults: Bool
+    /// Tool schemas available to the agent
+    public let tools: [ToolSchema]
 
-    /// Whether to retry failed tool calls
-    public let retryFailedTools: Bool
+    /// System instructions for the agent
+    public let instructions: String?
 
-    /// Maximum retries per tool
-    public let maxToolRetries: Int
+    /// Initial conversation history
+    public let initialMessages: [AIMessage]
 
-    /// Callbacks for agent events
-    public let callbacks: AIAgentCallbacks?
+    /// Maximum number of tool execution rounds
+    public let maxToolRounds: Int
 
-    public static let `default` = AIAgentConfiguration()
+    /// Data sensitivity for PHI protection
+    public let sensitivity: DataSensitivity
+
+    /// Optional agent name
+    public let name: String?
 }
 ```
 
 ### AIAgentCallbacks
 
 ```swift
-public struct AIAgentCallbacks: Sendable {
-    /// Called before each step
-    public let onStepStart: (@Sendable (Int) async -> Void)?
+public protocol AIAgentCallbacks: AnyObject, Sendable {
+    /// Called when the agent state changes
+    func onStateChange(state: AIAgentState) async
 
-    /// Called after each step
-    public let onStepEnd: (@Sendable (Int, AIAgentStepResult) async -> Void)?
+    /// Called when a message is received
+    func onMessageReceived(message: AIMessage) async -> AIAgentCallbackResult
 
-    /// Called when a tool is about to execute
-    public let onToolStart: (@Sendable (String, String) async -> Void)?
+    /// Called before a tool is executed
+    func onBeforeToolExecution(name: String, arguments: String) async -> AIAgentCallbackResult
 
-    /// Called after tool execution
-    public let onToolEnd: (@Sendable (String, AIToolResult) async -> Void)?
+    /// Called after a tool is executed
+    func onAfterToolExecution(name: String, result: String, metadata: ToolMetadata?) async -> AIAgentCallbackResult
+
+    /// Called when a tool execution fails
+    func onToolError(name: String, error: Error) async -> AIAgentCallbackResult
 }
 ```
 
@@ -322,23 +314,14 @@ User Message
 
 ```swift
 public enum AIAgentError: Error, Sendable {
-    /// Maximum steps exceeded
-    case maxStepsExceeded(Int)
-
-    /// Tool execution failed
-    case toolExecutionFailed(tool: String, error: Error)
-
-    /// Tool not found
-    case toolNotFound(String)
-
-    /// Invalid tool arguments
-    case invalidToolArguments(tool: String, reason: String)
-
-    /// Model error
-    case modelError(Error)
-
-    /// Operation cancelled
-    case cancelled
+    case operationCancelled
+    case toolExecutionFailed(String)
+    case invalidToolResponse
+    case maxToolRoundsExceeded
+    case noResponse
+    case streamError(String)
+    case configurationError(String)
+    case underlying(Error)
 }
 ```
 
@@ -347,12 +330,12 @@ public enum AIAgentError: Error, Sendable {
 ```swift
 do {
     let result = try await agent.execute(messages: messages)
-} catch AIAgentError.maxStepsExceeded(let steps) {
-    print("Agent hit limit after \(steps) steps")
-} catch AIAgentError.toolExecutionFailed(let tool, let error) {
-    print("Tool \(tool) failed: \(error)")
-} catch AIAgentError.toolNotFound(let name) {
-    print("Unknown tool: \(name)")
+} catch AIAgentError.maxToolRoundsExceeded {
+    print("Agent hit max tool rounds")
+} catch AIAgentError.toolExecutionFailed(let message) {
+    print("Tool execution failed: \(message)")
+} catch {
+    print("Agent error: \(error)")
 }
 ```
 
@@ -367,17 +350,17 @@ do {
 let agent = AIAgentActor(
     model: model,
     tools: tools,
-    maxSteps: 10  // Reasonable limit
+    stopCondition: .stepCount(10)
 )
 ```
 
-### 2. Use System Prompts
+### 2. Use Instructions
 
 ```swift
 let agent = AIAgentActor(
     model: model,
     tools: tools,
-    systemPrompt: """
+    instructions: """
         You are a research assistant.
         Always cite your sources.
         If unsure, say so.
@@ -385,15 +368,14 @@ let agent = AIAgentActor(
 )
 ```
 
-### 3. Handle Errors Gracefully
+### 3. Inspect Tool Results Per Step
 
 ```swift
 let result = try await agent.execute(messages: messages)
 
-// Check if tools had errors
-for toolResult in result.toolResults {
-    if toolResult.isError {
-        print("Tool error: \(toolResult.content)")
+for step in result.steps {
+    for toolResult in step.toolResults {
+        print("Tool result: \(toolResult.result)")
     }
 }
 ```

@@ -222,7 +222,7 @@ public class MockOpenAIResponsesProvider {
     }
     
     private func createDefaultStreamChunks() -> [ResponseChunk] {
-        let words = ["Hello", "from", "the", "mock", "streaming", "response!"]
+        let words = ["This ", "is ", "a ", "mock ", "streaming ", "response ", "for ", "testing", "."]
         
         return words.enumerated().map { index, word in
             ResponseChunk(

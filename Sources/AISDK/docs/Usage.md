@@ -309,21 +309,26 @@ Use tools directly with LLMs:
 
 ```swift
 // Define a simple tool
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a city"
+
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
     
-    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-    var unit: String = "fahrenheit"
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .fahrenheit
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Your weather API call here
-        return ("Weather in \(city): 72°F, sunny", nil)
+        return AIToolResult(content: "Weather in \(city): 72°F, sunny")
     }
 }
 
@@ -612,39 +617,41 @@ agent.onStateChange = { state in
 ```swift
 import AISDK
 
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculator"
     let description = "Perform basic mathematical calculations"
     
-    @Parameter(description: "First number")
+    @AIParameter(description: "First number")
     var a: Double = 0
     
-    @Parameter(description: "Second number") 
+    @AIParameter(description: "Second number") 
     var b: Double = 0
     
-    @Parameter(
-        description: "Operation to perform",
-        validation: ["enum": ["add", "subtract", "multiply", "divide"]]
-    )
-    var operation: String = "add"
+    enum Operation: String, Codable, CaseIterable {
+        case add
+        case subtract
+        case multiply
+        case divide
+    }
+
+    @AIParameter(description: "Operation to perform")
+    var operation: Operation = .add
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let result: Double
         
         switch operation {
-        case "add": result = a + b
-        case "subtract": result = a - b
-        case "multiply": result = a * b
-        case "divide": 
+        case .add: result = a + b
+        case .subtract: result = a - b
+        case .multiply: result = a * b
+        case .divide:
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
-        default: 
-            throw ToolError.invalidParameters("Invalid operation: \(operation)")
         }
         
-        return ("The result is \(result)", nil)
+        return AIToolResult(content: "The result is \(result)")
     }
 }
 ```
@@ -660,15 +667,15 @@ struct ChartTool: RenderableTool {
     let name = "create_chart"
     let description = "Create a visual chart from data"
     
-    @Parameter(description: "Chart title")
+    @AIParameter(description: "Chart title")
     var title: String = ""
     
-    @Parameter(description: "Data points as JSON array")
+    @AIParameter(description: "Data points as JSON array")
     var data: String = ""
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Parse the data
         guard let jsonData = data.data(using: .utf8),
               let chartData = try? JSONDecoder().decode(ChartData.self, from: jsonData) else {
@@ -678,7 +685,10 @@ struct ChartTool: RenderableTool {
         // Create metadata for rendering
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return ("Created chart '\(title)' with \(chartData.points.count) data points", metadata)
+        return AIToolResult(
+            content: "Created chart '\(title)' with \(chartData.points.count) data points",
+            metadata: metadata
+        )
     }
     
     func render(from data: Data) -> AnyView {
@@ -946,17 +956,17 @@ result.keyFindings.forEach { finding in
 ### Custom Research Tools
 
 ```swift
-struct WebSearchTool: Tool {
+struct WebSearchTool: AITool {
     let name = "web_search"
     let description = "Search the web for information"
     
-    @Parameter(description: "Search query")
+    @AIParameter(description: "Search query")
     var query: String = ""
     
-    @Parameter(description: "Number of results", validation: ["minimum": 1, "maximum": 10])
+    @AIParameter(description: "Number of results", validation: ["minimum": 1, "maximum": 10])
     var maxResults: Int = 5
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Implement web search logic
         let results = try await performWebSearch(query: query, maxResults: maxResults)
         
@@ -1153,22 +1163,22 @@ if agent.messages.count > 100 {
 
 ```swift
 // ✅ Good: Specific, focused tool
-struct GetWeatherTool: Tool {
+struct GetWeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a specific location"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
     
     // Implementation...
 }
 
 // ❌ Avoid: Overly broad tool
-struct UniversalTool: Tool {
+struct UniversalTool: AITool {
     let name = "do_everything"
     let description = "Does everything you need"
     
-    @Parameter(description: "What to do")
+    @AIParameter(description: "What to do")
     var action: String = ""
     
     // Too broad, hard for LLM to use correctly
@@ -1413,8 +1423,8 @@ print("Tool JSON Schema:")
 print(YourTool.jsonSchema().prettyPrintJSON())
 
 // Check parameter types match exactly
-struct DebugTool: Tool {
-    @Parameter(description: "Must be string, not number")
+struct DebugTool: AITool {
+    @AIParameter(description: "Must be string, not number")
     var city: String = ""  // ✅ Correct
     
     // var city: Int = 0   // ❌ Wrong type
@@ -1512,20 +1522,20 @@ let toolAgent = Agent(llm: openai)
 
 ```swift
 // ✅ Good: Focused, single-purpose tool
-struct GetWeatherTool: Tool {
+struct GetWeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a specific city"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
 }
 
 // ❌ Avoid: Overly broad tool
-struct DoEverythingTool: Tool {
+struct DoEverythingTool: AITool {
     let name = "do_everything"
     let description = "Handles all possible tasks"
     
-    @Parameter(description: "What to do")
+    @AIParameter(description: "What to do")
     var task: String = ""
 }
 ```

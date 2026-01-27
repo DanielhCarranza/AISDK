@@ -88,7 +88,7 @@ public actor AIAgentActor {
     private let model: any AILanguageModel
 
     /// Available tool types for this agent
-    private let tools: [Tool.Type]
+    private let tools: [AITool.Type]
 
     /// System instructions for the agent
     private let instructions: String?
@@ -157,7 +157,7 @@ public actor AIAgentActor {
     ///   - agentId: Optional unique identifier (auto-generated if nil)
     public init(
         model: any AILanguageModel,
-        tools: [Tool.Type] = [],
+        tools: [AITool.Type] = [],
         instructions: String? = nil,
         requestOptions: RequestOptions = RequestOptions(),
         stopCondition: StopCondition = .stepCount(20),
@@ -454,7 +454,8 @@ public actor AIAgentActor {
                     let resultData = AIToolResultData(
                         id: toolCall.id,
                         result: toolResult.content,
-                        metadata: toolResult.metadata
+                        metadata: toolResult.metadata,
+                        artifacts: toolResult.artifacts
                     )
                     toolResults.append(resultData)
                     continuation.yield(.toolResult(
@@ -659,7 +660,8 @@ public actor AIAgentActor {
                     toolResults.append(AIToolResultData(
                         id: toolCall.id,
                         result: toolResult.content,
-                        metadata: toolResult.metadata
+                        metadata: toolResult.metadata,
+                        artifacts: toolResult.artifacts
                     ))
                     let toolMessage = AIMessage.tool(toolResult.content, toolCallId: toolCall.id)
                     workingMessages.append(toolMessage)
@@ -710,7 +712,7 @@ public actor AIAgentActor {
     ///
     /// - Parameter toolCall: The tool call to execute
     /// - Returns: The tool result as a string
-    private func executeToolCall(_ toolCall: AIToolCallResult) async throws -> (content: String, metadata: ToolMetadata?) {
+    private func executeToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
         // Find tool type by name
         guard let toolType = tools.first(where: { $0.init().name == toolCall.name }) else {
             throw AISDKErrorV2.toolNotFound(toolCall.name)
@@ -719,7 +721,7 @@ public actor AIAgentActor {
         // Create and configure tool instance
         let argumentsData = toolCall.arguments.data(using: .utf8) ?? Data()
 
-        let configuredTool: Tool
+        let configuredTool: AITool
         do {
             var tool = toolType.init()
             configuredTool = try tool.validateAndSetParameters(argumentsData)
@@ -732,14 +734,13 @@ public actor AIAgentActor {
 
         // Execute with timeout - capture the configured tool
         let toolToExecute = configuredTool
-        let (content, metadata) = try await TimeoutExecutor(policy: timeout).execute(
+        let result = try await TimeoutExecutor(policy: timeout).execute(
             timeout: timeout.operationTimeout,
             operationName: "tool:\(toolCall.name)"
         ) {
             try await toolToExecute.execute()
         }
-
-        return (content, metadata)
+        return result
     }
 
     /// Check if the agent should stop based on the current step result

@@ -22,7 +22,7 @@ public class ExperimentalResearchAgent {
     
     private let model: LLMModelProtocol
     public let llm: LLM
-    private var tools: [Tool.Type]
+    private var tools: [AITool.Type]
     public var state: AgentState = .idle
     
     public var messages: [ChatMessage] = []
@@ -58,7 +58,7 @@ public class ExperimentalResearchAgent {
     ///   - instructions: Optional system instructions for the agent's behavior
     public init(
         llm: LLM,
-        tools: [Tool.Type] = [],
+        tools: [AITool.Type] = [],
         messages: [ChatMessage] = [],
         instructions: String? = nil
     ) {
@@ -75,8 +75,8 @@ public class ExperimentalResearchAgent {
             self.model = OpenAIModels.gpt4o
         }
         
-        // Register tools with ToolRegistry
-        ToolRegistry.registerAll(tools: tools)
+        // Register tools with AIToolRegistry
+        AIToolRegistry.registerAll(tools: tools)
         
         // Add system message if instructions are provided
         if let instructions = instructions {
@@ -94,7 +94,7 @@ public class ExperimentalResearchAgent {
     /// - Throws: AgentError if initialization fails
     init(
         model: LLMModel,
-        tools: [Tool.Type] = [],
+        tools: [AITool.Type] = [],
         messages: [ChatMessage] = [], 
         instructions: String? = nil
     ) {
@@ -105,8 +105,8 @@ public class ExperimentalResearchAgent {
         // Convert legacy model to protocol
         self.model = model.toProtocol()
         
-        // Register tools with ToolRegistry
-        ToolRegistry.registerAll(tools: tools)
+        // Register tools with AIToolRegistry
+        AIToolRegistry.registerAll(tools: tools)
         
         // Initialize appropriate LLM based on model
         self.llm = OpenAIProvider(apiKey: model.apiKey ?? " ")
@@ -645,8 +645,8 @@ public class ExperimentalResearchAgent {
                 throw error
             }
             
-            // Use ToolRegistry instead of direct array search
-            guard let toolType = ToolRegistry.toolType(forName: function.name) else {
+            // Use AIToolRegistry instead of direct array search
+            guard let toolType = AIToolRegistry.toolType(forName: function.name) else {
                 let error = AgentError.toolExecutionFailed("Tool not found: \(function.name)")
                 setState(.error(error))
                 throw error
@@ -686,32 +686,32 @@ public class ExperimentalResearchAgent {
                 print("---------------------------")
                 
                 // Execute tool with logging
-                let (response, metadata) = try await tool.execute()
+                let result = try await tool.execute()
                 
                 // Add tool response to messages and update metadata tracker
-                let message = ChatMessage(message: .tool(content: response, name: function.name, toolCallId: toolCall.id))
-                message.metadata = metadata
+                let message = ChatMessage(message: .tool(content: result.content, name: function.name, toolCallId: toolCall.id))
+                message.metadata = result.metadata
                 messages.append(message)
                 
                 // Update metadata in callbacks
                 for callback in callbacks {
                     if let tracker = callback as? MetadataTracker {
-                        tracker.setMetadata(metadata, forToolCallId: toolCall.id)
+                        tracker.setMetadata(result.metadata, forToolCallId: toolCall.id)
                     }
                 }
                 
-                toolResponses.append(response)
+                toolResponses.append(result.content)
                 
                 // If tool requests direct response, return immediately
                 if tool.returnToolResponse {
                     setState(.idle)
-                    let finalMessage = ChatMessage(message: .assistant(content: .text(response)))
+                    let finalMessage = ChatMessage(message: .assistant(content: .text(result.content)))
                     return finalMessage
                 }
                 
                 // Add after successful tool execution
                 let afterToolResult = await executeCallbacks {
-                    await $0.onAfterToolExecution(name: function.name, result: response)
+                    await $0.onAfterToolExecution(name: function.name, result: result.content)
                 }
                 if case .cancel = afterToolResult {
                     setState(.idle)
@@ -759,8 +759,8 @@ public class ExperimentalResearchAgent {
     /// - Returns: A tuple containing the message and optional metadata
     /// - Throws: Errors if tool execution fails
     private func executeToolCall(name: String, arguments: String, toolCallId: String) async throws -> (ChatMessage, ToolMetadata?) {
-        // Use ToolRegistry instead of direct array search
-        guard let toolType = ToolRegistry.toolType(forName: name) else {
+        // Use AIToolRegistry instead of direct array search
+        guard let toolType = AIToolRegistry.toolType(forName: name) else {
             let error = AgentError.toolExecutionFailed("Tool not found: \(name)")
             setState(.error(error))
             throw error
@@ -791,29 +791,29 @@ public class ExperimentalResearchAgent {
             print("---------------------------")
             
             // Execute tool with updated parameters
-            let (response, metadata) = try await tool.execute()
+            let result = try await tool.execute()
             
             // Create message
-            let message = ChatMessage(message: .tool(content: response, name: name, toolCallId: toolCallId))
-            message.metadata = metadata
+            let message = ChatMessage(message: .tool(content: result.content, name: name, toolCallId: toolCallId))
+            message.metadata = result.metadata
             
             // Update metadata in callbacks
             for callback in callbacks {
                 if let tracker = callback as? MetadataTracker {
-                    tracker.setMetadata(metadata, forToolCallId: toolCallId)
+                    tracker.setMetadata(result.metadata, forToolCallId: toolCallId)
                 }
             }
             
             // Notify callbacks
             let afterToolResult = await executeCallbacks {
-                await $0.onAfterToolExecution(name: name, result: response)
+                await $0.onAfterToolExecution(name: name, result: result.content)
             }
             if case .cancel = afterToolResult {
                 setState(.idle)
                 throw AgentError.operationCancelled
             }
             
-            return (message, metadata)
+            return (message, result.metadata)
         } catch {
             let agentError = error as? AIError ?? AgentError.toolExecutionFailed("Tool execution failed: \(error.localizedDescription)")
             setState(.error(agentError))
@@ -849,4 +849,3 @@ public class ExperimentalResearchAgent {
         return .continue
     }
 }
-

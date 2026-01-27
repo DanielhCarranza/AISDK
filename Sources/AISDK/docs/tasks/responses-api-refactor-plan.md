@@ -177,17 +177,17 @@ for content in response.content {
 **Concrete MCP Tool Example:**
 ```swift
 // MCP tool connecting to Slack workspace
-class MCPSlackTool: Tool {
+class MCPSlackTool: AITool {
     let name = "slack_search"
     let description = "Search messages and files in Slack workspace"
     
-    @Parameter(description: "Search query")
+    @AIParameter(description: "Search query")
     var query: String = ""
     
-    @Parameter(description: "Channel to search in", validation: ["type": "string"])
+    @AIParameter(description: "Channel to search in", validation: ["type": "string"])
     var channel: String? = nil
     
-    @Parameter(description: "Date range in days", validation: ["minimum": 1, "maximum": 30])
+    @AIParameter(description: "Date range in days", validation: ["minimum": 1, "maximum": 30])
     var dayRange: Int = 7
     
     private let mcpClient: MCPClient
@@ -200,7 +200,7 @@ class MCPSlackTool: Tool {
         )
     }
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Connect to MCP server
         let mcpResponse = try await mcpClient.call(
             method: "slack_search",
@@ -1067,7 +1067,7 @@ extension Array where Element == ContentPart {
 }
 ```
 
-#### Week 2: Tool System
+#### Week 2: AITool System
 **File: `Sources/AISDK/LLMs/OpenAI/ResponseAPI/ToolTypes.swift`**
 ```swift
 // Protocol for all tool types
@@ -1082,7 +1082,7 @@ public enum BuiltInTool: ToolType {
     case mcp(serverLabel: String, serverUrl: String, requireApproval: String? = nil)
 }
 
-// Make existing Tool protocol conform
+// Make existing AITool protocol conform
 extension Tool: ToolType {}
 
 // Conversion to existing ResponseTool
@@ -1128,7 +1128,7 @@ extension Tool {
 }
 
 // MCP tool protocol (matches existing ResponseTool.mcp structure)
-protocol MCPTool: Tool {
+protocol MCPTool: AITool {
     var serverLabel: String { get }
     var serverUrl: String { get }
     var requireApproval: String? { get }
@@ -1567,11 +1567,11 @@ if let reasoning = response.reasoning {
 ### 4. Tool Definition Compatibility
 ```swift
 // ✅ NEW: Same Tool definition, multiple API support
-struct WeatherTool: Tool {
-    @Parameter(description: "City name")
+struct WeatherTool: AITool {
+    @AIParameter(description: "City name")
     var city: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Implementation
     }
 }
@@ -2227,7 +2227,7 @@ let agent = NewAgent(
 
 ### Phase 1: Implementation (4-6 weeks)
 - Week 1-2: Core ResponseSession implementation
-- Week 3-4: Tool integration and streaming
+- Week 3-4: AITool integration and streaming
 - Week 5-6: Testing and documentation
 
 ### Phase 2: Migration (8-12 weeks)
@@ -2539,7 +2539,7 @@ This API makes building sophisticated agents trivial - from simple chatbots to c
     - [ ] `ResponseSession(provider: OpenAIProvider, content: [AIContentPart])` → creates `AIInputMessage.user(content)`
     - [ ] `ResponseSession(provider: OpenAIProvider, conversation: [AIInputMessage])`
   - [ ] Add fluent configuration methods: 
-    - [ ] `.tools([Tool])` → converts using existing Tool protocol
+    - [ ] `.tools([ToolConvertible])` → supports AITool instances and built-in tools
     - [ ] `.background(Bool)`, `.reasoning(ResponseReasoning)`, `.instructions(String)`
     - [ ] `.model(String)`, `.previousResponse(String)`
   - [ ] Write unit tests for session configuration
@@ -2580,7 +2580,7 @@ This API makes building sophisticated agents trivial - from simple chatbots to c
   - [ ] Ensure backward compatibility with existing methods
   - [ ] Write integration tests
 
-#### Week 3: Tool Integration & Testing
+#### Week 3: AITool Integration & Testing
 - [ ] **Tool Integration**
   - [ ] Leverage existing `Tool` protocol (no changes needed)
   - [ ] Convert `[Tool]` to `[ResponseTool]` using existing mechanisms
@@ -2685,7 +2685,7 @@ provider.response(message).tools([.webSearch, .codeInterpreter]).execute()
 #### Updated Timeline: 3-5 Weeks (Dramatically Simplified)
 - **Week 1**: ResponseSession class with direct AIInputMessage usage ✅ Ready to start
 - **Week 2**: Response wrappers and provider integration  
-- **Week 3**: Tool integration and comprehensive testing
+- **Week 3**: AITool integration and comprehensive testing
 - **Week 4**: Advanced features and documentation
 - **Week 5**: Production polish and release
 

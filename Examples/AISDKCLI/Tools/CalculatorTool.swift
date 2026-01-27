@@ -9,21 +9,21 @@ import Foundation
 import AISDK
 
 /// Calculator tool that evaluates mathematical expressions
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculator"
     let description = "Evaluate mathematical expressions. Supports basic arithmetic (+, -, *, /), parentheses, and common functions (sqrt, sin, cos, tan, log, exp, pow, abs, floor, ceil, round)."
 
-    @Parameter(description: "The mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(3.14159/2)')")
+    @AIParameter(description: "The mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(3.14159/2)')")
     var expression: String = ""
 
     init() {}
 
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         do {
             let result = try evaluate(expression)
-            return (formatResult(expression: expression, result: result), nil)
+            return AIToolResult(content: formatResult(expression: expression, result: result))
         } catch let error as CalculatorError {
-            return ("Error evaluating '\(expression)': \(error.localizedDescription)", nil)
+            return AIToolResult(content: "Error evaluating '\(expression)': \(error.localizedDescription)")
         }
     }
 

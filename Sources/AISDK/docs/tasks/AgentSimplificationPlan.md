@@ -40,10 +40,10 @@ The current Agent implementation has several complexity and usability issues tha
 ### 🔶 Medium Priority (Significant Impact)
 
 #### 5. **Tool Integration Complexity**
-- **Issue**: Tool execution flow is hidden and complex
+- **Issue**: AITool execution flow is hidden and complex
 - **Impact**: Hard to debug, unpredictable behavior
 - **Problems**: 
-  - Automatic tool registration via `ToolRegistry`
+  - Automatic tool registration via `AIToolRegistry`
   - Complex callback system for tool lifecycle
   - Metadata tracking scattered across multiple classes
 
@@ -95,8 +95,8 @@ init() {
 // NEW: Simple factory methods
 extension Agent {
     static func chatbot(apiKey: String? = nil) throws -> Agent
-    static func assistant(tools: [Tool.Type], apiKey: String? = nil) throws -> Agent
-    static func custom(model: LLMModel, tools: [Tool.Type] = []) throws -> Agent
+    static func assistant(tools: [AITool.Type], apiKey: String? = nil) throws -> Agent
+    static func custom(model: LLMModel, tools: [AITool.Type] = []) throws -> Agent
 }
 
 // USAGE

@@ -44,8 +44,8 @@ This is the final, reviewed specification for modernizing AISDK to achieve featu
 - **Complexity**: 4/10
 - **Description**: Wrap existing `Agent` class with new `AIAgent` interface
 
-### Task 0.3: ToolAdapter
-- **Location**: `Sources/AISDK/Core/Adapters/Legacy/ToolAdapter.swift`
+### Task 0.3: Tool Migration
+- **Location**: `Sources/AISDK/Tools/AITool.swift`
 - **Complexity**: 3/10
 - **Description**: Adapt `@Parameter`-based tools to new `AITool` protocol
 
@@ -244,7 +244,7 @@ public final class ObservableAgentState: @unchecked Sendable {
 
 ### Task 4.1c: AIAgent Tool Execution (SPLIT)
 - **Complexity**: 5/10
-- **Description**: Tool execution loop with repair integration, per-tool timeout
+- **Description**: AITool execution loop with repair integration, per-tool timeout
 
 ### Task 4.2: StopCondition
 - **Complexity**: 4/10
@@ -259,14 +259,17 @@ public final class ObservableAgentState: @unchecked Sendable {
 - **Description**: Immutable, Sendable-compliant
 ```swift
 public protocol AITool: Sendable {
-    associatedtype Arguments: Codable & Sendable
-    associatedtype Metadata: ToolMetadata = EmptyMetadata
+    var name: String { get }
+    var description: String { get }
+    var returnToolResponse: Bool { get }
 
-    static var name: String { get }
-    static var description: String { get }
-    static var timeout: TimeInterval { get }  // NEW: per-tool timeout
+    init()
+    static func jsonSchema() -> ToolSchema
+    static func validate(arguments: [String: Any]) throws
+    mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
 
-    static func execute(arguments: Arguments) async throws -> AIToolResult<Metadata>
+    func execute() async throws -> AIToolResult
 }
 ```
 

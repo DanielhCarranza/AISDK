@@ -6,9 +6,8 @@
 
 Tools let AI agents interact with external systems - fetching data, performing calculations, or executing actions.
 
-AISDK provides two tool systems:
-- **`AITool`** - Modern, immutable, Sendable-compliant protocol (recommended)
-- **`Tool`** - Legacy, mutable instance-based protocol (for backward compatibility)
+AISDK provides a single, unified tool system:
+- **`AITool`** - Instance-based, parameterized with `@AIParameter` (or `@Parameter`).
 
 ## Creating a Simple AITool
 
@@ -16,74 +15,133 @@ AISDK provides two tool systems:
 import AISDK
 
 struct WeatherTool: AITool {
-    static let name = "get_weather"
-    static let description = "Get current weather for a city"
+    let name = "get_weather"
+    let description = "Get current weather for a city"
 
-    struct Arguments: Codable, Sendable {
-        let city: String
-        let unit: TemperatureUnit?
-
-        enum TemperatureUnit: String, Codable {
-            case celsius, fahrenheit
-        }
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
     }
 
-    static func generateSchema() -> ToolSchema {
-        ToolSchema(
-            type: "function",
-            function: ToolFunction(
-                name: name,
-                description: description,
-                parameters: Parameters(
-                    type: "object",
-                    properties: [
-                        "city": PropertyDefinition(type: "string", description: "City name"),
-                        "unit": PropertyDefinition(
-                            type: "string",
-                            description: "Temperature unit",
-                            enumValues: ["celsius", "fahrenheit"]
-                        )
-                    ],
-                    required: ["city"]
-                )
-            )
-        )
-    }
+    @AIParameter(description: "City name")
+    var city: String = ""
 
-    static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .fahrenheit
+
+    init() {}
+
+    func execute() async throws -> AIToolResult {
         // In real code, call a weather API here
-        let unit = arguments.unit ?? .fahrenheit
         let temp = unit == .celsius ? "22C" : "72F"
-
-        return AIToolResult(content: "Weather in \(arguments.city): \(temp), sunny")
+        return AIToolResult(content: "Weather in \(city): \(temp), sunny")
     }
 }
 ```
 
-## Using Legacy Tool with @Parameter
-
-For simpler tools, you can use the legacy `Tool` protocol with `@Parameter` wrappers:
+## Tool with Input Validation
 
 ```swift
-struct WeatherTool: Tool {
-    let name = "get_weather"
-    let description = "Get current weather for a city"
+struct CalculatorTool: AITool {
+    let name = "calculate"
+    let description = "Perform math calculations"
 
-    @Parameter(description: "City name")
-    var city: String = ""
+    @AIParameter(description: "First number", .range(-1000...1000))
+    var a: Double = 0
 
-    @Parameter(
-        description: "Temperature unit",
-        validation: ["enum": ["celsius", "fahrenheit"]]
-    )
-    var unit: String? = nil
+    @AIParameter(description: "Second number", .range(-1000...1000))
+    var b: Double = 0
 
-    // Note: Do NOT re-initialize @Parameter in init()
+    enum Operation: String, Codable, CaseIterable {
+        case plus = "+"
+        case minus = "-"
+        case multiply = "*"
+        case divide = "/"
+    }
+
+    @AIParameter(description: "Operation")
+    var operation: Operation = .plus
+
     init() {}
 
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        let temp = unit == "celsius" ? "22C" : "72F"
-        return ("Weather in \(city): \(temp), sunny", nil)
+    func execute() async throws -> AIToolResult {
+        let result: Double
+        switch operation {
+        case .plus: result = a + b
+        case .minus: result = a - b
+        case .multiply: result = a * b
+        case .divide:
+            guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
+            result = a / b
+        }
+        return AIToolResult(content: "\(a) \(operation.rawValue) \(b) = \(result)")
+    }
+}
+```
+
+## Tool Returning Metadata
+
+```swift
+struct SearchTool: AITool {
+    struct SearchMetadata: ToolMetadata {
+        let resultCount: Int
+        let sources: [String]
+    }
+
+    let name = "search"
+    let description = "Search the web"
+
+    @AIParameter(description: "Search query")
+    var query: String = ""
+
+    init() {}
+
+    func execute() async throws -> AIToolResult {
+        let results = await performSearch(query)
+        let metadata = SearchMetadata(
+            resultCount: results.count,
+            sources: results.map(\.url)
+        )
+        return AIToolResult(
+            content: results.map(\.title).joined(separator: "\n"),
+            metadata: metadata
+        )
+    }
+}
+```
+
+## Renderable Tool (UI)
+
+```swift
+import SwiftUI
+
+struct WeatherRenderArgs: Codable {
+    let city: String
+    let temperature: Double
+    let condition: String
+}
+
+struct WeatherToolUI: RenderableTool {
+    let name = "get_weather"
+    let description = "Get the current weather in a given city"
+
+    @AIParameter(description: "City name")
+    var city: String = ""
+
+    init() {}
+
+    func execute() async throws -> AIToolResult {
+        let args = WeatherRenderArgs(city: city, temperature: 72, condition: "Sunny")
+        let jsonData = try JSONEncoder().encode(args)
+        let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
+        return AIToolResult(content: "Weather in \(city): 72°F, Sunny", metadata: metadata)
+    }
+
+    func render(from data: Data) -> AnyView {
+        guard let args = try? JSONDecoder().decode(WeatherRenderArgs.self, from: data) else {
+            return AnyView(Text("Unable to render"))
+        }
+        return AnyView(Text("\(args.city): \(Int(args.temperature))°"))
     }
 }
 ```
@@ -91,14 +149,13 @@ struct WeatherTool: Tool {
 ## Using Tools with Agent
 
 ```swift
-// Using legacy Tool types with AIAgentActor
 let agent = AIAgentActor(
     model: languageModel,
     tools: [WeatherTool.self],
     instructions: "You can check the weather."
 )
 
-for try await event in agent.streamExecute(messages: [.user("What's the weather in Tokyo?")]) {
+for try await event in agent.sendStream("What's the weather in Tokyo?") {
     switch event {
     case .textDelta(let text):
         print(text, terminator: "")
@@ -110,67 +167,6 @@ for try await event in agent.streamExecute(messages: [.user("What's the weather 
 }
 ```
 
-## Tool with Input Validation
-
-```swift
-struct CalculatorTool: AITool {
-    static let name = "calculator"
-    static let description = "Perform math calculations"
-
-    struct Arguments: Codable, Sendable {
-        let expression: String
-    }
-
-    static func execute(arguments: Arguments) async throws -> AIToolResult<EmptyMetadata> {
-        // Validate input
-        let allowed = CharacterSet(charactersIn: "0123456789+-*/.()")
-        guard arguments.expression.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
-            return AIToolResult(content: "Error: Invalid characters in expression")
-        }
-
-        // Evaluate expression
-        let expression = NSExpression(format: arguments.expression)
-        guard let result = expression.expressionValue(with: nil, context: nil) as? NSNumber else {
-            return AIToolResult(content: "Error: Could not evaluate expression")
-        }
-
-        return AIToolResult(content: "Result: \(result)")
-    }
-}
-```
-
-## Tool Returning Metadata
-
-```swift
-struct SearchTool: AITool {
-    typealias Metadata = SearchMetadata
-
-    static let name = "search"
-    static let description = "Search the web"
-
-    struct Arguments: Codable, Sendable {
-        let query: String
-    }
-
-    struct SearchMetadata: AIToolMetadata {
-        let resultCount: Int
-        let sources: [String]
-    }
-
-    static func execute(arguments: Arguments) async throws -> AIToolResult<SearchMetadata> {
-        let results = await performSearch(arguments.query)
-
-        return AIToolResult(
-            content: results.map(\.title).joined(separator: "\n"),
-            metadata: SearchMetadata(
-                resultCount: results.count,
-                sources: results.map(\.url)
-            )
-        )
-    }
-}
-```
-
 ## Best Practices
 
 1. **Clear descriptions** - Help the LLM understand when to use the tool
@@ -178,7 +174,12 @@ struct SearchTool: AITool {
 3. **Handle errors gracefully** - Return meaningful error messages in content
 4. **Keep tools focused** - One tool, one purpose
 5. **Use snake_case names** - e.g., `get_weather` not `getWeather`
-6. **Don't duplicate @Parameter** - When using legacy `Tool`, don't re-initialize parameters in `init()`
+6. **Don’t duplicate wrappers** - When using `@Parameter`/`@AIParameter`, do not re-initialize in `init()`
+
+## Notes on @Parameter vs @AIParameter
+
+- They are equivalent. Prefer `@AIParameter` for new code.
+- Both support validation and enum inference.
 
 ## Next Steps
 

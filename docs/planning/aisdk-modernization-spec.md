@@ -249,7 +249,7 @@ Healthcare reliability drives sequencing and design. Phase 1 establishes the 6.x
 - **Acceptance Criteria**:
   - Steps are bounded, cancellable, and emit completion events.
 
-### Task 4.2: Tool Call Validation + Repair
+### Task 4.2: AITool Call Validation + Repair
 - **Location**: `Sources/AISDK/Tools/ToolRepair.swift`
 - **Description**: Schema validation and repair for tool arguments
 - **Dependencies**: Task 4.1

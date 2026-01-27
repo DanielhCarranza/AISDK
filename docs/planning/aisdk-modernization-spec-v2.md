@@ -113,7 +113,7 @@ public struct AITextRequest: Sendable {
     public let model: String?
     public let temperature: Double?
     public let maxTokens: Int?
-    public let tools: [any Tool.Type]?
+    public let tools: [any AITool.Type]?
     public let toolChoice: AIToolChoice?
     public let responseFormat: AIResponseFormat?
     public let instructions: String?  // System prompt (renamed per Vercel 6.x)
@@ -358,7 +358,7 @@ public actor ProviderHealthMonitor {
 public actor AIAgent {
     // Configuration
     public let model: any AILanguageModel
-    public let tools: [any Tool.Type]
+    public let tools: [any AITool.Type]
     public let instructions: String?
     public let stopCondition: StopCondition
 
@@ -369,7 +369,7 @@ public actor AIAgent {
 
     public init(
         model: any AILanguageModel,
-        tools: [any Tool.Type] = [],
+        tools: [any AITool.Type] = [],
         instructions: String? = nil,
         stopCondition: StopCondition = .stepCount(20)  // Vercel 6.x default
     )
@@ -405,7 +405,7 @@ public enum StepAction: Sendable {
 /// Step preparation for dynamic configuration
 public struct StepPreparation: Sendable {
     public let model: (any AILanguageModel)?
-    public let tools: [any Tool.Type]?
+    public let tools: [any AITool.Type]?
     public let temperature: Double?
 
     public static let `default` = StepPreparation(model: nil, tools: nil, temperature: nil)
@@ -440,15 +440,15 @@ public struct ToolCallRepair {
 
 ```swift
 /// Enhanced tool protocol with validation
-public protocol Tool: Sendable {
+public protocol AITool: Sendable {
     /// Tool identifier
-    static var name: String { get }
+    var name: String { get }
 
     /// Human-readable description
-    static var description: String { get }
+    var description: String { get }
 
     /// Whether to return result to model
-    static var returnToolResponse: Bool { get }
+    var returnToolResponse: Bool { get }
 
     /// Generate JSON schema for parameters
     static func jsonSchema() -> ToolSchema
@@ -459,12 +459,13 @@ public protocol Tool: Sendable {
     /// Initialize with parameters
     init()
     mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
 
     /// Execute the tool
-    func execute() async throws -> ToolExecutionResult
+    func execute() async throws -> AIToolResult
 }
 
-public struct ToolExecutionResult: Sendable {
+public struct AIToolResult: Sendable {
     public let content: String
     public let metadata: ToolMetadata?
     public let artifacts: [ToolArtifact]?  // Files, images, etc.
@@ -752,7 +753,7 @@ let result = try await agent.execute(messages: [.user("What's the weather?")])
 
 ### Phase 4: Agent & Tools (Weeks 7-8)
 - Task 4.1: Actor-based AIAgent
-- Task 4.2: Tool call repair (hybrid)
+- Task 4.2: AITool call repair (hybrid)
 - Task 4.3: Step callbacks
 - Task 4.4: Enhanced Tool protocol
 

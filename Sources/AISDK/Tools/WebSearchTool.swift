@@ -196,47 +196,32 @@ public enum WebSearchError: Error, LocalizedError, Sendable {
 
 // MARK: - Tool
 
-public struct WebSearchTool: Tool {
+public struct WebSearchTool: AITool {
     public let name = "web_search"
     public let description = "Search the web for information on a given query. Returns relevant results with titles, snippets, and URLs."
 
-    @Parameter(description: "The search query")
+    @AIParameter(description: "The search query")
     public var query: String = ""
 
-    @Parameter(
-        description: "Number of results to return (1-10, default 5)",
-        validation: ["minimum": 1.0, "maximum": 10.0]
-    )
+    @AIParameter(description: "Number of results to return (1-10, default 5)", .range(1...10))
     public var numResults: Int = 5
 
     private let client: any WebSearchClient
 
     public init() {
-        self._query = Parameter(wrappedValue: "", description: "The search query")
-        self._numResults = Parameter(
-            wrappedValue: 5,
-            description: "Number of results to return (1-10, default 5)",
-            validation: ["minimum": 1.0, "maximum": 10.0]
-        )
         self.client = TavilyWebSearchClient()
     }
 
     public init(client: any WebSearchClient) {
-        self._query = Parameter(wrappedValue: "", description: "The search query")
-        self._numResults = Parameter(
-            wrappedValue: 5,
-            description: "Number of results to return (1-10, default 5)",
-            validation: ["minimum": 1.0, "maximum": 10.0]
-        )
         self.client = client
     }
 
-    public func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    public func execute() async throws -> AIToolResult {
         let clamped = max(1, min(numResults, 10))
         let sources = try await client.search(query: query, maxResults: clamped)
         let metadata = WebSearchMetadata(query: query, sources: sources)
         let content = formatSearchResults(query: query, sources: sources)
-        return (content, metadata)
+        return AIToolResult(content: content, metadata: metadata)
     }
 
     private func formatSearchResults(query: String, sources: [WebSearchSource]) -> String {

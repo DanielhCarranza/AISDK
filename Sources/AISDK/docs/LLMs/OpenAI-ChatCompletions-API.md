@@ -376,20 +376,27 @@ Integrate custom tools and functions with automatic schema generation:
 ### Defining Functions with AISDK Tools
 
 ```swift
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a location"
+
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
     
-    @Parameter(description: "The city to get weather for")
+    @AIParameter(description: "The city to get weather for")
     var city: String = ""
     
-    @Parameter(description: "Temperature unit (celsius or fahrenheit)")
-    var unit: String = "fahrenheit"
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .fahrenheit
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Your weather API call here
         let weather = await fetchWeather(city: city, unit: unit)
-        return ("Temperature in \(city): \(weather.temperature)°\(unit.prefix(1).uppercased())", nil)
+        return AIToolResult(
+            content: "Temperature in \(city): \(weather.temperature)°\(unit.rawValue.prefix(1).uppercased())"
+        )
     }
 }
 ```

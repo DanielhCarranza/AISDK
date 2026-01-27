@@ -126,13 +126,17 @@ Events emitted during streaming agent execution:
 
 ```swift
 public enum AIAgentEvent: Sendable {
-    case stateChanged(AIAgentState)
+    case stateChange(AIAgentState)
+    case messageAdded(AIMessage)
+    case messageUpdated(AIMessage, isPending: Bool)
     case textDelta(String)
+    case text(String)
     case toolCallStart(id: String, name: String)
     case toolCallDelta(id: String, argumentsDelta: String)
-    case toolCallFinish(id: String, name: String, arguments: String)
-    case toolResult(id: String, result: AIToolResult)
-    case finish(reason: AIFinishReason, usage: AIUsage)
+    case toolCall(id: String, name: String, arguments: String)
+    case toolResult(id: String, result: String, metadata: ToolMetadata?)
+    case start
+    case finish(text: String, usage: AIUsage)
     case error(Error)
 }
 ```
@@ -141,50 +145,36 @@ public enum AIAgentEvent: Sendable {
 
 ## AITool
 
-The immutable, Sendable-compliant tool protocol.
+The unified, instance-based tool protocol.
 
 ```swift
 public protocol AITool: Sendable {
-    /// Type for tool arguments (must be Codable)
-    associatedtype Arguments: Codable & Sendable
+    /// Tool identifier
+    var name: String { get }
 
-    /// Type for execution metadata
-    associatedtype Metadata: Sendable = EmptyMetadata
+    /// Human-readable description
+    var description: String { get }
 
-    /// Unique tool name (snake_case recommended)
-    static var name: String { get }
+    /// Whether to return result directly to the user without model mediation
+    var returnToolResponse: Bool { get }
 
-    /// Human-readable description for LLM
-    static var description: String { get }
+    /// Initialize tool with default parameter values
+    init()
 
-    /// JSON Schema for arguments
-    static var argumentsSchema: [String: Any] { get }
+    /// Generate JSON schema for parameters
+    static func jsonSchema() -> ToolSchema
 
-    /// Execution timeout (default: 30 seconds)
-    static var timeout: Duration { get }
+    /// Validate parameters before execution
+    static func validate(arguments: [String: Any]) throws
 
-    /// Execute the tool with parsed arguments
-    static func execute(
-        arguments: Arguments,
-        metadata: Metadata
-    ) async throws -> AIToolResult
-}
-```
+    /// Bind parameters to the tool instance
+    mutating func setParameters(from arguments: [String: Any]) throws
 
-### Default Implementations
+    /// Validate and bind parameters from JSON data
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
 
-```swift
-extension AITool {
-    public static var timeout: Duration { .seconds(30) }
-}
-
-extension AITool where Metadata == EmptyMetadata {
-    public static func execute(
-        arguments: Arguments,
-        metadata: EmptyMetadata = EmptyMetadata()
-    ) async throws -> AIToolResult {
-        // Default implementation
-    }
+    /// Execute the tool
+    func execute() async throws -> AIToolResult
 }
 ```
 
@@ -193,24 +183,15 @@ extension AITool where Metadata == EmptyMetadata {
 Result returned from tool execution:
 
 ```swift
-public struct AIToolResult: Sendable, Equatable {
+public struct AIToolResult: Sendable {
     /// Text content of the result
     public let content: String
 
-    /// Whether this result represents an error
-    public let isError: Bool
+    /// Optional typed metadata
+    public let metadata: ToolMetadata?
 
     /// Optional artifacts (files, images, etc.)
-    public let artifacts: [AIToolArtifact]
-
-    public init(
-        content: String,
-        isError: Bool = false,
-        artifacts: [AIToolArtifact] = []
-    )
-
-    /// Create an error result
-    public static func error(_ message: String) -> AIToolResult
+    public let artifacts: [ToolArtifact]?
 }
 ```
 
@@ -218,31 +199,25 @@ public struct AIToolResult: Sendable, Equatable {
 
 ```swift
 struct WeatherTool: AITool {
-    struct Arguments: Codable, Sendable {
-        let city: String
-        let units: String?
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
     }
 
-    static let name = "get_weather"
-    static let description = "Get current weather for a city"
+    let name = "get_weather"
+    let description = "Get current weather for a city"
 
-    static var argumentsSchema: [String: Any] {
-        [
-            "type": "object",
-            "properties": [
-                "city": ["type": "string", "description": "City name"],
-                "units": ["type": "string", "enum": ["celsius", "fahrenheit"]]
-            ],
-            "required": ["city"]
-        ]
-    }
+    @AIParameter(description: "City name")
+    var city: String = ""
 
-    static func execute(
-        arguments: Arguments,
-        metadata: EmptyMetadata
-    ) async throws -> AIToolResult {
-        let weather = await fetchWeather(city: arguments.city)
-        return AIToolResult(content: "Weather in \(arguments.city): \(weather)")
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .celsius
+
+    init() {}
+
+    func execute() async throws -> AIToolResult {
+        let weather = await fetchWeather(city: city)
+        return AIToolResult(content: "Weather in \(city): \(weather)")
     }
 }
 ```

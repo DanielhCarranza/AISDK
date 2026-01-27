@@ -100,7 +100,7 @@ The ResearcherAgent operates in four distinct states:
 
 ### 2. Tool Implementation
 
-- **Tool Registry**: All research tools registered with ToolRegistry
+- **Tool Registry**: All research tools registered with AIToolRegistry
 - **Tool Execution**: Sequential and conditional execution based on research state
 - **Tool Parameters**: Structured parameters with validation
 - **Tool Outputs**: Structured outputs with metadata

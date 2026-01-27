@@ -491,48 +491,24 @@ public struct ToolCallRepair {
 **Dependencies**: None
 
 ```swift
-/// Immutable, Sendable-compliant tool protocol
+/// Instance-based tool protocol
 public protocol AITool: Sendable {
-    associatedtype Arguments: Codable & Sendable
-    associatedtype Metadata: ToolMetadata = EmptyMetadata
+    var name: String { get }
+    var description: String { get }
+    var returnToolResponse: Bool { get }
 
-    static var name: String { get }
-    static var description: String { get }
-    static var returnToolResponse: Bool { get }
-    static var timeout: Duration { get }  // Per-tool timeout
-
+    init()
     static func jsonSchema() -> ToolSchema
-    static func validate(arguments: Arguments) throws
-    static func execute(arguments: Arguments) async throws -> AIToolResult<Metadata>
+    static func validate(arguments: [String: Any]) throws
+    mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
+    func execute() async throws -> AIToolResult
 }
 
-public extension AITool {
-    static var returnToolResponse: Bool { false }
-    static var timeout: Duration { .seconds(30) }
-
-    static func validate(arguments: Arguments) throws {
-        // Default: no additional validation
-    }
-
-    static func jsonSchema() -> ToolSchema {
-        ToolSchemaBuilder.build(for: Arguments.self, name: name, description: description)
-    }
-}
-
-public struct AIToolResult<M: ToolMetadata>: Sendable {
+public struct AIToolResult: Sendable {
     public let content: String
-    public let metadata: M?
+    public let metadata: ToolMetadata?
     public let artifacts: [ToolArtifact]?
-
-    public init(content: String, metadata: M? = nil, artifacts: [ToolArtifact]? = nil) {
-        self.content = content
-        self.metadata = metadata
-        self.artifacts = artifacts
-    }
-}
-
-public struct EmptyMetadata: ToolMetadata, Codable, Equatable, Sendable {
-    public init() {}
 }
 ```
 
