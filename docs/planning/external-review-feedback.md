@@ -69,7 +69,7 @@ Two independent reviews identified **12 critical issues** and **8 recommendation
 **Mitigation**: Split into 3 sub-tasks:
 - 4.1a: Core actor shell with basic execute (4/10)
 - 4.1b: Streaming with step callbacks (5/10)
-- 4.1c: Tool execution loop with repair (5/10)
+- 4.1c: AITool execution loop with repair (5/10)
 
 ### Issue 5: Missing Concurrency Tests
 **Source**: Implementation Review
@@ -95,18 +95,27 @@ Two independent reviews identified **12 critical issues** and **8 recommendation
 - test_stream_deallocation_after_error
 - test_no_retain_cycles_in_step_callbacks
 
-### Issue 7: Tool Protocol Not Sendable
+### Issue 7: AITool Protocol Not Sendable
 **Source**: Implementation Review
 
-**Problem**: Current Tool protocol uses `mutating func setParameters` which is incompatible with actor isolation.
+**Problem**: Legacy Tool protocol uses `mutating func setParameters` which is incompatible with actor isolation.
 
 **Impact**: Compile errors, unsafe code
 
-**Mitigation**: Redesign as immutable value types:
+**Mitigation**: Redesign as instance-based `AITool` with `@AIParameter` and validation:
 ```swift
 public protocol AITool: Sendable {
-    associatedtype Arguments: Codable & Sendable
-    static func execute(arguments: Arguments) async throws -> AIToolResult
+    var name: String { get }
+    var description: String { get }
+    var returnToolResponse: Bool { get }
+
+    init()
+    static func jsonSchema() -> ToolSchema
+    static func validate(arguments: [String: Any]) throws
+    mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
+
+    func execute() async throws -> AIToolResult
 }
 ```
 
@@ -120,7 +129,7 @@ public protocol AITool: Sendable {
 **Mitigation**: Add Phase 0: Adapter Layer (1 week)
 - AILanguageModelAdapter wrapping existing LLM
 - AIAgentAdapter wrapping existing Agent
-- ToolAdapter for @Parameter-based tools
+- Tools migrate directly to `AITool` (no ToolAdapter)
 
 ---
 
@@ -276,7 +285,7 @@ struct ButtonProps: Codable, Sendable {
 ### Phase 0 (New)
 - **0.1**: AILanguageModelAdapter (3/10)
 - **0.2**: AIAgentAdapter (4/10)
-- **0.3**: ToolAdapter (3/10)
+- **0.3**: Tool Migration (3/10)
 
 ### Phase 1 Additions
 - **1.10**: AISDKObserver protocol (4/10)

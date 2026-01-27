@@ -210,8 +210,8 @@ public enum StreamSimulation {
     ///
     /// - Parameters:
     ///   - text: Initial text to emit
-    ///   - toolName: Tool to call
-    ///   - arguments: Tool arguments
+    ///   - toolName: AITool to call
+    ///   - arguments: AITool arguments
     ///   - model: Model identifier
     ///   - provider: Provider identifier
     /// - Returns: Array of stream events
@@ -597,7 +597,7 @@ public enum StreamSimulation {
     ///
     /// - Parameters:
     ///   - toolName: The tool name
-    ///   - arguments: Tool arguments
+    ///   - arguments: AITool arguments
     ///   - delay: Optional delay between events
     /// - Returns: An AsyncThrowingStream of tool call events
     public static func simulateToolStream(

@@ -17,7 +17,7 @@ Create a migration safety net by implementing adapters that wrap existing APIs w
 ```
 Sources/AISDK/LLMs/LLMProtocol.swift           # Current LLM protocol
 Sources/AISDK/Agents/Agent.swift               # Current Agent class (656 lines)
-Sources/AISDK/Tools/Tool.swift                 # Current Tool protocol
+Sources/AISDK/Tools/AITool.swift               # AITool protocol
 ```
 
 ---
@@ -133,55 +133,18 @@ Tests/AISDKTests/Adapters/Legacy/AIAgentAdapterTests.swift
 
 ---
 
-### Task 0.3: ToolAdapter
+### Task 0.3: Tool Migration
 
-**Location**: `Sources/AISDK/Core/Adapters/Legacy/ToolAdapter.swift`
+**Location**: `Sources/AISDK/Tools/AITool.swift`
 **Complexity**: 3/10
 **Dependencies**: None
 
-**Description**: Adapt `@Parameter`-based tools to new immutable `AITool` protocol.
-
-**Implementation**:
-```swift
-/// Type-erased wrapper for legacy @Parameter-based tools
-public struct LegacyToolAdapter: Sendable {
-    public let name: String
-    public let description: String
-    public let schema: ToolSchema
-
-    private let executeHandler: @Sendable ([String: Any]) async throws -> ToolExecutionResult
-
-    public init<T: Tool>(_ toolType: T.Type) {
-        self.name = T.name
-        self.description = T.description
-        self.schema = T.jsonSchema()
-
-        self.executeHandler = { arguments in
-            var tool = T()
-            try tool.setParameters(from: arguments)
-            let (content, metadata) = try await tool.execute()
-            return ToolExecutionResult(content: content, metadata: metadata)
-        }
-    }
-
-    public func execute(arguments: [String: Any]) async throws -> ToolExecutionResult {
-        try await executeHandler(arguments)
-    }
-}
-```
-
-**Test-First**:
-```
-Tests/AISDKTests/Adapters/Legacy/ToolAdapterTests.swift
-- test_adapts_parameter_based_tool
-- test_schema_preserved
-- test_execution_works
-```
+**Description**: Migrate tools directly to the instance-based `AITool` protocol using `@AIParameter`.
 
 **Acceptance Criteria**:
-- [ ] Existing @Parameter tools work through adapter
-- [ ] JSON schema generation preserved
-- [ ] Sendable compliance maintained
+- [ ] Tools use `@AIParameter` for schema + validation
+- [ ] `validate(arguments:)` and `setParameters(from:)` are available via defaults
+- [ ] No adapter layer required for tools
 
 ---
 

@@ -162,12 +162,21 @@ AISDK/
 │   │   │       ├── ConversationalAgent.swift
 │   │   │       └── SpecializedAgent.swift
 │   │   ├── Core/
+│   │   │   ├── Adapters/
+│   │   │   ├── Configuration/
+│   │   │   ├── Errors/
+│   │   │   ├── Models/
+│   │   │   ├── Protocols/
+│   │   │   ├── Providers/
+│   │   │   ├── Reliability/
+│   │   │   ├── Telemetry/
+│   │   │   └── Utilities/
+│   │   ├── Tools/
+│   │   │   ├── AIParameter.swift
+│   │   │   ├── AITool.swift
 │   │   │   ├── Tool.swift
-│   │   │   ├── ToolRegistry.swift
-│   │   │   ├── Parameter.swift
-│   │   │   ├── ToolMetadata.swift
-│   │   │   ├── RenderableTool.swift
-│   │   │   └── ToolSchema.swift
+│   │   │   ├── ToolCallRepair.swift
+│   │   │   └── WebSearchTool.swift
 │   │   ├── LLMs/
 │   │   │   ├── LLMProtocol.swift
 │   │   │   ├── OpenAIProvider.swift
@@ -372,7 +381,7 @@ AISDK/
 The core module is the only required dependency and contains:
 
 1. **Agents/**: Agent system, callbacks, and state management
-2. **Core/**: Tool infrastructure and metadata handling
+2. **Core/**: AITool infrastructure and metadata handling
 3. **LLMs/**: Language model provider implementations
 4. **Models/**: Data structures for API communication
 5. **Client/**: Network client for API calls

@@ -116,9 +116,9 @@ Tests/AISDKTests/
 - `testFailingToolExecution()` - Graceful failure handling
 
 #### **Tool Registry** (3 tests)
-- `testToolRegistryRegistration()` - Single tool registration
-- `testToolRegistryMultipleRegistration()` - Batch registration
-- `testToolRegistryUnknownTool()` - Missing tool handling
+- `testAIToolRegistryRegistration()` - Single tool registration
+- `testAIToolRegistryMultipleRegistration()` - Batch registration
+- `testAIToolRegistryUnknownTool()` - Missing tool handling
 
 #### **LLM Integration** (2 tests)
 - `testChatCompletionWithTools()` - End-to-end tool calling

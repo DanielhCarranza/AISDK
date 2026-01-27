@@ -9,18 +9,15 @@ import Foundation
 import AISDK
 
 /// Live weather tool that returns real weather data via Open-Meteo.
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get the current weather for a specified city using live data (temperature, conditions, humidity, wind, and UV index when available)."
 
-    @Parameter(description: "The city name to get weather for (e.g., 'Tokyo', 'New York', 'London')")
+    @AIParameter(description: "The city name to get weather for (e.g., 'Tokyo', 'New York', 'London')")
     var city: String = ""
 
-    @Parameter(
-        description: "Temperature unit (celsius or fahrenheit). Defaults to celsius.",
-        validation: ["enum": ["celsius", "fahrenheit"]]
-    )
-    var unit: String? = nil
+    @AIParameter(description: "Temperature unit (celsius or fahrenheit). Defaults to celsius.")
+    var unit: WeatherUnit = .celsius
 
     private let client: WeatherClient
 
@@ -32,14 +29,9 @@ struct WeatherTool: Tool {
         self.client = client
     }
 
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        let unitRaw = (unit ?? WeatherUnit.celsius.rawValue).lowercased()
-        guard let unit = WeatherUnit(rawValue: unitRaw) else {
-            throw ToolError.invalidParameters("unit must be 'celsius' or 'fahrenheit'")
-        }
-
+    func execute() async throws -> AIToolResult {
         let report = try await client.fetchWeather(for: city, unit: unit)
-        return (formatWeatherResponse(report, unit: unit), nil)
+        return AIToolResult(content: formatWeatherResponse(report, unit: unit))
     }
 
     // MARK: - Response Formatting
@@ -91,7 +83,7 @@ struct WeatherTool: Tool {
 
 // MARK: - Weather Client
 
-enum WeatherUnit: String {
+enum WeatherUnit: String, Codable, CaseIterable {
     case celsius
     case fahrenheit
 

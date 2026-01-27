@@ -76,7 +76,7 @@ Core functionality is defined through protocols for flexibility:
 ```swift
 protocol AILanguageModel: Actor, Sendable { ... }
 protocol AITool: Sendable { ... }
-protocol AIAgent: Actor { ... }
+protocol AIAgent: Sendable { ... }
 ```
 
 ## Package Import
@@ -97,7 +97,7 @@ AISDK leverages Swift's type system:
 
 - **Sendable**: All types crossing concurrency boundaries are Sendable
 - **Codable**: Request/response types are Codable for serialization
-- **Associated Types**: Tools use associated types for type-safe arguments
+- **Property Wrappers**: Tools use `@AIParameter` for typed, validated arguments
 
 ## Next Steps
 

@@ -102,10 +102,10 @@ struct WeatherTool: RenderableTool {
     let name = "get_weather"
     let description = "Get the current weather with visual display"
     
-    @Parameter(description: "The city to get weather for")
+    @AIParameter(description: "The city to get weather for")
     var city: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Fetch weather data (mock for example)
         let weatherData = WeatherData(
             city: city,
@@ -117,7 +117,7 @@ struct WeatherTool: RenderableTool {
         let jsonData = try JSONEncoder().encode(weatherData)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return ("It's 72°F and sunny in \(city)", metadata)
+        return AIToolResult(content: "It's 72°F and sunny in \(city)", metadata: metadata)
     }
     
     func render(from data: Data) -> AnyView {
@@ -485,7 +485,7 @@ struct MessageRow: View {
                 // Tool UI rendering
                 if let metadata = message.metadata?.first,
                    let renderMetadata = metadata.metadata as? RenderMetadata,
-                   let toolType = ToolRegistry.getToolType(for: renderMetadata.toolName),
+                   let toolType = AIToolRegistry.getToolType(for: renderMetadata.toolName),
                    let renderable = toolType.init() as? RenderableTool {
                     renderable.render(from: renderMetadata.jsonData)
                         .padding(.top, 8)
@@ -560,10 +560,10 @@ struct WeatherTool: RenderableTool {
     let name = "get_weather"
     let description = "Get current weather for a location"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var location: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Mock weather data - replace with real API
         let weather = WeatherData(
             city: location,
@@ -645,10 +645,10 @@ struct StockTool: RenderableTool {
     let name = "get_stock_price"
     let description = "Get current stock price and information"
     
-    @Parameter(description: "Stock symbol (e.g., AAPL)")
+    @AIParameter(description: "Stock symbol (e.g., AAPL)")
     var symbol: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Mock stock data - replace with real API
         let basePrice = Double.random(in: 100...500)
         let change = Double.random(in: -10...10)
@@ -1025,7 +1025,7 @@ struct VoiceButton: View {
 3. **Tool Not Executing**
    ```swift
    // Verify tool registration
-   print(ToolRegistry.registeredTools)
+   print(AIToolRegistry.registeredTools)
    
    // Check tool name matches
    let tool = WeatherTool()

@@ -179,20 +179,25 @@ struct ChatDemoView: View {
                             textOutput = ""
                             do {
                                 // Define the weather tool
-                                struct WeatherTool: Tool {
+                                struct WeatherTool: AITool {
                                     let name = "get_current_weather"
                                     let description = "Get the current weather in a given location"
                                     
                                     init() {}
                                     
-                                    @Parameter(description: "The city and state, e.g. San Francisco, CA")
+                                    enum TemperatureUnit: String, Codable, CaseIterable {
+                                        case celsius
+                                        case fahrenheit
+                                    }
+
+                                    @AIParameter(description: "The city and state, e.g. San Francisco, CA")
                                     var location: String = ""
                                     
-                                    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-                                    var unit: String = "celsius"
+                                    @AIParameter(description: "Temperature unit")
+                                    var unit: TemperatureUnit = .celsius
 
-                                    func execute() async throws -> (content: String, metadata: ToolMetadata?)  {
-                                        return (content: "Weather \(self.location) \(self.unit)", metadata: nil)
+                                    func execute() async throws -> AIToolResult  {
+                                        return AIToolResult(content: "Weather \(self.location) \(self.unit.rawValue)")
                                     }
                                 }
                                 
@@ -339,22 +344,27 @@ struct ChatDemoView: View {
                         
                         do {
                             // Define the simple weather tool
-                            struct WeatherToolForAgent: Tool {
+                            struct WeatherToolForAgent: AITool {
                                 let name = "get_current_weather"
                                 let description = "Get the current weather in a given location"
                                 
                                 init() {}
                                 
-                                @Parameter(description: "The city and state, e.g. San Francisco, CA")
+                                enum TemperatureUnit: String, Codable, CaseIterable {
+                                    case celsius
+                                    case fahrenheit
+                                }
+
+                                @AIParameter(description: "The city and state, e.g. San Francisco, CA")
                                 var location: String = ""
                                 
-                                @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-                                var unit: String = "celsius"
+                                @AIParameter(description: "Temperature unit")
+                                var unit: TemperatureUnit = .celsius
 
-                                func execute() async throws -> (content: String, metadata: ToolMetadata?)  {
+                                func execute() async throws -> AIToolResult  {
                                     // Add logging to verify execution
-                                    print("🌦️ Weather tool executing for location: \(location), unit: \(unit)")
-                                    return (content: "Weather for \(self.location): 72°\(self.unit == "celsius" ? "C" : "F"), partly cloudy", metadata: nil)
+                                    print("🌦️ Weather tool executing for location: \(location), unit: \(unit.rawValue)")
+                                    return AIToolResult(content: "Weather for \(self.location): 72°\(self.unit == .celsius ? "C" : "F"), partly cloudy")
                                 }
                             }
                             

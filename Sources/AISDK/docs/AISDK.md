@@ -83,7 +83,7 @@ graph TB
 classDiagram
     class Agent {
         +model: LLMModel
-        +tools: [Tool.Type]
+        +tools: [AITool.Type]
         +messages: [ChatMessage]
         +send(content: String) ChatMessage
         +sendStream(message: ChatMessage) AsyncThrowingStream
@@ -190,16 +190,16 @@ agent.onStateChange = { state in
 #### Basic Tool
 
 ```swift
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculator"
     let description = "Perform mathematical calculations"
     
-    @Parameter(description: "Math expression", validation: ["pattern": "^[0-9+\\-*/().\\s]+$"])
+    @AIParameter(description: "Math expression", validation: ["pattern": "^[0-9+\\-*/().\\s]+$"])
     var expression: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let result = NSExpression(format: expression).expressionValue(with: nil, context: nil)
-        return ("Result: \(result ?? "Error")", nil)
+        return AIToolResult(content: "Result: \(result ?? "Error")")
     }
 }
 ```
@@ -211,10 +211,10 @@ struct WeatherTool: RenderableTool {
     let name = "get_weather"
     let description = "Get current weather with visual display"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let weatherData = try await fetchWeather(for: city)
         let jsonData = try JSONEncoder().encode(weatherData)
         
@@ -380,18 +380,21 @@ struct ChartTool: RenderableTool {
     let name = "display_chart"
     let description = "Display data in a chart"
     
-    @Parameter(description: "Chart data as JSON")
+    @AIParameter(description: "Chart data as JSON")
     var data: String = ""
     
-    @Parameter(description: "Chart type", validation: ["enum": ["bar", "line", "pie"]])
+    @AIParameter(description: "Chart type", validation: ["enum": ["bar", "line", "pie"]])
     var chartType: String = "bar"
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let chartData = try parseChartData(data)
         let jsonData = try JSONEncoder().encode(chartData)
         
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        return ("Chart created with \(chartData.points.count) data points", metadata)
+        return AIToolResult(
+            content: "Chart created with \(chartData.points.count) data points",
+            metadata: metadata
+        )
     }
     
     func render(from data: Data) -> AnyView {
@@ -582,21 +585,26 @@ print(result.sources)
 
 ```swift
 // ✅ Good: Single responsibility, clear parameters
-struct TranslateTool: Tool {
-    @Parameter(description: "Text to translate")
+struct TranslateTool: AITool {
+    let name = "translate"
+    let description = "Translate text into a target language"
+
+    @AIParameter(description: "Text to translate")
     var text: String = ""
     
-    @Parameter(description: "Target language code")
+    @AIParameter(description: "Target language code")
     var targetLanguage: String = "es"
     
-    func execute() async throws -> (String, ToolMetadata?) {
+    init() {}
+
+    func execute() async throws -> AIToolResult {
         let translated = try await translateAPI(text, to: targetLanguage)
-        return (translated, nil)
+        return AIToolResult(content: translated)
     }
 }
 
 // ❌ Bad: Multiple responsibilities
-struct SuperTool: Tool {
+struct SuperTool: AITool {
     // Does translation, weather, calculations, etc.
 }
 ```
@@ -675,7 +683,7 @@ let agent = try Agent(
 2. **Tool Not Found**
 ```swift
 // Ensure tools are registered
-ToolRegistry.registerAll(tools: [YourTool.self])
+AIToolRegistry.registerAll(tools: [YourTool.self])
 ```
 
 3. **UI Not Rendering**

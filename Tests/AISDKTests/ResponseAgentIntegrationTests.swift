@@ -60,7 +60,7 @@ final class ResponseAgentIntegrationTests: XCTestCase {
     
     func testToolConflictValidation() {
         // Create a mock tool that conflicts with built-in tools
-        final class MockWebSearchTool: Tool {
+        final class MockWebSearchTool: AITool {
             var name: String = "web_search_preview"
             var description: String = "Mock tool"
             var returnToolResponse: Bool = false
@@ -90,8 +90,8 @@ final class ResponseAgentIntegrationTests: XCTestCase {
                 return self
             }
             
-            func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-                return (content: "Mock result", metadata: nil)
+            func execute() async throws -> AIToolResult {
+                return AIToolResult(content: "Mock result")
             }
         }
         

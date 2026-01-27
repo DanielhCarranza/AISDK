@@ -134,33 +134,9 @@ let adapted = AILanguageModelAdapter.from(
 )
 ```
 
-### ToolAdapter
+### Tool Migration
 
-Wraps a legacy `Tool` for use with the new agent system:
-
-```swift
-// Existing 1.x tool
-class WeatherTool: Tool {
-    let name = "get_weather"
-    let description = "Get weather for a location"
-
-    @Parameter(description: "City name")
-    var location: String = ""
-
-    func execute() async throws -> (String, ToolMetadata?) {
-        return ("Weather in \(location): Sunny, 72F", nil)
-    }
-}
-
-// Wrap with adapter
-let weatherAdapter = try ToolAdapter(toolType: WeatherTool.self)
-
-// Use with 2.0 agent
-let agent = AIAgentActor(
-    model: adaptedModel,
-    tools: [weatherAdapter.toAITool()]
-)
-```
+Tools are now unified under `AITool`. There is no adapter layer—migrate tools directly to the instance-based `AITool` pattern with `@AIParameter`.
 
 ### AIAgentAdapter
 
@@ -341,6 +317,7 @@ class ChatManager {
 ### Before (1.x)
 
 ```swift
+// Legacy 1.x tool
 class WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a location"
@@ -361,39 +338,29 @@ class WeatherTool: Tool {
 }
 ```
 
-### After (2.0) - Using Adapter
-
-```swift
-// Keep existing tool, wrap with adapter
-let adapter = try ToolAdapter(toolType: WeatherTool.self)
-let aiTool = adapter.toAITool()
-
-// Use with agent
-let agent = AIAgentActor(model: model, tools: [aiTool])
-```
-
-### After (2.0) - Using Native AITool
+### After (2.0) - Native AITool
 
 ```swift
 struct WeatherTool: AITool {
-    static let name = "get_weather"
-    static let description = "Get current weather for a location"
-
-    struct Parameters: Codable, Sendable {
-        let location: String
-        let unit: TemperatureUnit
-
-        enum TemperatureUnit: String, Codable {
-            case celsius, fahrenheit
-        }
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
     }
 
-    static func execute(parameters: Parameters) async throws -> AIToolResult {
-        // Fetch weather...
-        let temp = parameters.unit == .celsius ? "22C" : "72F"
-        return AIToolResult(
-            content: "Weather in \(parameters.location): \(temp), sunny"
-        )
+    let name = "get_weather"
+    let description = "Get current weather for a location"
+
+    @AIParameter(description: "City name")
+    var location: String = ""
+
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .fahrenheit
+
+    init() {}
+
+    func execute() async throws -> AIToolResult {
+        let temp = unit == .celsius ? "22C" : "72F"
+        return AIToolResult(content: "Weather in \(location): \(temp), sunny")
     }
 }
 ```
@@ -601,11 +568,11 @@ let request = AITextRequest(
 // Wrap existing providers
 let adaptedModel = AILanguageModelAdapter.fromOpenAI(existingProvider)
 
-// Wrap existing tools
-let adaptedTools = existingToolTypes.map { try! ToolAdapter(toolType: $0).toAITool() }
+// Migrate tools to AITool (no adapter layer)
+let tools: [AITool.Type] = [WeatherTool.self, CalculatorTool.self]
 
 // Create 2.0 agent with adapted components
-let agent = AIAgentActor(model: adaptedModel, tools: adaptedTools)
+let agent = AIAgentActor(model: adaptedModel, tools: tools)
 ```
 
 ### Phase 2: Migrate New Code
@@ -633,9 +600,8 @@ let agent = AIAgentActor(model: adaptedModel, tools: adaptedTools)
 | Migration Task | Adapter | Native Alternative |
 |---------------|---------|-------------------|
 | Wrap `LLM` provider | `AILanguageModelAdapter` | Implement `AILanguageModel` |
-| Wrap `Tool` | `ToolAdapter` | Implement `AITool` |
 | Wrap `Agent` | `AIAgentAdapter` | Use `AIAgentActor` |
 | Convert messages | Manual | Use `AIMessage` constructors |
 | Handle streaming | Adapter auto-converts | Use `AsyncThrowingStream` events |
 
-The adapter approach allows incremental migration without rewriting everything at once. Start by wrapping existing code, then gradually replace with native 2.0 implementations.
+The adapter approach allows incremental migration without rewriting everything at once. Start by wrapping providers/agents, and migrate tools directly to `AITool`.

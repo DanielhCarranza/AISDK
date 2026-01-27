@@ -43,7 +43,7 @@ class CLIController {
     private let uiRenderer: TerminalUIRenderer
 
     /// Built-in tool types
-    private var builtInTools: [Tool.Type] = []
+    private var builtInTools: [AITool.Type] = []
 
     /// Whether the main loop should continue
     private var shouldContinue = true

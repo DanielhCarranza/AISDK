@@ -392,7 +392,7 @@ private func runReasoning(options: DemoOptions) async throws {
     print("\n✅ Reasoning demo completed")
 }
 
-// MARK: - Demo: Tool Calling
+// MARK: - Demo: AITool Calling
 
 private func runToolDemo(options: DemoOptions) async throws {
     printSection("🛠️ Tool Calling Demo")

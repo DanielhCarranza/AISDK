@@ -31,7 +31,7 @@ struct MessageBubble: View {
                     // Check if we have RenderMetadata
                     if let renderMeta = chatMessage.metadata as? RenderMetadata {
                         // Attempt to build a UI from the tool
-                        if let toolType = ToolRegistry.toolType(forName: toolName),
+                        if let toolType = AIToolRegistry.toolType(forName: toolName),
                            let renderable = toolType.init() as? RenderableTool {
                             toolView(for: renderable, data: renderMeta.jsonData)
                         } else {

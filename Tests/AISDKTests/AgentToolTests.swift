@@ -14,7 +14,7 @@ final class AgentToolTests: XCTestCase {
         mockProvider = MockLLMProvider()
         
         // Register test tools
-        ToolRegistry.registerAll(tools: [
+        AIToolRegistry.registerAll(tools: [
             TestWeatherTool.self,
             TestCalculatorTool.self,
             TestTimeTool.self,
@@ -296,7 +296,7 @@ final class AgentToolTests: XCTestCase {
 
 // MARK: - Additional Test Tools
 
-struct TestTimeTool: Tool {
+struct TestTimeTool: AITool {
     let name = "get_time"
     let description = "Get current time in specified timezone"
     
@@ -305,17 +305,17 @@ struct TestTimeTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let formatter = DateFormatter()
         formatter.timeZone = TimeZone(identifier: timezone)
         formatter.dateFormat = "HH:mm:ss"
         
         let timeString = formatter.string(from: Date())
-        return ("Current time in \(timezone): \(timeString)", nil)
+        return AIToolResult(content: "Current time in \(timezone): \(timeString)")
     }
 }
 
-struct TestChainedTool: Tool {
+struct TestChainedTool: AITool {
     let name = "chained_tool"
     let description = "A tool that can be chained with other calls"
     
@@ -324,9 +324,9 @@ struct TestChainedTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let processed = "processed_\(input)"
-        return ("Processed: \(processed)", nil)
+        return AIToolResult(content: "Processed: \(processed)")
     }
 }
 

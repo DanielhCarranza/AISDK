@@ -116,7 +116,7 @@ public class ResponseAgent {
     // MARK: - Properties
     
     private let provider: OpenAIProvider
-    private let tools: [Tool.Type]
+    private let tools: [AITool.Type]
     private let builtInTools: [BuiltInTool]
     private let mcpServers: [MCPServerConfiguration]
     private let instructions: String?
@@ -149,7 +149,7 @@ public class ResponseAgent {
     ///   - model: Model to use (default: gpt-4o)
     public init(
         provider: OpenAIProvider,
-        tools: [Tool.Type] = [],
+        tools: [AITool.Type] = [],
         builtInTools: [BuiltInTool] = [.webSearchPreview, .codeInterpreter, .imageGeneration(), .fileSearch(vectorStoreId: "")],
         mcpServers: [MCPServerConfiguration] = [],
         instructions: String? = nil,
@@ -171,7 +171,7 @@ public class ResponseAgent {
         try validateToolConflicts()
         
         // Register custom tools
-        ToolRegistry.registerAll(tools: tools)
+        AIToolRegistry.registerAll(tools: tools)
         
         // Add system instructions if provided
         if let instructions = instructions {
@@ -581,7 +581,7 @@ public class ResponseAgent {
     ) async throws -> (response: String, metadata: ToolMetadata?) {
         
         // Line 1: Get tool type from registry
-        guard let toolType = ToolRegistry.toolType(forName: name) else {
+        guard let toolType = AIToolRegistry.toolType(forName: name) else {
             throw ResponseAgentError.toolNotFound(name)
         }
         
@@ -593,9 +593,9 @@ public class ResponseAgent {
         tool = try tool.validateAndSetParameters(argumentsData)
         
         // Line 4: Execute tool
-        let (response, metadata) = try await tool.execute()
+        let result = try await tool.execute()
         
-        return (response: response, metadata: metadata)
+        return (response: result.content, metadata: result.metadata)
     }
     
     /// Convert ResponseObject to ResponseChatMessage

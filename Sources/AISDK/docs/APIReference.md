@@ -43,7 +43,7 @@ public class Agent {
     public let model: LLMModel
     
     /// Available tools for the agent
-    public private(set) var tools: [Tool.Type]
+    public private(set) var tools: [AITool.Type]
     
     /// Conversation history
     public private(set) var messages: [ChatMessage]
@@ -61,7 +61,7 @@ public class Agent {
 ```swift
 public init(
     model: LLMModel,
-    tools: [Tool.Type] = [],
+    tools: [AITool.Type] = [],
     messages: [ChatMessage] = [],
     instructions: String? = nil
 ) throws
@@ -138,73 +138,53 @@ Add callbacks for agent events.
 public func addCallbacks(_ callbacks: AgentCallbacks)
 ```
 
-### Tool
+### AITool
 
-Protocol for defining executable tools.
+Instance-based protocol for defining executable tools.
 
 ```swift
-public protocol Tool {
-    /// Unique identifier for the tool
+public protocol AITool: Sendable {
     var name: String { get }
-    
-    /// Description of what the tool does
     var description: String { get }
-    
-    /// Whether to return tool response to user
     var returnToolResponse: Bool { get }
-    
-    /// Initialize the tool
+
     init()
-    
-    /// Execute the tool and return results
-    func execute() async throws -> (content: String, metadata: ToolMetadata?)
-    
-    /// Generate JSON schema for the tool
     static func jsonSchema() -> ToolSchema
-    
-    /// Set parameters from arguments
+    static func validate(arguments: [String: Any]) throws
     mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
+    func execute() async throws -> AIToolResult
 }
 ```
 
-#### Parameter Property Wrapper
+#### AIParameter Property Wrapper
 
 ```swift
-@propertyWrapper
-public class Parameter<T> {
-    public var wrappedValue: T
-    public let description: String
-    public let validation: [String: Any]?
-    
-    public init(
-        wrappedValue: T,
-        description: String,
-        validation: [String: Any]? = nil
-    )
-}
+@AIParameter(description: "City name")
+var city: String = ""
 ```
 
 **Example:**
 ```swift
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather"
     
-    @Parameter(
+    @AIParameter(
         description: "City name",
         validation: ["minLength": 1, "maxLength": 100]
     )
     var city: String = ""
     
-    @Parameter(
+    @AIParameter(
         description: "Temperature unit",
         validation: ["enum": ["celsius", "fahrenheit"]]
     )
     var unit: String = "celsius"
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let weather = try await fetchWeather(city: city, unit: unit)
-        return ("Temperature in \(city): \(weather.temp)°\(unit)", nil)
+        return AIToolResult(content: "Temperature in \(city): \(weather.temp)°\(unit)")
     }
 }
 ```
@@ -214,7 +194,7 @@ struct WeatherTool: Tool {
 Protocol for tools that can render UI.
 
 ```swift
-public protocol RenderableTool: Tool {
+public protocol RenderableTool: AITool {
     /// Renders a SwiftUI view given the stored metadata
     func render(from data: Data) -> AnyView
 }
@@ -226,15 +206,15 @@ struct ChartTool: RenderableTool {
     let name = "display_chart"
     let description = "Display data in a chart"
     
-    @Parameter(description: "Chart data as JSON")
+    @AIParameter(description: "Chart data as JSON")
     var data: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let chartData = try JSONDecoder().decode(ChartData.self, from: data.data(using: .utf8)!)
         let jsonData = try JSONEncoder().encode(chartData)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return ("Chart created with \(chartData.points.count) data points", metadata)
+        return AIToolResult(content: "Chart created with \(chartData.points.count) data points", metadata: metadata)
     }
     
     func render(from data: Data) -> AnyView {
@@ -756,7 +736,7 @@ public class ResearcherAgent: Agent {
     /// Initialize researcher
     public init(
         model: LLMModel = .gpt4o,
-        researchTools: [Tool.Type]? = nil
+        researchTools: [AITool.Type]? = nil
     ) throws
 }
 ```
@@ -860,7 +840,7 @@ public typealias StateChangeHandler = (AgentState) -> Void
 public typealias StreamHandler = (ChatMessage) async -> Void
 
 /// Tool execution result
-public typealias ToolResult = Result<(String, ToolMetadata?), Error>
+public typealias ToolResult = Result<AIToolResult, Error>
 
 /// Suggested question
 public struct SuggestedQuestion: Identifiable {

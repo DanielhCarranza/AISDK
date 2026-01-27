@@ -63,7 +63,7 @@ let geminiAgent = Agent(
 
 ```swift
 // Define available tools
-let tools: [Tool.Type] = [
+let tools: [AITool.Type] = [
     WeatherTool.self,
     CalculatorTool.self,
     SearchTool.self
@@ -356,11 +356,15 @@ func onMessageReceived(message: Message) async -> CallbackResult {
 
 ```swift
 // Tools can return immediate responses
-class QuickAnswerTool: Tool {
-    var returnToolResponse: Bool = true  // Skip LLM interpretation
-    
-    func execute() async throws -> (String, ToolMetadata?) {
-        return ("Quick answer", nil)
+struct QuickAnswerTool: AITool {
+    let name = "quick_answer"
+    let description = "Returns a quick answer without model mediation"
+    let returnToolResponse = true
+
+    init() {}
+
+    func execute() async throws -> AIToolResult {
+        return AIToolResult(content: "Quick answer")
     }
 }
 ```
@@ -370,14 +374,15 @@ class QuickAnswerTool: Tool {
 Tools can return metadata (files, images, etc.):
 
 ```swift
-func execute() async throws -> (String, ToolMetadata?) {
+struct FileMetadata: ToolMetadata {
+    let path: String
+}
+
+func execute() async throws -> AIToolResult {
     let result = "File created successfully"
-    let metadata = ToolMetadata(
-        files: [URL(fileURLWithPath: "/path/to/file.txt")],
-        images: [],
-        data: ["key": "value"]
-    )
-    return (result, metadata)
+    let metadata = FileMetadata(path: "/path/to/file.txt")
+    let artifact = ToolArtifact(name: "file.txt", kind: .file, url: URL(fileURLWithPath: "/path/to/file.txt"))
+    return AIToolResult(content: result, metadata: metadata, artifacts: [artifact])
 }
 ```
 
@@ -478,7 +483,7 @@ func sendWithRetry(_ message: String, retries: Int = 3) async throws -> ChatMess
 class ValidatedAgent {
     private let agent: Agent
     
-    init(model: LLMModel, tools: [Tool.Type]) throws {
+    init(model: LLMModel, tools: [AITool.Type]) throws {
         self.agent = try Agent(model: model, tools: tools)
         
         // Add validation callback
@@ -540,4 +545,3 @@ class ContextAwareAgent {
     }
 }
 ```
-

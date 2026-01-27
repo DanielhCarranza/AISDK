@@ -36,21 +36,12 @@ final class AgentIntegrationTests: XCTestCase {
     
     override func setUpWithError() throws {
         try super.setUpWithError()
-        
-        // Ensure we have API keys for real testing
-        guard let openAIKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
-              !openAIKey.isEmpty else {
-            throw XCTestError(.failureWhileWaiting,
-                            userInfo: [NSLocalizedDescriptionKey: "OPENAI_API_KEY environment variable is required for integration tests"])
-        }
-        
-        // Register test tools
-        ToolRegistry.registerAll(tools: [
-            TestWeatherTool.self,
-            TestFailingTool.self,
-            TestCalculatorTool.self
-        ])
-        
+
+        // Skip tests when API key is not available (don't fail, just skip)
+        let openAIKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
+        try XCTSkipIf(openAIKey == nil || openAIKey?.isEmpty == true,
+                      "OPENAI_API_KEY environment variable is required for integration tests - skipping")
+
         let testProvider = getTestProvider()
         print("🧪 Running Agent tests with model: \(testProvider.model.name)")
     }

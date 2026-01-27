@@ -18,7 +18,7 @@ AISDK 2.0 modernizes the existing Swift AI SDK to achieve feature parity with Ve
 The current AISDK has several limitations:
 - Lacks unified streaming API across providers
 - No built-in failover or circuit breaking
-- Tool protocol incompatible with Swift concurrency
+- Legacy Tool protocol incompatible with Swift concurrency
 - No generative UI capabilities
 - Insufficient test coverage for production healthcare use
 
@@ -88,7 +88,7 @@ So that users see responses as they're generated.
 - Supports cancellation without memory leaks
 - Bounded buffer (1000 events) prevents OOM
 
-#### US-3: Tool Calling
+#### US-3: AITool Calling
 ```
 As a developer,
 I want to define tools that the AI can invoke,
@@ -147,7 +147,7 @@ So that I can adopt AISDK 2.0 incrementally.
 **Acceptance Criteria**:
 - `AILanguageModelAdapter` wraps legacy `LLM` protocol
 - `AIAgentAdapter` wraps legacy `Agent` class
-- `LegacyToolAdapter` wraps `@Parameter`-based tools
+- Tools migrate directly to `AITool` (no adapter layer)
 - No breaking changes required for initial adoption
 
 ---
@@ -280,14 +280,17 @@ public actor AIAgent {
 #### FR-4.3: AITool Protocol
 ```swift
 public protocol AITool: Sendable {
-    associatedtype Arguments: Codable & Sendable
-    associatedtype Metadata: ToolMetadata = EmptyMetadata
+    var name: String { get }
+    var description: String { get }
+    var returnToolResponse: Bool { get }
 
-    static var name: String { get }
-    static var description: String { get }
-    static var timeout: Duration { get }
+    init()
+    static func jsonSchema() -> ToolSchema
+    static func validate(arguments: [String: Any]) throws
+    mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
 
-    static func execute(arguments: Arguments) async throws -> AIToolResult<Metadata>
+    func execute() async throws -> AIToolResult
 }
 ```
 

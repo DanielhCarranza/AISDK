@@ -196,21 +196,21 @@ let request = AnthropicMessageRequestBody(
 **✅ NEW: Clean, Type-Safe Tool Creation**
 
 ```swift
-// Define a clean tool using the Tool protocol
-struct WeatherTool: Tool {
+// Define a clean tool using the AITool protocol
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a location"
     
-    @Parameter(description: "City and state, e.g. San Francisco, CA")
+    @AIParameter(description: "City and state, e.g. San Francisco, CA")
     var location: String = ""
     
-    @Parameter(description: "Temperature unit", 
+    @AIParameter(description: "Temperature unit", 
                validation: ["enum": ["celsius", "fahrenheit"]])
     var unit: String = "celsius"
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Your weather API implementation here
         let weather = try await WeatherAPI.getWeather(location: location, unit: unit)
         return (weather, nil)
@@ -883,22 +883,22 @@ let request = AnthropicMessageRequestBody(
 let response = try await searchResultsService.messageRequest(body: request)
 ```
 
-### Method 2: Tool-Based Search Results
+### Method 2: AITool-Based Search Results
 
 Return search results from your custom tools for dynamic RAG applications:
 
 ```swift
 // Define a knowledge base search tool
-struct KnowledgeBaseTool: Tool {
+struct KnowledgeBaseTool: AITool {
     let name = "search_knowledge_base"
     let description = "Search the company knowledge base for information"
     
-    @Parameter(description: "The search query")
+    @AIParameter(description: "The search query")
     var query: String = ""
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Your search logic here
         let results = try await searchKnowledgeBase(query: query)
         
@@ -913,7 +913,7 @@ struct KnowledgeBaseTool: Tool {
             )
         }
         
-        return ("Found \(results.count) relevant documents", nil)
+        return AIToolResult(content: "Found \(results.count) relevant documents")
     }
 }
 
@@ -1077,22 +1077,22 @@ do {
 
 ```swift
 // 1. Define a comprehensive RAG tool
-struct RAGSearchTool: Tool {
+struct RAGSearchTool: AITool {
     let name = "search_documents"
     let description = "Search through company documentation and knowledge base"
     
-    @Parameter(description: "Search query")
+    @AIParameter(description: "Search query")
     var query: String = ""
     
-    @Parameter(description: "Maximum number of results to return")
+    @AIParameter(description: "Maximum number of results to return")
     var maxResults: Int = 5
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Perform vector search, keyword search, etc.
         let results = try await performRAGSearch(query: query, maxResults: maxResults)
-        return ("Found \(results.count) relevant documents", nil)
+        return AIToolResult(content: "Found \(results.count) relevant documents")
     }
 }
 
@@ -1243,39 +1243,39 @@ let content = [
 ### Complete Tool Implementation Workflow
 
 ```swift
-// 1. ✅ Define clean tools using the Tool protocol
-struct WeatherTool: Tool {
+// 1. ✅ Define clean tools using the AITool protocol
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a location"
     
-    @Parameter(description: "City and state, e.g. San Francisco, CA")
+    @AIParameter(description: "City and state, e.g. San Francisco, CA")
     var location: String = ""
     
-    @Parameter(description: "Temperature unit", 
+    @AIParameter(description: "Temperature unit", 
                validation: ["enum": ["celsius", "fahrenheit"]])
     var unit: String = "celsius"
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Your weather API implementation
         let weather = try await WeatherAPI.getWeather(location: location, unit: unit)
-        return ("Current weather in \(location): \(weather)", nil)
+        return AIToolResult(content: "Current weather in \(location): \(weather)")
     }
 }
 
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculate"
     let description = "Perform mathematical calculations"
     
-    @Parameter(description: "Mathematical expression to evaluate")
+    @AIParameter(description: "Mathematical expression to evaluate")
     var expression: String = ""
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let result = try MathEvaluator.evaluate(expression)
-        return ("Result: \(expression) = \(result)", nil)
+        return AIToolResult(content: "Result: \(expression) = \(result)")
     }
 }
 
@@ -1525,20 +1525,20 @@ guard ["celsius", "fahrenheit"].contains(unit) else {
 
 ```swift
 // ✅ New way: Clean, type-safe, automatic
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a location"
     
-    @Parameter(description: "City and state, e.g. San Francisco, CA")
+    @AIParameter(description: "City and state, e.g. San Francisco, CA")
     var location: String = ""
     
-    @Parameter(description: "Temperature unit", 
+    @AIParameter(description: "Temperature unit", 
                validation: ["enum": ["celsius", "fahrenheit"]])
     var unit: String = "celsius"
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Implementation with type safety guaranteed
         let weather = try await WeatherAPI.getWeather(location: location, unit: unit)
         return (weather, nil)
@@ -1581,7 +1581,7 @@ let (result, _) = try await tool.execute()
 
 ### 📈 **Scalability**
 - Easy tool registration and management
-- Seamless integration with existing Tool protocol
+- Seamless integration with existing AITool protocol
 - Backward compatibility with manual tools
 - Comprehensive testing and examples
 
@@ -1594,17 +1594,17 @@ import AISDK
 
 ### Basic Tool Definition
 ```swift
-struct MyTool: Tool {
+struct MyTool: AITool {
     let name = "my_tool"
     let description = "Tool description"
     
-    @Parameter(description: "Parameter description")
+    @AIParameter(description: "Parameter description")
     var param: String = ""
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        return ("Result", nil)
+    func execute() async throws -> AIToolResult {
+        return AIToolResult(content: "Result")
     }
 }
 ```
@@ -1744,7 +1744,7 @@ Total: 48/48 Real API Tests PASSED
 2. **Tool Implementation**
    - Ensure tool names match exactly
    - Validate input parameter types
-   - Use type-safe Tool protocol when possible
+   - Use type-safe AITool protocol when possible
 
 3. **Rate Limiting**
    - Implement exponential backoff

@@ -1013,6 +1013,10 @@ final class ObservableAgentStateTests: XCTestCase {
             }
         }
 
+        // Allow the stream subscription task to start before executing
+        await Task.yield()
+        try await Task.sleep(nanoseconds: 10_000_000) // 10ms to ensure subscription is active
+
         // Execute agent
         _ = try await agent.execute(messages: [.user("Hello")])
 
@@ -1559,7 +1563,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
     // MARK: - Test Tools
 
     /// Simple test tool for weather queries
-    private struct MockWeatherTool: Tool {
+    private struct MockWeatherTool: AITool {
         let name = "get_weather"
         let description = "Get the current weather for a location"
 
@@ -1568,13 +1572,13 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
 
         init() {}
 
-        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-            return ("Weather in \(city): 22°C, sunny", nil)
+        func execute() async throws -> AIToolResult {
+            return AIToolResult(content: "Weather in \(city): 22°C, sunny")
         }
     }
 
     /// Test tool for calculator operations
-    private struct MockCalculatorTool: Tool {
+    private struct MockCalculatorTool: AITool {
         let name = "calculate"
         let description = "Perform basic arithmetic"
 
@@ -1589,7 +1593,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
 
         init() {}
 
-        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        func execute() async throws -> AIToolResult {
             let result: Double
             switch operation {
             case "+": result = a + b
@@ -1600,18 +1604,18 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
                 result = a / b
             default: throw ToolError.executionFailed("Invalid operation")
             }
-            return ("Result: \(result)", nil)
+            return AIToolResult(content: "Result: \(result)")
         }
     }
 
     /// Test tool that always fails
-    private struct FailingTool: Tool {
+    private struct FailingTool: AITool {
         let name = "failing_tool"
         let description = "A tool that always fails"
 
         init() {}
 
-        func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+        func execute() async throws -> AIToolResult {
             throw ToolError.executionFailed("This tool always fails")
         }
     }

@@ -116,9 +116,9 @@ Tests/AISDKTests/
 - `testFailingToolExecution()` - Graceful failure handling
 
 #### **Tool Registry** (3 tests)
-- `testToolRegistryRegistration()` - Single tool registration
-- `testToolRegistryMultipleRegistration()` - Batch registration
-- `testToolRegistryUnknownTool()` - Missing tool handling
+- `testAIToolRegistryRegistration()` - Single tool registration
+- `testAIToolRegistryMultipleRegistration()` - Batch registration
+- `testAIToolRegistryUnknownTool()` - Missing tool handling
 
 #### **LLM Integration** (2 tests)
 - `testChatCompletionWithTools()` - End-to-end tool calling
@@ -340,7 +340,7 @@ Agent integration tests use a comprehensive black box approach:
    - **Basic Functionality**: send(), sendStream(), conversation flow
    - **Tool Integration**: Combined Agent + tool execution scenarios
    - **Multimodal**: Image analysis with tools and streaming
-   - **Error Scenarios**: Tool failures, invalid inputs, missing tools
+   - **Error Scenarios**: AITool failures, invalid inputs, missing tools
    - **Callbacks**: Event tracking and execution monitoring
 
 3. **Black Box Validation**:
