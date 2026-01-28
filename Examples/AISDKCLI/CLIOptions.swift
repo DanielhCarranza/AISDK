@@ -11,6 +11,7 @@ import Foundation
 enum ProviderType: String {
     case openrouter
     case litellm
+    case openai  // Direct OpenAI Responses API for testing
 }
 
 /// CLI configuration options
@@ -140,6 +141,13 @@ class RuntimeConfig {
     var responseFormat: ResponseFormatMode
     var citationsEnabled: Bool
     var reliabilityEnabled: Bool
+
+    // OpenAI Responses API specific settings
+    var webSearchEnabled: Bool = false
+    var codeInterpreterEnabled: Bool = false
+    var storeResponses: Bool = false
+    var previousResponseId: String? = nil
+    var uploadedFileIds: [String] = []
 
     init(from options: CLIOptions) {
         self.systemPrompt = options.systemPrompt ?? "You are a helpful AI assistant."

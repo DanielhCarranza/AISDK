@@ -192,21 +192,23 @@ public enum ResponseInputItem: Codable {
     case message(ResponseMessage)
     case functionCallOutput(ResponseFunctionCallOutput)
     case mcpApprovalResponse(ResponseMCPApprovalResponse)
-    
+    case itemReference(ResponseItemReference)
+
     enum CodingKeys: String, CodingKey {
         case type
     }
-    
+
     enum ItemType: String, Codable {
         case message = "message"
         case functionCallOutput = "function_call_output"
         case mcpApprovalResponse = "mcp_approval_response"
+        case itemReference = "item_reference"
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ItemType.self, forKey: .type)
-        
+
         switch type {
         case .message:
             let message = try ResponseMessage(from: decoder)
@@ -217,9 +219,12 @@ public enum ResponseInputItem: Codable {
         case .mcpApprovalResponse:
             let response = try ResponseMCPApprovalResponse(from: decoder)
             self = .mcpApprovalResponse(response)
+        case .itemReference:
+            let reference = try ResponseItemReference(from: decoder)
+            self = .itemReference(reference)
         }
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         switch self {
         case .message(let message):
@@ -228,7 +233,19 @@ public enum ResponseInputItem: Codable {
             try output.encode(to: encoder)
         case .mcpApprovalResponse(let response):
             try response.encode(to: encoder)
+        case .itemReference(let reference):
+            try reference.encode(to: encoder)
         }
+    }
+}
+
+/// Item reference for compacted items
+public struct ResponseItemReference: Codable {
+    public let type: String = "item_reference"
+    public let id: String
+
+    public init(id: String) {
+        self.id = id
     }
 }
 
@@ -283,20 +300,22 @@ public struct ResponseMCPApprovalResponse: Codable {
 public enum ResponseContentItem: Codable {
     case inputText(ResponseInputText)
     case inputImage(ResponseInputImage)
-    
+    case inputFile(ResponseInputFile)
+
     enum CodingKeys: String, CodingKey {
         case type
     }
-    
+
     enum ContentType: String, Codable {
         case inputText = "input_text"
         case inputImage = "input_image"
+        case inputFile = "input_file"
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ContentType.self, forKey: .type)
-        
+
         switch type {
         case .inputText:
             let text = try ResponseInputText(from: decoder)
@@ -304,16 +323,36 @@ public enum ResponseContentItem: Codable {
         case .inputImage:
             let image = try ResponseInputImage(from: decoder)
             self = .inputImage(image)
+        case .inputFile:
+            let file = try ResponseInputFile(from: decoder)
+            self = .inputFile(file)
         }
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         switch self {
         case .inputText(let text):
             try text.encode(to: encoder)
         case .inputImage(let image):
             try image.encode(to: encoder)
+        case .inputFile(let file):
+            try file.encode(to: encoder)
         }
+    }
+}
+
+/// File input content
+public struct ResponseInputFile: Codable {
+    public let type: String = "input_file"
+    public let fileId: String
+
+    public init(fileId: String) {
+        self.fileId = fileId
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case fileId = "file_id"
     }
 }
 
@@ -332,16 +371,19 @@ public struct ResponseInputImage: Codable {
     public let type: String = "input_image"
     public let imageUrl: String?
     public let fileId: String?
-    
-    public init(imageUrl: String? = nil, fileId: String? = nil) {
+    public let detail: String?
+
+    public init(imageUrl: String? = nil, fileId: String? = nil, detail: String? = nil) {
         self.imageUrl = imageUrl
         self.fileId = fileId
+        self.detail = detail
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case type
         case imageUrl = "image_url"
         case fileId = "file_id"
+        case detail
     }
 }
 

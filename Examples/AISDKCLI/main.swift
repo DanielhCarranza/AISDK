@@ -108,6 +108,26 @@ func validateAPIKeys(for provider: ProviderType) -> Bool {
         }
         print(ANSIStyles.warning("LITELLM_BASE_URL not set, using default: http://localhost:4000"))
         return true
+
+    case .openai:
+        guard let key = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !key.isEmpty else {
+            print(ANSIStyles.error("OPENAI_API_KEY not found!"))
+            print("""
+
+            Please set your API key using one of these methods:
+
+            \(ANSIStyles.dim("1. Environment variable:"))
+               export OPENAI_API_KEY=your_key_here
+
+            \(ANSIStyles.dim("2. Create a .env file:"))
+               echo "OPENAI_API_KEY=your_key_here" > .env
+
+            Get your API key at: \(ANSIStyles.cyan("https://platform.openai.com/api-keys"))
+            """)
+            return false
+        }
+        return true
     }
 }
 
@@ -141,7 +161,7 @@ func printUsage() {
         swift run AISDKCLI [OPTIONS]
 
     \(ANSIStyles.bold("OPTIONS:"))
-        --provider <type>     Provider: openrouter (default) or litellm
+        --provider <type>     Provider: openrouter (default), litellm, or openai
         --model <id>          Pre-select a model (skip interactive selection)
         --system <prompt>     Set custom system prompt
         --temperature <num>   Temperature (0.0-2.0, default: 0.7)
@@ -175,13 +195,22 @@ func printUsage() {
 
     \(ANSIStyles.bold("ENVIRONMENT VARIABLES:"))
         OPENROUTER_API_KEY    Required for OpenRouter provider
+        OPENAI_API_KEY        Required for OpenAI provider (Responses API testing)
         LITELLM_BASE_URL      LiteLLM server URL (default: http://localhost:4000)
         LITELLM_API_KEY       Optional API key for LiteLLM
         TAVILY_API_KEY        Required for web_search tool
 
+    \(ANSIStyles.bold("OPENAI TESTING COMMANDS:")) (use --provider openai)
+        /websearch on|off     Toggle web search tool
+        /code on|off          Toggle code interpreter tool
+        /store on|off         Toggle response storage
+        /continue <id>        Continue from previous response ID
+        /files                List uploaded files
+
     \(ANSIStyles.bold("EXAMPLES:"))
         swift run AISDKCLI
         swift run AISDKCLI --provider litellm
+        swift run AISDKCLI --provider openai --model gpt-4o-mini
         swift run AISDKCLI --model anthropic/claude-3-5-sonnet
         swift run AISDKCLI --system "You are a Python expert"
     """)

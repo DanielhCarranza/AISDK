@@ -31,6 +31,10 @@ public struct AITextResult: Sendable, Equatable {
     /// Provider that handled the request
     public let provider: String?
 
+    /// OpenAI Response ID for conversation chaining
+    /// Pass this as `conversationId` in subsequent requests to continue the conversation
+    public let responseId: String?
+
     public init(
         text: String,
         toolCalls: [AIToolCallResult] = [],
@@ -38,7 +42,8 @@ public struct AITextResult: Sendable, Equatable {
         finishReason: AIFinishReason = .stop,
         requestId: String? = nil,
         model: String? = nil,
-        provider: String? = nil
+        provider: String? = nil,
+        responseId: String? = nil
     ) {
         self.text = text
         self.toolCalls = toolCalls
@@ -47,6 +52,7 @@ public struct AITextResult: Sendable, Equatable {
         self.requestId = requestId
         self.model = model
         self.provider = provider
+        self.responseId = responseId
     }
 }
 

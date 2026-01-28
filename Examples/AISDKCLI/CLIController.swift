@@ -122,7 +122,22 @@ class CLIController {
 
         case .litellm:
             return createLiteLLMClient()
+
+        case .openai:
+            guard let client = createOpenAIClient() else {
+                print(ANSIStyles.error("Missing OPENAI_API_KEY"))
+                return nil
+            }
+            return client
         }
+    }
+
+    private func createOpenAIClient() -> (any ProviderClient)? {
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"], !apiKey.isEmpty else {
+            return nil
+        }
+        // Use OpenAIClientAdapter for direct OpenAI API testing
+        return OpenAIClientAdapter(apiKey: apiKey)
     }
 
     // MARK: - Model Selection
@@ -518,6 +533,9 @@ class CLIController {
                     providers.append(openRouter)
                 }
             }
+        case .openai:
+            // OpenAI direct testing - no failover needed
+            break
         }
 
         return providers

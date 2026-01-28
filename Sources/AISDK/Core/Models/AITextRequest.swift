@@ -55,6 +55,15 @@ public struct AITextRequest: @unchecked Sendable {
     /// Request metadata for tracing
     public let metadata: [String: String]?
 
+    /// Conversation ID for multi-turn conversations
+    /// For OpenAI: This maps to `previousResponseId` for server-side context
+    public var conversationId: String?
+
+    /// Provider-specific options (type-erased for multi-provider support)
+    /// For OpenAI: Use `OpenAIRequestOptions`
+    /// Example: `request.providerOptions = OpenAIRequestOptions()`
+    public var providerOptions: (any Sendable)?
+
     public init(
         messages: [AIMessage],
         model: String? = nil,
@@ -68,7 +77,9 @@ public struct AITextRequest: @unchecked Sendable {
         allowedProviders: Set<String>? = nil,
         sensitivity: DataSensitivity = .standard,
         bufferPolicy: StreamBufferPolicy? = nil,
-        metadata: [String: String]? = nil
+        metadata: [String: String]? = nil,
+        conversationId: String? = nil,
+        providerOptions: (any Sendable)? = nil
     ) {
         self.messages = messages
         self.model = model
@@ -83,6 +94,8 @@ public struct AITextRequest: @unchecked Sendable {
         self.sensitivity = sensitivity
         self.bufferPolicy = bufferPolicy
         self.metadata = metadata
+        self.conversationId = conversationId
+        self.providerOptions = providerOptions
     }
 }
 
@@ -170,7 +183,9 @@ public extension AITextRequest {
             allowedProviders: allowedProviders,
             sensitivity: newSensitivity,
             bufferPolicy: bufferPolicy,
-            metadata: metadata
+            metadata: metadata,
+            conversationId: conversationId,
+            providerOptions: providerOptions
         )
     }
 
@@ -189,7 +204,9 @@ public extension AITextRequest {
             allowedProviders: providers,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
-            metadata: metadata
+            metadata: metadata,
+            conversationId: conversationId,
+            providerOptions: providerOptions
         )
     }
 
@@ -208,7 +225,51 @@ public extension AITextRequest {
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: policy,
-            metadata: metadata
+            metadata: metadata,
+            conversationId: conversationId,
+            providerOptions: providerOptions
+        )
+    }
+
+    /// Create a copy with a conversation ID for multi-turn conversations
+    func withConversationId(_ id: String?) -> AITextRequest {
+        AITextRequest(
+            messages: messages,
+            model: model,
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP,
+            stop: stop,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseFormat: responseFormat,
+            allowedProviders: allowedProviders,
+            sensitivity: sensitivity,
+            bufferPolicy: bufferPolicy,
+            metadata: metadata,
+            conversationId: id,
+            providerOptions: providerOptions
+        )
+    }
+
+    /// Create a copy with provider-specific options
+    func withProviderOptions(_ options: (any Sendable)?) -> AITextRequest {
+        AITextRequest(
+            messages: messages,
+            model: model,
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP,
+            stop: stop,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseFormat: responseFormat,
+            allowedProviders: allowedProviders,
+            sensitivity: sensitivity,
+            bufferPolicy: bufferPolicy,
+            metadata: metadata,
+            conversationId: conversationId,
+            providerOptions: options
         )
     }
 }
