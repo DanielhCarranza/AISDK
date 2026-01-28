@@ -9,14 +9,23 @@ import Foundation
 
 /// Concrete implementation of GeminiService with model awareness and smart defaults
 public class GeminiProvider: GeminiService {
-    
+
+    // MARK: - Upload Configuration
+
+    private enum UploadConfig {
+        static let chunkSize: Int = 262_144  // 256KB (Google recommended)
+        static let maxUploadRetries: Int = 3
+        static let baseRetryDelay: TimeInterval = 1.0
+        static let uploadBaseURL = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+    }
+
     // MARK: - Properties
-    
+
     private let apiKey: String
     private let baseUrl: String
     private let maxRetries: Int
     private let retryDelay: TimeInterval
-    
+
     /// The selected model for this provider instance
     public let model: LLMModelProtocol
     
@@ -125,7 +134,297 @@ public class GeminiProvider: GeminiService {
     public func getStatus(fileURL: URL) async throws -> GeminiFile {
         return try await performGetFileStatus(fileURL: fileURL)
     }
-    
+
+    // MARK: - Resumable File Upload
+
+    public func uploadFileResumable(
+        fileData: Data,
+        mimeType: String,
+        displayName: String?,
+        maxPollAttempts: Int,
+        pollInterval: TimeInterval
+    ) async throws -> GeminiFile {
+        // Check cancellation before starting
+        try Task.checkCancellation()
+
+        // Step 1: Initiate resumable upload session
+        let uploadURL = try await initiateUploadSession(
+            mimeType: mimeType,
+            fileSize: fileData.count,
+            displayName: displayName
+        )
+
+        // Check cancellation after session initiation
+        try Task.checkCancellation()
+
+        // Step 2: Upload file content (single or chunked)
+        let file = try await uploadFileContent(
+            data: fileData,
+            to: uploadURL,
+            mimeType: mimeType
+        )
+
+        // Check cancellation after upload
+        try Task.checkCancellation()
+
+        // Step 3: Poll until file is ACTIVE
+        guard file.state != .active else {
+            return file
+        }
+
+        guard let fileName = file.name else {
+            throw GeminiError.uploadFailed(reason: "Missing file name in upload response")
+        }
+
+        // Polling already has cancellation support built-in
+        return try await pollForFileUploadComplete(
+            fileURL: URL(string: "https://generativelanguage.googleapis.com/v1beta/\(fileName)")!,
+            pollAttempts: maxPollAttempts,
+            secondsBetweenPollAttempts: UInt64(pollInterval)
+        )
+    }
+
+    private func initiateUploadSession(
+        mimeType: String,
+        fileSize: Int,
+        displayName: String?
+    ) async throws -> URL {
+        try validateAPIKey()
+
+        guard let url = URL(string: UploadConfig.uploadBaseURL) else {
+            throw GeminiError.uploadInitiationFailed("Invalid upload URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        // Required headers for resumable upload initiation
+        request.setValue("resumable", forHTTPHeaderField: "X-Goog-Upload-Protocol")
+        request.setValue("start", forHTTPHeaderField: "X-Goog-Upload-Command")
+        request.setValue(mimeType, forHTTPHeaderField: "X-Goog-Upload-Content-Type")
+        request.setValue(String(fileSize), forHTTPHeaderField: "X-Goog-Upload-Raw-Size")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Optional: file metadata in body
+        if let displayName = displayName {
+            let metadata: [String: Any] = [
+                "file": ["display_name": displayName]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: metadata)
+        } else {
+            request.setValue("0", forHTTPHeaderField: "Content-Length")
+        }
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GeminiError.uploadInitiationFailed("Invalid response type")
+        }
+
+        guard 200..<300 ~= httpResponse.statusCode else {
+            throw GeminiError.uploadInitiationFailed("HTTP \(httpResponse.statusCode)")
+        }
+
+        // Extract upload URL from response header
+        guard let uploadURLString = httpResponse.value(forHTTPHeaderField: "X-Goog-Upload-URL"),
+              let uploadURL = URL(string: uploadURLString) else {
+            throw GeminiError.uploadInitiationFailed("Missing X-Goog-Upload-URL header")
+        }
+
+        return uploadURL
+    }
+
+    private func uploadFileContent(
+        data: Data,
+        to uploadURL: URL,
+        mimeType: String
+    ) async throws -> GeminiFile {
+        // For small files, upload in one request
+        if data.count <= UploadConfig.chunkSize {
+            return try await uploadSingleChunk(data: data, to: uploadURL)
+        }
+
+        // For large files, upload in chunks
+        return try await uploadInChunks(data: data, to: uploadURL)
+    }
+
+    private func uploadSingleChunk(
+        data: Data,
+        to uploadURL: URL
+    ) async throws -> GeminiFile {
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "PUT"
+        request.setValue("upload, finalize", forHTTPHeaderField: "X-Goog-Upload-Command")
+        request.setValue(String(data.count), forHTTPHeaderField: "Content-Length")
+        request.httpBody = data
+
+        return try await executeUploadWithRetry(request: request, chunkIndex: 0)
+    }
+
+    private func uploadInChunks(
+        data: Data,
+        to uploadURL: URL
+    ) async throws -> GeminiFile {
+        var offset = 0
+        var chunkIndex = 0
+
+        while offset < data.count {
+            // Check cancellation before each chunk
+            try Task.checkCancellation()
+
+            let chunkEnd = min(offset + UploadConfig.chunkSize, data.count)
+            let chunk = data.subdata(in: offset..<chunkEnd)
+            let isLastChunk = chunkEnd >= data.count
+
+            var request = URLRequest(url: uploadURL)
+            request.httpMethod = "PUT"
+
+            let command = isLastChunk ? "upload, finalize" : "upload"
+            request.setValue(command, forHTTPHeaderField: "X-Goog-Upload-Command")
+            request.setValue(String(chunk.count), forHTTPHeaderField: "Content-Length")
+            request.setValue(String(offset), forHTTPHeaderField: "X-Goog-Upload-Offset")
+            request.httpBody = chunk
+
+            if isLastChunk {
+                return try await executeUploadWithRetry(request: request, chunkIndex: chunkIndex)
+            } else {
+                try await executeChunkUploadWithRetry(request: request, chunkIndex: chunkIndex)
+            }
+
+            offset = chunkEnd
+            chunkIndex += 1
+        }
+
+        throw GeminiError.uploadFailed(reason: "Unexpected end of upload loop")
+    }
+
+    private func executeUploadWithRetry(
+        request: URLRequest,
+        chunkIndex: Int,
+        attempt: Int = 0
+    ) async throws -> GeminiFile {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw GeminiError.chunkUploadFailed(chunkIndex: chunkIndex, reason: "Invalid response")
+            }
+
+            // Handle success
+            if 200..<300 ~= httpResponse.statusCode {
+                // Parse the file response
+                struct UploadResponse: Decodable {
+                    let file: GeminiFile
+                }
+                let uploadResponse = try JSONDecoder().decode(UploadResponse.self, from: data)
+                return uploadResponse.file
+            }
+
+            // Handle retryable errors
+            if isRetryableStatusCode(httpResponse.statusCode) && attempt < UploadConfig.maxUploadRetries {
+                let delay = UploadConfig.baseRetryDelay * pow(2.0, Double(attempt))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await executeUploadWithRetry(
+                    request: request,
+                    chunkIndex: chunkIndex,
+                    attempt: attempt + 1
+                )
+            }
+
+            // Non-retryable error
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GeminiError.chunkUploadFailed(
+                chunkIndex: chunkIndex,
+                reason: "HTTP \(httpResponse.statusCode): \(errorMessage)"
+            )
+        } catch let error as GeminiError {
+            throw error
+        } catch {
+            // Handle network errors with retry
+            if isRetryableError(error) && attempt < UploadConfig.maxUploadRetries {
+                let delay = UploadConfig.baseRetryDelay * pow(2.0, Double(attempt))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await executeUploadWithRetry(
+                    request: request,
+                    chunkIndex: chunkIndex,
+                    attempt: attempt + 1
+                )
+            }
+            throw error
+        }
+    }
+
+    private func executeChunkUploadWithRetry(
+        request: URLRequest,
+        chunkIndex: Int,
+        attempt: Int = 0
+    ) async throws {
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw GeminiError.chunkUploadFailed(chunkIndex: chunkIndex, reason: "Invalid response")
+            }
+
+            // 308 Resume Incomplete is expected for intermediate chunks
+            if httpResponse.statusCode == 308 || (200..<300 ~= httpResponse.statusCode) {
+                return
+            }
+
+            if isRetryableStatusCode(httpResponse.statusCode) && attempt < UploadConfig.maxUploadRetries {
+                let delay = UploadConfig.baseRetryDelay * pow(2.0, Double(attempt))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await executeChunkUploadWithRetry(
+                    request: request,
+                    chunkIndex: chunkIndex,
+                    attempt: attempt + 1
+                )
+            }
+
+            throw GeminiError.chunkUploadFailed(
+                chunkIndex: chunkIndex,
+                reason: "HTTP \(httpResponse.statusCode)"
+            )
+        } catch let error as GeminiError {
+            throw error
+        } catch {
+            if isRetryableError(error) && attempt < UploadConfig.maxUploadRetries {
+                let delay = UploadConfig.baseRetryDelay * pow(2.0, Double(attempt))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await executeChunkUploadWithRetry(
+                    request: request,
+                    chunkIndex: chunkIndex,
+                    attempt: attempt + 1
+                )
+            }
+            throw error
+        }
+    }
+
+    private func isRetryableStatusCode(_ statusCode: Int) -> Bool {
+        // Retry on rate limiting and server errors
+        return statusCode == 429 || (500..<600 ~= statusCode)
+    }
+
+    private func isRetryableError(_ error: Error) -> Bool {
+        // Don't retry cancellation
+        if error is CancellationError { return false }
+
+        // Retry on network errors
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            let retryableCodes = [
+                NSURLErrorNetworkConnectionLost,
+                NSURLErrorNotConnectedToInternet,
+                NSURLErrorTimedOut
+            ]
+            return retryableCodes.contains(nsError.code)
+        }
+
+        return false
+    }
+
     // MARK: - Private Implementation Methods
     
     private func validateAPIKey() throws {

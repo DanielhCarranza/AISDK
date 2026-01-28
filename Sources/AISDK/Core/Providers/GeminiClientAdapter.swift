@@ -268,24 +268,40 @@ public actor GeminiClientAdapter: ProviderClient {
                     parts = [.text(text)]
                 }
             case .parts(let contentParts):
-                parts = try contentParts.map { part -> GCAPart in
+                parts = contentParts.compactMap { part -> GCAPart? in
                     switch part {
                     case .text(let text):
                         return .text(text)
                     case .image(let data, let mimeType):
+                        // Image with inline data
                         return .inlineData(GCAInlineData(
                             mimeType: mimeType,
                             data: data.base64EncodedString()
                         ))
-                    case .imageURL:
-                        throw ProviderError.invalidRequest("Gemini requires inline image data - URLs not supported directly")
+                    case .imageURL(let urlString):
+                        // Check if this is a Gemini Files API URL
+                        if urlString.hasPrefix("https://generativelanguage.googleapis.com") {
+                            // Detect MIME type from URL or default to image/jpeg
+                            let mimeType = detectMimeType(from: urlString) ?? "image/jpeg"
+                            return .fileData(GCAFileData(
+                                mimeType: mimeType,
+                                fileUri: urlString
+                            ))
+                        }
+                        // External URLs not directly supported
+                        return nil
                     case .audio(let data, let mimeType):
+                        // Audio with inline data
                         return .inlineData(GCAInlineData(
                             mimeType: mimeType,
                             data: data.base64EncodedString()
                         ))
-                    case .file:
-                        throw ProviderError.invalidRequest("File content not supported in this format")
+                    case .file(let data, _, let mimeType):
+                        // File with inline data (filename not used for Gemini API)
+                        return .inlineData(GCAInlineData(
+                            mimeType: mimeType,
+                            data: data.base64EncodedString()
+                        ))
                     }
                 }
             }
@@ -346,9 +362,11 @@ public actor GeminiClientAdapter: ProviderClient {
                 body.generationConfig?.responseMimeType = "application/json"
             case .jsonSchema(_, let schema):
                 body.generationConfig?.responseMimeType = "application/json"
-                // Parse schema string into ProviderJSONValue
+                // Parse schema string into ProviderJSONValue and validate
                 if let schemaData = schema.data(using: .utf8),
                    let parsedSchema = try? JSONDecoder().decode(ProviderJSONValue.self, from: schemaData) {
+                    // Validate schema against Gemini's supported subset
+                    try validateGeminiSchema(parsedSchema)
                     body.generationConfig?.responseSchema = parsedSchema
                 }
             }
@@ -412,7 +430,161 @@ public actor GeminiClientAdapter: ProviderClient {
             }
         }
 
+        // Add thinking configuration if present in provider options
+        body.thinkingConfig = try buildThinkingConfig(from: request.providerOptions)
+
         return body
+    }
+
+    /// Builds thinking configuration from provider options with validation
+    /// - Parameter options: Provider-specific options from the request
+    /// - Returns: Thinking configuration if any thinking options are present, nil otherwise
+    /// - Throws: ProviderError.invalidRequest if options have invalid types or values
+    private func buildThinkingConfig(from options: [String: ProviderJSONValue]?) throws -> GCAThinkingConfig? {
+        guard let options = options else { return nil }
+
+        var config = GCAThinkingConfig()
+        var hasConfig = false
+
+        // Parse includeThoughts (boolean)
+        if let value = options["includeThoughts"] {
+            guard case .bool(let include) = value else {
+                throw ProviderError.invalidRequest("includeThoughts must be a boolean")
+            }
+            config.includeThoughts = include
+            hasConfig = true
+        }
+
+        // Parse thinkingLevel (string enum)
+        if let value = options["thinkingLevel"] {
+            guard case .string(let level) = value else {
+                throw ProviderError.invalidRequest("thinkingLevel must be a string")
+            }
+
+            let validLevels = ["minimal", "low", "medium", "high"]
+            guard validLevels.contains(level.lowercased()) else {
+                throw ProviderError.invalidRequest(
+                    "thinkingLevel must be one of: \(validLevels.joined(separator: ", "))"
+                )
+            }
+
+            config.thinkingLevel = level.lowercased()
+            hasConfig = true
+        }
+
+        // Parse thinkingBudget (integer)
+        if let value = options["thinkingBudget"] {
+            let budgetInt: Int
+            switch value {
+            case .int(let budget):
+                budgetInt = budget
+            case .double(let budget):
+                budgetInt = Int(budget)
+            default:
+                throw ProviderError.invalidRequest("thinkingBudget must be a number")
+            }
+
+            // Valid values: -1 (dynamic), 0 (disabled), or positive token count
+            guard budgetInt >= -1 else {
+                throw ProviderError.invalidRequest(
+                    "thinkingBudget must be -1 (dynamic), 0 (disabled), or a positive token count"
+                )
+            }
+
+            config.thinkingBudget = budgetInt
+            hasConfig = true
+        }
+
+        return hasConfig ? config : nil
+    }
+
+    /// Validates a JSON schema against Gemini's supported subset
+    /// - Parameter schema: The schema to validate
+    /// - Throws: ProviderError.invalidRequest if schema contains unsupported keywords
+    private func validateGeminiSchema(_ schema: ProviderJSONValue) throws {
+        // List of unsupported JSON Schema keywords in Gemini
+        let unsupportedKeywords = [
+            "$ref", "allOf", "anyOf", "oneOf",
+            "additionalProperties", "patternProperties",
+            "definitions", "$defs",
+            "if", "then", "else", "not"
+        ]
+
+        try validateNestedSchemas(schema, unsupportedKeywords: unsupportedKeywords, path: "")
+    }
+
+    /// Recursively validates nested schemas for unsupported keywords
+    private func validateNestedSchemas(
+        _ value: ProviderJSONValue,
+        unsupportedKeywords: [String],
+        path: String
+    ) throws {
+        guard case .object(let dict) = value else { return }
+
+        // Check for unsupported keywords at this level
+        for keyword in unsupportedKeywords {
+            if dict[keyword] != nil {
+                let location = path.isEmpty ? "root" : path
+                throw ProviderError.invalidRequest(
+                    "Unsupported JSON Schema keyword '\(keyword)' at \(location). " +
+                    "Gemini does not support: \(unsupportedKeywords.joined(separator: ", "))"
+                )
+            }
+        }
+
+        // Recursively check nested schemas
+        if case .object(let properties)? = dict["properties"] {
+            for (key, propValue) in properties {
+                try validateNestedSchemas(
+                    propValue,
+                    unsupportedKeywords: unsupportedKeywords,
+                    path: path.isEmpty ? "properties.\(key)" : "\(path).properties.\(key)"
+                )
+            }
+        }
+
+        // Check items for array types
+        if let items = dict["items"] {
+            try validateNestedSchemas(
+                items,
+                unsupportedKeywords: unsupportedKeywords,
+                path: path.isEmpty ? "items" : "\(path).items"
+            )
+        }
+    }
+
+    /// Detects MIME type from a URL string based on file extension
+    /// - Parameter urlString: The URL string to analyze
+    /// - Returns: Detected MIME type or nil if unknown
+    private func detectMimeType(from urlString: String) -> String? {
+        let path = URL(string: urlString)?.path.lowercased() ?? urlString.lowercased()
+
+        // Image types
+        if path.hasSuffix(".jpg") || path.hasSuffix(".jpeg") { return "image/jpeg" }
+        if path.hasSuffix(".png") { return "image/png" }
+        if path.hasSuffix(".gif") { return "image/gif" }
+        if path.hasSuffix(".webp") { return "image/webp" }
+        if path.hasSuffix(".heic") { return "image/heic" }
+        if path.hasSuffix(".heif") { return "image/heif" }
+
+        // Video types
+        if path.hasSuffix(".mp4") { return "video/mp4" }
+        if path.hasSuffix(".mov") { return "video/mov" }
+        if path.hasSuffix(".avi") { return "video/avi" }
+        if path.hasSuffix(".webm") { return "video/webm" }
+        if path.hasSuffix(".mpeg") || path.hasSuffix(".mpg") { return "video/mpeg" }
+
+        // Audio types
+        if path.hasSuffix(".mp3") { return "audio/mp3" }
+        if path.hasSuffix(".wav") { return "audio/wav" }
+        if path.hasSuffix(".aac") { return "audio/aac" }
+        if path.hasSuffix(".ogg") { return "audio/ogg" }
+        if path.hasSuffix(".flac") { return "audio/flac" }
+
+        // Document types
+        if path.hasSuffix(".pdf") { return "application/pdf" }
+
+        return nil
     }
 
     private func performRequest(_ request: URLRequest, timeout: TimeInterval) async throws -> (Data, URLResponse) {
@@ -505,31 +677,37 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         var textContent = ""
+        var reasoningContent = ""
         var toolCalls: [ProviderToolCall] = []
 
         for part in candidate.content.parts {
-            switch part {
-            case .text(let text):
-                textContent += text
-            case .functionCall(let fc):
-                // Convert args dictionary to JSON string
-                let encoder = JSONEncoder()
-                let argsString: String
-                if let argsData = try? encoder.encode(fc.args),
-                   let argsStr = String(data: argsData, encoding: .utf8) {
-                    argsString = argsStr
-                } else {
-                    argsString = "{}"
+            // Check if this is a thought/reasoning part
+            if part.thought == true {
+                if let text = part.text {
+                    reasoningContent += text
+                }
+            } else {
+                if let text = part.text {
+                    textContent += text
                 }
 
-                toolCalls.append(ProviderToolCall(
-                    id: "call_\(fc.name)_\(UUID().uuidString.prefix(8))",
-                    name: fc.name,
-                    arguments: argsString
-                ))
-            case .functionResponse, .inlineData:
-                // These shouldn't appear in model responses
-                break
+                if let fc = part.functionCall {
+                    // Convert args dictionary to JSON string
+                    let encoder = JSONEncoder()
+                    let argsString: String
+                    if let argsData = try? encoder.encode(fc.args),
+                       let argsStr = String(data: argsData, encoding: .utf8) {
+                        argsString = argsStr
+                    } else {
+                        argsString = "{}"
+                    }
+
+                    toolCalls.append(ProviderToolCall(
+                        id: "call_\(fc.name)_\(UUID().uuidString.prefix(8))",
+                        name: fc.name,
+                        arguments: argsString
+                    ))
+                }
             }
         }
 
@@ -537,11 +715,18 @@ public actor GeminiClientAdapter: ProviderClient {
             ProviderUsage(
                 promptTokens: u.promptTokenCount ?? 0,
                 completionTokens: u.candidatesTokenCount ?? 0,
-                cachedTokens: u.cachedContentTokenCount
+                cachedTokens: u.cachedContentTokenCount,
+                reasoningTokens: u.thoughtsTokenCount
             )
         }
 
         let finishReason = ProviderFinishReason(providerReason: candidate.finishReason)
+
+        // Build metadata with reasoning content if present
+        var metadata: [String: String]? = nil
+        if !reasoningContent.isEmpty {
+            metadata = ["reasoning": reasoningContent]
+        }
 
         return ProviderResponse(
             id: response.responseId ?? UUID().uuidString,
@@ -551,7 +736,8 @@ public actor GeminiClientAdapter: ProviderClient {
             toolCalls: toolCalls,
             usage: usage,
             finishReason: finishReason,
-            latencyMs: latencyMs
+            latencyMs: latencyMs,
+            metadata: metadata
         )
     }
 
@@ -607,12 +793,13 @@ public actor GeminiClientAdapter: ProviderClient {
                     continuation.yield(.start(id: responseId!, model: modelVersion!))
                 }
 
-                // Process usage
+                // Process usage (include reasoning tokens if present)
                 if let usage = chunk.usageMetadata {
                     totalUsage = ProviderUsage(
                         promptTokens: usage.promptTokenCount ?? 0,
                         completionTokens: usage.candidatesTokenCount ?? 0,
-                        cachedTokens: usage.cachedContentTokenCount
+                        cachedTokens: usage.cachedContentTokenCount,
+                        reasoningTokens: usage.thoughtsTokenCount
                     )
                     continuation.yield(.usage(totalUsage!))
                 }
@@ -620,35 +807,41 @@ public actor GeminiClientAdapter: ProviderClient {
                 // Process candidate content
                 if let candidate = chunk.candidates?.first {
                     for part in candidate.content.parts {
-                        switch part {
-                        case .text(let text):
-                            if !text.isEmpty {
+                        // Check if this is a thought/reasoning part
+                        if part.thought == true {
+                            // Emit as reasoning delta (for consistency with OpenAI o1 pattern)
+                            if let text = part.text, !text.isEmpty {
+                                continuation.yield(.reasoningDelta(text))
+                            }
+                        } else {
+                            // Regular content
+                            if let text = part.text, !text.isEmpty {
                                 continuation.yield(.textDelta(text))
                             }
-                        case .functionCall(let fc):
-                            let callId = "call_\(fc.name)_\(UUID().uuidString.prefix(8))"
 
-                            // Emit start event
-                            continuation.yield(.toolCallStart(id: callId, name: fc.name))
+                            // Handle function calls
+                            if let fc = part.functionCall {
+                                let callId = "call_\(fc.name)_\(UUID().uuidString.prefix(8))"
 
-                            // Convert args to JSON string
-                            let encoder = JSONEncoder()
-                            let argsString: String
-                            if let argsData = try? encoder.encode(fc.args),
-                               let argsStr = String(data: argsData, encoding: .utf8) {
-                                argsString = argsStr
-                            } else {
-                                argsString = "{}"
+                                // Emit start event
+                                continuation.yield(.toolCallStart(id: callId, name: fc.name))
+
+                                // Convert args to JSON string
+                                let encoder = JSONEncoder()
+                                let argsString: String
+                                if let argsData = try? encoder.encode(fc.args),
+                                   let argsStr = String(data: argsData, encoding: .utf8) {
+                                    argsString = argsStr
+                                } else {
+                                    argsString = "{}"
+                                }
+
+                                // Emit delta
+                                continuation.yield(.toolCallDelta(id: callId, argumentsDelta: argsString))
+
+                                // Emit finish
+                                continuation.yield(.toolCallFinish(id: callId, name: fc.name, arguments: argsString))
                             }
-
-                            // Emit delta
-                            continuation.yield(.toolCallDelta(id: callId, argumentsDelta: argsString))
-
-                            // Emit finish
-                            continuation.yield(.toolCallFinish(id: callId, name: fc.name, arguments: argsString))
-
-                        case .functionResponse, .inlineData:
-                            break
                         }
                     }
 
@@ -728,6 +921,7 @@ private struct GCARequestBody: Encodable {
     var generationConfig: GCAGenerationConfig?
     var tools: [GCATool]?
     var toolConfig: GCAToolConfig?
+    var thinkingConfig: GCAThinkingConfig?
 
     enum CodingKeys: String, CodingKey {
         case contents
@@ -735,6 +929,66 @@ private struct GCARequestBody: Encodable {
         case generationConfig
         case tools
         case toolConfig
+        case thinkingConfig
+    }
+}
+
+// MARK: - Thinking Configuration
+
+/*
+ Gemini Thinking Model Provider Options
+ ======================================
+
+ The following options can be passed via `providerOptions` to configure
+ Gemini's thinking/reasoning models (Gemini 2.5+, Gemini 3+):
+
+ - includeThoughts: Bool
+   Enable thought summaries in the response. When true, the model will
+   return its reasoning process as separate parts marked with `thought: true`.
+
+ - thinkingLevel: String (Gemini 3+ only)
+   Controls the depth of reasoning. Valid values:
+   - "minimal": Minimizes latency, matches 'no thinking' for most queries
+   - "low": Best for simple instruction following, chat, high-throughput apps
+   - "medium": Balanced approach for typical tasks
+   - "high": Maximizes reasoning depth (default for thinking models)
+
+ - thinkingBudget: Int (Gemini 2.5 only)
+   Token budget for the thinking process:
+   - -1: Dynamic thinking (model decides, default)
+   - 0: Disable thinking
+   - 1-24576: Specific token budget (varies by model)
+
+ Example usage:
+ ```swift
+ let request = ProviderRequest(
+     modelId: "gemini-2.5-pro",
+     messages: messages,
+     providerOptions: [
+         "includeThoughts": .bool(true),
+         "thinkingLevel": .string("high")
+     ]
+ )
+ ```
+*/
+
+/// Configuration for Gemini's thinking/reasoning models
+private struct GCAThinkingConfig: Codable, Sendable {
+    /// Whether to include thought summaries in the response
+    var includeThoughts: Bool?
+
+    /// Thinking depth level for Gemini 3+ models
+    /// Valid values: "minimal", "low", "medium", "high"
+    var thinkingLevel: String?
+
+    /// Token budget for thinking in Gemini 2.5 models
+    /// Set to 0 to disable thinking, -1 for dynamic (default)
+    var thinkingBudget: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case includeThoughts = "include_thoughts"
+        case thinkingLevel = "thinking_level"
+        case thinkingBudget = "thinking_budget"
     }
 }
 
@@ -751,12 +1005,14 @@ private struct GCAContent: Codable {
 private enum GCAPart: Codable {
     case text(String)
     case inlineData(GCAInlineData)
+    case fileData(GCAFileData)          // For Files API references
     case functionCall(GCAFunctionCall)
     case functionResponse(GCAFunctionResponse)
 
     private enum CodingKeys: String, CodingKey {
         case text
         case inlineData
+        case fileData
         case functionCall
         case functionResponse
     }
@@ -768,6 +1024,8 @@ private enum GCAPart: Codable {
             self = .text(text)
         } else if let inlineData = try container.decodeIfPresent(GCAInlineData.self, forKey: .inlineData) {
             self = .inlineData(inlineData)
+        } else if let fileData = try container.decodeIfPresent(GCAFileData.self, forKey: .fileData) {
+            self = .fileData(fileData)
         } else if let functionCall = try container.decodeIfPresent(GCAFunctionCall.self, forKey: .functionCall) {
             self = .functionCall(functionCall)
         } else if let functionResponse = try container.decodeIfPresent(GCAFunctionResponse.self, forKey: .functionResponse) {
@@ -786,6 +1044,8 @@ private enum GCAPart: Codable {
             try container.encode(text, forKey: .text)
         case .inlineData(let data):
             try container.encode(data, forKey: .inlineData)
+        case .fileData(let data):
+            try container.encode(data, forKey: .fileData)
         case .functionCall(let fc):
             try container.encode(fc, forKey: .functionCall)
         case .functionResponse(let fr):
@@ -794,9 +1054,30 @@ private enum GCAPart: Codable {
     }
 }
 
+/// Response part structure that captures the `thought` field from thinking models
+private struct GCAResponsePart: Decodable {
+    let text: String?
+    let thought: Bool?              // True if this is a thought/reasoning part
+    let inlineData: GCAInlineData?
+    let fileData: GCAFileData?
+    let functionCall: GCAFunctionCall?
+    let functionResponse: GCAFunctionResponse?
+}
+
 private struct GCAInlineData: Codable {
     let mimeType: String
     let data: String
+}
+
+/// File reference for files uploaded via the Files API
+private struct GCAFileData: Codable, Sendable {
+    let mimeType: String
+    let fileUri: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case fileUri = "file_uri"
+    }
 }
 
 private struct GCAFunctionCall: Codable {
@@ -849,9 +1130,15 @@ private struct GCAGenerateContentResponse: Decodable {
 }
 
 private struct GCACandidate: Decodable {
-    let content: GCAContent
+    let content: GCAResponseContent
     let finishReason: String?
     let safetyRatings: [GCASafetyRating]?
+}
+
+/// Response-specific content structure that uses GCAResponsePart for thought detection
+private struct GCAResponseContent: Decodable {
+    var role: String?
+    var parts: [GCAResponsePart]
 }
 
 private struct GCASafetyRating: Decodable {
@@ -864,6 +1151,7 @@ private struct GCAUsageMetadata: Decodable {
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?
     let cachedContentTokenCount: Int?
+    let thoughtsTokenCount: Int?  // Tokens used for thinking/reasoning
 }
 
 private struct GCAPromptFeedback: Decodable {

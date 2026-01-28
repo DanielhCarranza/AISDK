@@ -81,6 +81,23 @@ public protocol GeminiService {
     func getStatus(
         fileURL: URL
     ) async throws -> GeminiFile
+
+    /// Uploads a file with resumable chunked uploads and waits for processing to complete
+    /// - Parameters:
+    ///   - fileData: The file data to upload
+    ///   - mimeType: MIME type of the file (e.g., "video/mp4", "audio/mp3")
+    ///   - displayName: Optional human-readable display name for the file
+    ///   - maxPollAttempts: Maximum number of polling attempts while waiting for ACTIVE state (default: 60)
+    ///   - pollInterval: Time in seconds between polling attempts (default: 2.0)
+    /// - Returns: GeminiFile in ACTIVE state, ready for use in requests
+    /// - Throws: GeminiError for upload or processing failures
+    func uploadFileResumable(
+        fileData: Data,
+        mimeType: String,
+        displayName: String?,
+        maxPollAttempts: Int,
+        pollInterval: TimeInterval
+    ) async throws -> GeminiFile
 }
 
 extension GeminiService {
@@ -100,6 +117,9 @@ extension GeminiService {
     ) async throws -> GeminiFile {
         try await Task.sleep(nanoseconds: secondsBetweenPollAttempts * 1_000_000_000)
         for _ in 0..<pollAttempts {
+            // Support cooperative cancellation
+            try Task.checkCancellation()
+
             let response = try await self.getStatus(
                 fileURL: fileURL
             )
@@ -108,8 +128,28 @@ extension GeminiService {
                 try await Task.sleep(nanoseconds: secondsBetweenPollAttempts * 1_000_000_000)
             case .active:
                 return response
+            case .failed:
+                let errorMessage = response.error?.message ?? "Unknown processing error"
+                throw GeminiError.fileProcessingFailed(errorMessage)
             }
         }
         throw GeminiError.reachedRetryLimit
+    }
+
+    /// Convenience method with default polling parameters for resumable upload
+    public func uploadFileResumable(
+        fileData: Data,
+        mimeType: String,
+        displayName: String? = nil,
+        maxPollAttempts: Int = 60,
+        pollInterval: TimeInterval = 2.0
+    ) async throws -> GeminiFile {
+        try await uploadFileResumable(
+            fileData: fileData,
+            mimeType: mimeType,
+            displayName: displayName,
+            maxPollAttempts: maxPollAttempts,
+            pollInterval: pollInterval
+        )
     }
 }
