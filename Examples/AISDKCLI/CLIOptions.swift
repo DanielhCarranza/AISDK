@@ -8,10 +8,29 @@
 import Foundation
 
 /// Provider type selection
-enum ProviderType: String {
+enum ProviderType: String, CaseIterable {
     case openrouter
     case litellm
     case openai  // Direct OpenAI Responses API for testing
+    case anthropic
+
+    var displayName: String {
+        switch self {
+        case .openrouter: return "OpenRouter"
+        case .litellm: return "LiteLLM"
+        case .openai: return "OpenAI"
+        case .anthropic: return "Anthropic"
+        }
+    }
+
+    var envKeyName: String {
+        switch self {
+        case .openrouter: return "OPENROUTER_API_KEY"
+        case .litellm: return "LITELLM_API_KEY"
+        case .openai: return "OPENAI_API_KEY"
+        case .anthropic: return "ANTHROPIC_API_KEY"
+        }
+    }
 }
 
 /// CLI configuration options
@@ -45,6 +64,15 @@ struct CLIOptions {
 
     /// Enable reliability/failover layer
     var reliabilityEnabled: Bool = false
+
+    /// Enable extended thinking (Anthropic)
+    var thinkingEnabled: Bool = false
+
+    /// Thinking budget tokens (Anthropic)
+    var thinkingBudget: Int = 10000
+
+    /// Enabled beta features (Anthropic)
+    var betaFeatures: Set<String> = []
 
     /// Show help and exit
     var showHelp: Bool = false
@@ -117,6 +145,23 @@ struct CLIOptions {
             case "--help", "-h":
                 options.showHelp = true
 
+            case "--thinking":
+                options.thinkingEnabled = true
+                if index + 1 < args.count,
+                   let budget = Int(args[index + 1]),
+                   !args[index + 1].hasPrefix("-") {
+                    options.thinkingBudget = budget
+                    index += 1
+                }
+
+            case "--beta":
+                var betaIndex = index + 1
+                while betaIndex < args.count && !args[betaIndex].hasPrefix("-") {
+                    options.betaFeatures.insert(args[betaIndex])
+                    betaIndex += 1
+                }
+                index = betaIndex - 1
+
             default:
                 if arg.hasPrefix("-") {
                     print(ANSIStyles.warning("Unknown option: \(arg)"))
@@ -142,6 +187,11 @@ class RuntimeConfig {
     var citationsEnabled: Bool
     var reliabilityEnabled: Bool
 
+    // Anthropic settings
+    var thinkingEnabled: Bool
+    var thinkingBudget: Int
+    var betaFeatures: Set<String>
+
     // OpenAI Responses API specific settings
     var webSearchEnabled: Bool = false
     var codeInterpreterEnabled: Bool = false
@@ -159,6 +209,9 @@ class RuntimeConfig {
         self.responseFormat = options.responseFormat
         self.citationsEnabled = options.citationsEnabled
         self.reliabilityEnabled = options.reliabilityEnabled
+        self.thinkingEnabled = options.thinkingEnabled
+        self.thinkingBudget = options.thinkingBudget
+        self.betaFeatures = options.betaFeatures
     }
 }
 

@@ -26,7 +26,7 @@ import Alamofire
 ///             .text("Hello, how are you?")
 ///         ])
 ///     ],
-///     model: "claude-3-7-sonnet-20250219"
+///     model: "claude-sonnet-4-5-20250929"
 /// )
 /// 
 /// // Non-streaming
@@ -54,44 +54,172 @@ public class AnthropicService {
     // MARK: - Beta Feature Configuration
     
     /// Configuration for beta features
-    public struct BetaConfiguration {
-        public let tokenEfficientTools: Bool
-        public let extendedThinking: Bool
-        public let interleavedThinking: Bool
-        public let mcpClient: Bool
-        public let searchResults: Bool
-        
+    public struct BetaConfiguration: Sendable, Equatable, Codable {
+
+        // MARK: - Core Features
+
+        /// Enable token-efficient tool definitions
+        public var tokenEfficientTools: Bool
+
+        /// Enable extended thinking (configured via request body, not header)
+        public var extendedThinking: Bool
+
+        /// Enable interleaved thinking with tools
+        public var interleavedThinking: Bool
+
+        /// Enable MCP (Model Context Protocol) client
+        public var mcpClient: Bool
+
+        /// Enable search results handling (GA, no beta header)
+        public var searchResults: Bool
+
+        // MARK: - New Features
+
+        /// Enable Files API for file upload and reference
+        public var filesAPI: Bool
+
+        /// Enable 1M token context window (Sonnet 4.5 only)
+        public var context1M: Bool
+
+        /// Enable computer use tool
+        public var computerUse: Bool
+
+        /// Enable code execution sandbox
+        public var codeExecution: Bool
+
+        /// Enable container skills
+        public var skills: Bool
+
+        /// Enable extended cache TTL (1 hour instead of 5 minutes)
+        public var extendedCacheTTL: Bool
+
+        /// Enable context management strategies
+        public var contextManagement: Bool
+
+        /// Enable 128K output tokens
+        public var output128k: Bool
+
+        // MARK: - Initialization
+
         public init(
             tokenEfficientTools: Bool = false,
             extendedThinking: Bool = false,
             interleavedThinking: Bool = false,
             mcpClient: Bool = false,
-            searchResults: Bool = false
+            searchResults: Bool = false,
+            filesAPI: Bool = false,
+            context1M: Bool = false,
+            computerUse: Bool = false,
+            codeExecution: Bool = false,
+            skills: Bool = false,
+            extendedCacheTTL: Bool = false,
+            contextManagement: Bool = false,
+            output128k: Bool = false
         ) {
             self.tokenEfficientTools = tokenEfficientTools
             self.extendedThinking = extendedThinking
             self.interleavedThinking = interleavedThinking
             self.mcpClient = mcpClient
             self.searchResults = searchResults
+            self.filesAPI = filesAPI
+            self.context1M = context1M
+            self.computerUse = computerUse
+            self.codeExecution = codeExecution
+            self.skills = skills
+            self.extendedCacheTTL = extendedCacheTTL
+            self.contextManagement = contextManagement
+            self.output128k = output128k
         }
-        
+
+        // MARK: - Header Generation
+
+        private static let headerMap: [(KeyPath<BetaConfiguration, Bool>, String)] = [
+            (\.tokenEfficientTools, "token-efficient-tools-2025-02-19"),
+            (\.interleavedThinking, "interleaved-thinking-2025-05-14"),
+            (\.mcpClient, "mcp-client-2025-11-20"),
+            (\.filesAPI, "files-api-2025-04-14"),
+            (\.context1M, "context-1m-2025-08-07"),
+            (\.computerUse, "computer-use-2025-01-24"),
+            (\.codeExecution, "code-execution-2025-05-22"),
+            (\.skills, "skills-2025-10-02"),
+            (\.extendedCacheTTL, "extended-cache-ttl-2025-04-11"),
+            (\.contextManagement, "context-management-2025-06-27"),
+            (\.output128k, "output-128k-2025-02-19")
+        ]
+
+        /// Generate the `anthropic-beta` header value
+        public func headerValue() -> String? {
+            let features = Self.headerMap
+                .filter { self[keyPath: $0.0] }
+                .map { $0.1 }
+
+            return features.isEmpty ? nil : features.joined(separator: ",")
+        }
+
+        // MARK: - Merging
+
+        /// Merge with another configuration (other takes precedence for true values)
+        public func merging(with other: BetaConfiguration) -> BetaConfiguration {
+            BetaConfiguration(
+                tokenEfficientTools: tokenEfficientTools || other.tokenEfficientTools,
+                extendedThinking: extendedThinking || other.extendedThinking,
+                interleavedThinking: interleavedThinking || other.interleavedThinking,
+                mcpClient: mcpClient || other.mcpClient,
+                searchResults: searchResults || other.searchResults,
+                filesAPI: filesAPI || other.filesAPI,
+                context1M: context1M || other.context1M,
+                computerUse: computerUse || other.computerUse,
+                codeExecution: codeExecution || other.codeExecution,
+                skills: skills || other.skills,
+                extendedCacheTTL: extendedCacheTTL || other.extendedCacheTTL,
+                contextManagement: contextManagement || other.contextManagement,
+                output128k: output128k || other.output128k
+            )
+        }
+
+        // MARK: - Presets
+
         public static let none = BetaConfiguration()
+
         public static let all = BetaConfiguration(
             tokenEfficientTools: true,
             extendedThinking: true,
             interleavedThinking: true,
             mcpClient: true,
-            searchResults: true
+            searchResults: true,
+            filesAPI: true,
+            context1M: true,
+            computerUse: true,
+            codeExecution: true,
+            skills: true,
+            extendedCacheTTL: true,
+            contextManagement: true,
+            output128k: true
         )
+
+        public static var thinkingWithTools: BetaConfiguration {
+            BetaConfiguration(
+                extendedThinking: true,
+                interleavedThinking: true
+            )
+        }
+
+        public static var files: BetaConfiguration {
+            BetaConfiguration(filesAPI: true)
+        }
+
+        public static var maxContext: BetaConfiguration {
+            BetaConfiguration(context1M: true)
+        }
     }
-    
-    private let betaConfiguration: BetaConfiguration
+
+    public var betaConfiguration: BetaConfiguration
     
     // MARK: - Initialization
     
     /// Model-aware initializer with smart default
     /// - Parameters:
-    ///   - model: The Anthropic model to use (defaults to Claude 3.7 Sonnet)
+    ///   - model: The Anthropic model to use (defaults to Claude Sonnet 4.5)
     ///   - apiKey: Your Anthropic API key (falls back to environment variables)
     ///   - baseUrl: Base URL for Anthropic's native API (defaults to official API)
     ///   - session: Custom Alamofire session for advanced networking configuration
@@ -108,7 +236,7 @@ public class AnthropicService {
         retryDelay: TimeInterval = 1.0
     ) {
         // Use provided model or default to Anthropic's best general-purpose model
-        self.model = model ?? AnthropicModels.sonnet37
+        self.model = model ?? AnthropicModels.sonnet45
         
         // Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY environment variables
         self.apiKey = apiKey 
@@ -139,7 +267,7 @@ public class AnthropicService {
         maxRetries: Int = 3,
         retryDelay: TimeInterval = 1.0
     ) {
-        self.model = AnthropicModels.sonnet37 // Default model for legacy usage
+        self.model = AnthropicModels.sonnet45 // Default model for legacy usage
         
         // Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY environment variables
         self.apiKey = apiKey 
@@ -170,42 +298,29 @@ public class AnthropicService {
     }
     
     // MARK: - Headers Management
+
+    private func logDeprecationWarningIfNeeded(for modelName: String) {
+        guard let model = AnthropicModels.findModel(modelName) else { return }
+        guard model.isDeprecated else { return }
+
+        var message = "⚠️ Warning: Model '\(model.name)' is deprecated."
+        if let deprecationMessage = model.metadata["deprecationMessage"] as? String {
+            message += " \(deprecationMessage)"
+        }
+        print(message)
+    }
     
-    private var authorizationHeaders: HTTPHeaders {
+    private func authorizationHeaders(using beta: BetaConfiguration) -> HTTPHeaders {
         var headers = HTTPHeaders()
         // Anthropic uses x-api-key header, not Authorization Bearer
         headers.add(name: "x-api-key", value: apiKey)
         headers.add(.contentType("application/json"))
         headers.add(name: "anthropic-version", value: "2023-06-01")
-        
-        // Add beta feature headers
-        var betaHeaders: [String] = []
-        
-        if betaConfiguration.tokenEfficientTools {
-            betaHeaders.append("token-efficient-tools-2025-02-19")
+
+        if let betaHeader = beta.headerValue() {
+            headers.add(name: "anthropic-beta", value: betaHeader)
         }
-        
-        // Note: Extended thinking is now enabled via the 'thinking' object in request body, not headers
-        // if betaConfiguration.extendedThinking {
-        //     betaHeaders.append("extended-thinking-2024-12-12")
-        // }
-        
-        if betaConfiguration.interleavedThinking {
-            betaHeaders.append("interleaved-thinking-2025-05-14")
-        }
-        
-        if betaConfiguration.mcpClient {
-            betaHeaders.append("mcp-client-2025-04-04")
-        }
-        
-        if betaConfiguration.searchResults {
-            betaHeaders.append("search-results-2025-06-09")
-        }
-        
-        if !betaHeaders.isEmpty {
-            headers.add(name: "anthropic-beta", value: betaHeaders.joined(separator: ","))
-        }
-        
+
         return headers
     }
     
@@ -254,7 +369,8 @@ public class AnthropicService {
     /// - Returns: The complete message response from Anthropic
     /// - Throws: LLMError for various failure scenarios with provider-specific context
     public func messageRequest(
-        body: AnthropicMessageRequestBody
+        body: AnthropicMessageRequestBody,
+        betaOverride: BetaConfiguration? = nil
     ) async throws -> AnthropicMessageResponseBody {
         
         guard !apiKey.isEmpty else {
@@ -262,34 +378,23 @@ public class AnthropicService {
         }
         
         var enhancedRequest = body
+        let effectiveBeta = betaOverride.map { betaConfiguration.merging(with: $0) } ?? betaConfiguration
+
+        logDeprecationWarningIfNeeded(for: enhancedRequest.model)
         
         // Apply beta feature configurations
-        if betaConfiguration.tokenEfficientTools {
+        if effectiveBeta.tokenEfficientTools {
             enhancedRequest.enableTokenEfficientTools = true
         }
         
         // Add thinking configuration for extended thinking
-        if betaConfiguration.extendedThinking {
+        if effectiveBeta.extendedThinking, enhancedRequest.thinking == nil {
             // Use 1/4 of max_tokens for thinking, with minimum of 1024
             let thinkingBudget = max(1024, enhancedRequest.maxTokens / 4)
-            enhancedRequest = AnthropicMessageRequestBody(
-                maxTokens: enhancedRequest.maxTokens,
-                messages: enhancedRequest.messages,
-                model: enhancedRequest.model,
-                metadata: enhancedRequest.metadata,
-                stopSequences: enhancedRequest.stopSequences,
-                stream: enhancedRequest.stream,
-                system: enhancedRequest.system,
-                temperature: enhancedRequest.temperature,
-                toolChoice: enhancedRequest.toolChoice,
-                tools: enhancedRequest.tools,
-                topK: enhancedRequest.topK,
-                topP: enhancedRequest.topP,
-                thinking: AnthropicThinkingConfig(budgetTokens: thinkingBudget),
-                mcpServers: enhancedRequest.mcpServers
-            )
-            enhancedRequest.enableTokenEfficientTools = betaConfiguration.tokenEfficientTools
+            enhancedRequest.thinking = .enabled(budgetTokens: thinkingBudget)
         }
+
+        try enhancedRequest.validate()
         
         let endpoint = "\(baseUrl)/messages"
         
@@ -311,10 +416,10 @@ public class AnthropicService {
                     method: .post,
                     parameters: enhancedRequest,
                     encoder: JSONParameterEncoder.default,
-                    headers: authorizationHeaders
+                    headers: authorizationHeaders(using: effectiveBeta)
                 )
                 .validate()
-                .serializingDecodable(AnthropicMessageResponseBody.self)
+                .serializingDecodable(AnthropicMessageResponseBody.self, decoder: AnthropicHTTPClient.decoder)
                 
                 let result = await dataTask.result
                 
@@ -363,7 +468,8 @@ public class AnthropicService {
     /// - Returns: An async sequence of streaming chunks
     /// - Throws: LLMError for various failure scenarios with provider-specific context
     public func streamingMessageRequest(
-        body: AnthropicMessageRequestBody
+        body: AnthropicMessageRequestBody,
+        betaOverride: BetaConfiguration? = nil
     ) async throws -> AnthropicAsyncChunks {
         
         guard !apiKey.isEmpty else {
@@ -371,36 +477,25 @@ public class AnthropicService {
         }
         
         var enhancedRequest = body
+        let effectiveBeta = betaOverride.map { betaConfiguration.merging(with: $0) } ?? betaConfiguration
+
+        logDeprecationWarningIfNeeded(for: enhancedRequest.model)
         
         // Apply beta feature configurations
-        if betaConfiguration.tokenEfficientTools {
+        if effectiveBeta.tokenEfficientTools {
             enhancedRequest.enableTokenEfficientTools = true
         }
         
         // Add thinking configuration for extended thinking
-        if betaConfiguration.extendedThinking {
+        if effectiveBeta.extendedThinking, enhancedRequest.thinking == nil {
             // Use 1/4 of max_tokens for thinking, with minimum of 1024
             let thinkingBudget = max(1024, enhancedRequest.maxTokens / 4)
-            enhancedRequest = AnthropicMessageRequestBody(
-                maxTokens: enhancedRequest.maxTokens,
-                messages: enhancedRequest.messages,
-                model: enhancedRequest.model,
-                metadata: enhancedRequest.metadata,
-                stopSequences: enhancedRequest.stopSequences,
-                stream: enhancedRequest.stream,
-                system: enhancedRequest.system,
-                temperature: enhancedRequest.temperature,
-                toolChoice: enhancedRequest.toolChoice,
-                tools: enhancedRequest.tools,
-                topK: enhancedRequest.topK,
-                topP: enhancedRequest.topP,
-                thinking: AnthropicThinkingConfig(budgetTokens: thinkingBudget),
-                mcpServers: enhancedRequest.mcpServers
-            )
-            enhancedRequest.enableTokenEfficientTools = betaConfiguration.tokenEfficientTools
+            enhancedRequest.thinking = .enabled(budgetTokens: thinkingBudget)
         }
         
         enhancedRequest.stream = true
+
+        try enhancedRequest.validate()
         
         let endpoint = "\(baseUrl)/messages"
         
@@ -413,7 +508,7 @@ public class AnthropicService {
         urlRequest.httpMethod = "POST"
         
         // Add headers
-        for header in authorizationHeaders {
+        for header in authorizationHeaders(using: effectiveBeta) {
             urlRequest.setValue(header.value, forHTTPHeaderField: header.name)
         }
         
@@ -465,14 +560,30 @@ public class AnthropicService {
         extendedThinking: Bool = false,
         interleavedThinking: Bool = false,
         mcpClient: Bool = false,
-        searchResults: Bool = false
+        searchResults: Bool = false,
+        filesAPI: Bool = false,
+        context1M: Bool = false,
+        computerUse: Bool = false,
+        codeExecution: Bool = false,
+        skills: Bool = false,
+        extendedCacheTTL: Bool = false,
+        contextManagement: Bool = false,
+        output128k: Bool = false
     ) -> AnthropicService {
         let configuration = BetaConfiguration(
             tokenEfficientTools: tokenEfficientTools,
             extendedThinking: extendedThinking,
             interleavedThinking: interleavedThinking,
             mcpClient: mcpClient,
-            searchResults: searchResults
+            searchResults: searchResults,
+            filesAPI: filesAPI,
+            context1M: context1M,
+            computerUse: computerUse,
+            codeExecution: codeExecution,
+            skills: skills,
+            extendedCacheTTL: extendedCacheTTL,
+            contextManagement: contextManagement,
+            output128k: output128k
         )
         return withBetaConfiguration(configuration)
     }
@@ -485,6 +596,14 @@ public class AnthropicService {
         if betaConfiguration.interleavedThinking { features.append("interleaved-thinking") }
         if betaConfiguration.mcpClient { features.append("mcp-client") }
         if betaConfiguration.searchResults { features.append("search-results") }
+        if betaConfiguration.filesAPI { features.append("files-api") }
+        if betaConfiguration.context1M { features.append("context-1m") }
+        if betaConfiguration.computerUse { features.append("computer-use") }
+        if betaConfiguration.codeExecution { features.append("code-execution") }
+        if betaConfiguration.skills { features.append("skills") }
+        if betaConfiguration.extendedCacheTTL { features.append("extended-cache-ttl") }
+        if betaConfiguration.contextManagement { features.append("context-management") }
+        if betaConfiguration.output128k { features.append("output-128k") }
         
         return """
         AnthropicService Configuration:
@@ -511,7 +630,7 @@ public class AnthropicService {
     ///     messages: [
     ///         AnthropicInputMessage(content: [.text("Hello")], role: .user)
     ///     ],
-    ///     model: "claude-3-7-sonnet-20250219"
+    ///     model: "claude-sonnet-4-5-20250929"
     /// )
     /// let response: AnthropicMessageResponseBody = try await service.generateObject(request: request)
     ///
@@ -519,7 +638,7 @@ public class AnthropicService {
     /// let jsonRequest = AnthropicMessageRequestBody(
     ///     maxTokens: 1000,
     ///     messages: [...],
-    ///     model: "claude-3-7-sonnet-20250219",
+    ///     model: "claude-sonnet-4-5-20250929",
     ///     responseFormat: .jsonObject
     /// )
     /// let book: Book = try await service.generateObject(request: jsonRequest)
@@ -528,7 +647,7 @@ public class AnthropicService {
     /// let schemaRequest = AnthropicMessageRequestBody(
     ///     maxTokens: 1000,
     ///     messages: [...],
-    ///     model: "claude-3-7-sonnet-20250219",
+    ///     model: "claude-sonnet-4-5-20250929",
     ///     responseFormat: .jsonSchema(
     ///         name: "book_recommendation",
     ///         description: "A book recommendation with details",
@@ -568,6 +687,7 @@ public class AnthropicService {
                     topP: request.topP,
                     thinking: request.thinking,
                     mcpServers: request.mcpServers,
+                    container: request.container,
                     responseFormat: nil // Remove from actual request since Anthropic doesn't support it
                 )
             }
@@ -597,20 +717,36 @@ public class AnthropicService {
             throw LLMError.parsingError("Received MCP tool use response when expecting structured data")
         case .mcpToolResult(_):
             throw LLMError.parsingError("Received MCP tool result response when expecting structured data")
+        case .thinking(_):
+            throw LLMError.parsingError("Received thinking response when expecting structured data")
+        case .redactedThinking(_):
+            throw LLMError.parsingError("Received redacted thinking response when expecting structured data")
         }
         
+        // Strip markdown code fences if present (Claude often wraps JSON in ```json ... ```)
+        var cleanedContent = contentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanedContent.hasPrefix("```json") {
+            cleanedContent = String(cleanedContent.dropFirst(7))
+        } else if cleanedContent.hasPrefix("```") {
+            cleanedContent = String(cleanedContent.dropFirst(3))
+        }
+        if cleanedContent.hasSuffix("```") {
+            cleanedContent = String(cleanedContent.dropLast(3))
+        }
+        cleanedContent = cleanedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+
         // Convert response content to JSON data
-        guard let jsonData = contentText.data(using: .utf8) else {
+        guard let jsonData = cleanedContent.data(using: .utf8) else {
             throw LLMError.parsingError("Failed to convert Anthropic response to UTF-8 data")
         }
-        
+
         // Attempt to decode the content into the target type
         do {
             let decoder = JSONDecoder()
             let result = try decoder.decode(T.self, from: jsonData)
             return result
         } catch {
-            throw LLMError.parsingError("Failed to decode Anthropic response to \(T.self): \(error.localizedDescription). Response content: \(contentText)")
+            throw LLMError.parsingError("Failed to decode Anthropic response to \(T.self): \(error.localizedDescription). Response content: \(cleanedContent)")
         }
     }
 
@@ -689,10 +825,9 @@ public class AnthropicService {
             topK: originalRequest.topK,
             topP: originalRequest.topP,
             thinking: originalRequest.thinking,
-            mcpServers: originalRequest.mcpServers
+            mcpServers: originalRequest.mcpServers,
+            container: originalRequest.container,
+            responseFormat: originalRequest.responseFormat
         )
     }
 }
-
-
-

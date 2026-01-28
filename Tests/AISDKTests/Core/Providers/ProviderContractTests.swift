@@ -642,7 +642,7 @@ final class AnthropicContractTests: XCTestCase {
 
     func testAnthropic_opusHasReasoningCapability() async {
         let client = AnthropicClientAdapter(apiKey: "sk-ant-test")
-        let opus = await client.capabilities(for: "claude-opus-4-20250514")
+        let opus = await client.capabilities(for: "claude-opus-4-5-20251101")
 
         XCTAssertTrue(opus?.contains(.reasoning) ?? false, "claude-opus should have reasoning")
         XCTAssertTrue(opus?.contains(.longContext) ?? false, "claude-opus should have longContext")
@@ -651,13 +651,13 @@ final class AnthropicContractTests: XCTestCase {
     func testAnthropic_allClaudeModelsHaveVision() async {
         let client = AnthropicClientAdapter(apiKey: "sk-ant-test")
 
-        let opus = await client.capabilities(for: "claude-opus-4-20250514")
+        let opus = await client.capabilities(for: "claude-opus-4-5-20251101")
         XCTAssertTrue(opus?.contains(.vision) ?? false, "claude-opus should have vision")
 
-        let sonnet = await client.capabilities(for: "claude-sonnet-4-20250514")
+        let sonnet = await client.capabilities(for: "claude-sonnet-4-5-20250929")
         XCTAssertTrue(sonnet?.contains(.vision) ?? false, "claude-sonnet should have vision")
 
-        let haiku = await client.capabilities(for: "claude-3-haiku-20240307")
+        let haiku = await client.capabilities(for: "claude-haiku-4-5-20251001")
         XCTAssertTrue(haiku?.contains(.vision) ?? false, "claude-haiku should have vision")
     }
 
@@ -665,9 +665,9 @@ final class AnthropicContractTests: XCTestCase {
         let client = AnthropicClientAdapter(apiKey: "sk-ant-test")
         let models = try await client.availableModels
 
-        XCTAssertTrue(models.contains("claude-opus-4-20250514"))
-        XCTAssertTrue(models.contains("claude-sonnet-4-20250514"))
-        XCTAssertTrue(models.contains("claude-3-5-sonnet-20241022"))
+        XCTAssertTrue(models.contains("claude-opus-4-5-20251101"))
+        XCTAssertTrue(models.contains("claude-sonnet-4-5-20250929"))
+        XCTAssertTrue(models.contains("claude-haiku-4-5-20251001"))
     }
 }
 

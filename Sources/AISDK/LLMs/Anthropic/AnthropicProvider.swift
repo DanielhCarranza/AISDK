@@ -50,7 +50,7 @@ public class AnthropicProvider: LLM {
     /// Example Usage:
     /// ```swift
     /// let request = ChatCompletionRequest(
-    ///   model: "claude-3-7-sonnet-20250219",
+    ///   model: "claude-sonnet-4-5-20250929",
     ///   messages: [
     ///       ChatMessage(role: "user", content: .string("Hello!"))
     ///   ]
@@ -146,7 +146,7 @@ public class AnthropicProvider: LLM {
     /// Example Usage:
     /// ```swift
     /// let request = ChatCompletionRequest(
-    ///   model: "claude-3-7-sonnet-20250219",
+    ///   model: "claude-sonnet-4-5-20250929",
     ///   messages: [
     ///       ChatMessage(role: "user", content: .string("Hello!"))
     ///   ],
@@ -261,7 +261,7 @@ public class AnthropicProvider: LLM {
     /// ```swift
     /// // For schema-validated objects:
     /// let schemaRequest = ChatCompletionRequest(
-    ///     model: "claude-3-7-sonnet-20250219",
+    ///     model: "claude-sonnet-4-5-20250929",
     ///     messages: [...],
     ///     responseFormat: .jsonSchema(
     ///         name: "fruit_list",

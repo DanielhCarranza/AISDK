@@ -47,6 +47,8 @@ public enum AnthropicMessageResponseContent: Decodable {
     case toolUse(AnthropicToolUseBlock)
     case mcpToolUse(AnthropicMCPToolUseBlock)
     case mcpToolResult(AnthropicMCPToolResultBlock)
+    case thinking(AnthropicThinkingBlock)
+    case redactedThinking(AnthropicRedactedThinkingBlock)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -59,6 +61,9 @@ public enum AnthropicMessageResponseContent: Decodable {
         case toolUseId = "tool_use_id"
         case isError = "is_error"
         case content
+        case thinking
+        case signature
+        case data
     }
 
     private enum ContentType: String, Decodable {
@@ -66,6 +71,8 @@ public enum AnthropicMessageResponseContent: Decodable {
         case toolUse = "tool_use"
         case mcpToolUse = "mcp_tool_use"
         case mcpToolResult = "mcp_tool_result"
+        case thinking
+        case redactedThinking = "redacted_thinking"
     }
 
     public init(from decoder: Decoder) throws {
@@ -85,6 +92,12 @@ public enum AnthropicMessageResponseContent: Decodable {
         case .mcpToolResult:
             let mcpToolResultBlock = try AnthropicMCPToolResultBlock(from: decoder)
             self = .mcpToolResult(mcpToolResultBlock)
+        case .thinking:
+            let thinkingBlock = try AnthropicThinkingBlock(from: decoder)
+            self = .thinking(thinkingBlock)
+        case .redactedThinking:
+            let redactedBlock = try AnthropicRedactedThinkingBlock(from: decoder)
+            self = .redactedThinking(redactedBlock)
         }
     }
 }
@@ -160,15 +173,13 @@ public struct AnthropicToolUseBlock: Decodable {
 }
 
 
-public struct AnthropicMessageUsage: Decodable {
+public struct AnthropicMessageUsage: Codable, Sendable, Equatable {
     public let inputTokens: Int
     public let outputTokens: Int
 
-    enum CodingKeys: String, CodingKey {
-        case inputTokens = "input_tokens"
-        case outputTokens = "output_tokens"
-    }
-    
+    // Note: CodingKeys not needed - the shared decoder uses convertFromSnakeCase
+    // which automatically converts input_tokens → inputTokens
+
     public init(inputTokens: Int, outputTokens: Int) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
@@ -200,16 +211,9 @@ public struct AnthropicSearchResultCitation: Decodable {
     /// Ending position in the content array
     public let endBlockIndex: Int
     
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case source
-        case title
-        case citedText = "cited_text"
-        case searchResultIndex = "search_result_index"
-        case startBlockIndex = "start_block_index"
-        case endBlockIndex = "end_block_index"
-    }
-    
+    // Note: CodingKeys not needed - using shared decoder with convertFromSnakeCase
+    // which automatically converts cited_text → citedText, etc.
+
     public init(
         type: String = "search_result_location",
         source: String,

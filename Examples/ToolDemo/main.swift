@@ -444,7 +444,7 @@ func runAnthropicToolsDemo() async {
     
     // ✅ NEW: Request with beta features  
     print("✅ Creating request with beta features")
-    print("   Model: claude-3-7-sonnet-20250219")
+    print("   Model: claude-sonnet-4-5-20250929")
     print("   Tools: Weather tool")
     
     // ✅ NEW: Beta features configuration

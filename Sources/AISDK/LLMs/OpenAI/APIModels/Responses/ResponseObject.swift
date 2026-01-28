@@ -473,4 +473,25 @@ public struct AnyCodable: Codable {
             throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: encoder.codingPath, debugDescription: "Unsupported type"))
         }
     }
-} 
+}
+
+extension AnyCodable: Equatable {
+    public static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
+        switch (lhs.value, rhs.value) {
+        case (is NSNull, is NSNull):
+            return true
+        case let (l as Bool, r as Bool):
+            return l == r
+        case let (l as Int, r as Int):
+            return l == r
+        case let (l as Double, r as Double):
+            return l == r
+        case let (l as String, r as String):
+            return l == r
+        default:
+            return false
+        }
+    }
+}
+
+extension AnyCodable: @unchecked Sendable {}

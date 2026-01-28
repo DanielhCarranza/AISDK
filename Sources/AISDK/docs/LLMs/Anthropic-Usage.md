@@ -1,7 +1,7 @@
 # Anthropic Native API Usage Guide
 
 > **Created:** 2025-01-25  
-> **Last Updated:** 2025-01-27  
+> **Last Updated:** 2026-01-28  
 > **Status:** ✅ Comprehensive Testing Complete - All Features Validated
 
 ## Overview
@@ -16,6 +16,9 @@ This document provides comprehensive guidance on using the Anthropic native API 
 - ✅ **Comprehensive testing**: 58+ tests covering all features and edge cases
 - ✅ **NEW: Structured data generation**: `generateObject` method for type-safe JSON output
 - ✅ **NEW: Search Results (Beta)**: RAG applications with natural citations and source attribution
+- ✅ **NEW: Claude 4.5 models**: Updated model registry and defaults
+- ✅ **NEW: Files & Batch APIs**: File upload and batch processing support
+- ✅ **NEW: Skills & MCP**: Container skills and MCP server configuration
 
 ## API Comparison
 
@@ -93,7 +96,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219"
+    model: "claude-sonnet-4-5-20250929"
 )
 ```
 
@@ -145,7 +148,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     system: "You are a helpful AI assistant that explains complex topics clearly."
 )
 ```
@@ -169,7 +172,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219"
+    model: "claude-sonnet-4-5-20250929"
 )
 ```
 
@@ -187,7 +190,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219"
+    model: "claude-sonnet-4-5-20250929"
 )
 ```
 
@@ -228,7 +231,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [weatherTool],
     toolChoice: .auto
 )
@@ -247,9 +250,8 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
-    thinking: AnthropicThinkingConfig(
-        type: "enabled",
+    model: "claude-sonnet-4-5-20250929",
+    thinking: .enabled(
         budgetTokens: 2048  // Minimum 1024, recommended 2048-4096 for complex tasks
     )
 )
@@ -261,18 +263,9 @@ let thinkingService = service.withBetaFeatures(extendedThinking: true)
 
 **✅ Extended Thinking Configuration**
 ```swift
-public struct AnthropicThinkingConfig: Codable {
-    /// The type of thinking configuration - currently only "enabled" is supported
-    public let type: String
-    
-    /// Maximum number of tokens Claude can use for internal reasoning
-    /// Must be less than max_tokens. Minimum value is 1,024 tokens.
-    public let budgetTokens: Int
-    
-    public init(type: String = "enabled", budgetTokens: Int) {
-        self.type = type
-        self.budgetTokens = budgetTokens
-    }
+public enum AnthropicThinkingConfigParam: Codable {
+    case enabled(budgetTokens: Int)
+    case disabled
 }
 ```
 
@@ -400,7 +393,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     system: "You are a helpful assistant that generates product data.",
     temperature: 0.1,
     responseFormat: .jsonObject  // ✅ NEW: Forces JSON output
@@ -454,7 +447,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     system: "Generate realistic company data with nested address information in JSON format.",
     temperature: 0.3,
     responseFormat: .jsonObject
@@ -505,7 +498,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     system: "Generate realistic user profile data following the exact field requirements.",
     temperature: 0.2,
     responseFormat: .jsonObject
@@ -590,7 +583,7 @@ public enum AnthropicMessageStreamingChunk {
 
 | Model | Vision | Tools | Documents | Max Tokens |
 |-------|--------|-------|-----------|------------|
-| `claude-3-7-sonnet-20250219` | ✅ | ✅ | ✅ | 200K |
+| `claude-sonnet-4-5-20250929` | ✅ | ✅ | ✅ | 200K |
 | `claude-opus-4-20250514` | ✅ | ✅ | ✅ | 200K |
 | `claude-3-5-haiku-20241022` | ✅ | ✅ | ✅ | 200K |
 
@@ -657,7 +650,7 @@ let efficientService = service.withBetaFeatures(tokenEfficientTools: true)
 let request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [AnthropicTool(from: WeatherTool.self)]
 )
 
@@ -667,7 +660,7 @@ let response = try await efficientService.messageRequest(body: request)
 var request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [AnthropicTool(from: WeatherTool.self)]
 )
 
@@ -682,7 +675,7 @@ request.enableTokenEfficientTools = true
 - ✅ Works with streaming and non-streaming requests
 
 **Important Notes:**
-- Only works with Claude Sonnet 3.7 (`claude-3-7-sonnet-20250219`)
+- Only works with Claude Sonnet 3.7 (`claude-sonnet-4-5-20250929`)
 - Cannot be used with `disableParallelToolUse = true`
 - Provides up to 70% token savings in optimal cases
 - Also reduces latency
@@ -694,7 +687,7 @@ request.enableTokenEfficientTools = true
 var request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [
         AnthropicTool(from: WeatherTool.self),
         AnthropicTool(from: TimezoneTool.self)
@@ -717,7 +710,7 @@ let thinkingService = service.withBetaFeatures(interleavedThinking: true)
 let request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [AnthropicTool(from: WeatherTool.self)]
 )
 
@@ -735,7 +728,7 @@ let response = try await thinkingService.messageRequest(body: request)
 var request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [AnthropicTool(from: WeatherTool.self)]
 )
 
@@ -877,7 +870,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219"
+    model: "claude-sonnet-4-5-20250929"
 )
 
 let response = try await searchResultsService.messageRequest(body: request)
@@ -926,7 +919,7 @@ let request = AnthropicMessageRequestBody(
             role: .user
         )
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [AnthropicTool(from: KnowledgeBaseTool.self)]
 )
 
@@ -1139,7 +1132,7 @@ func runRAGConversation() async throws {
                 role: .user
             )
         ],
-        model: "claude-3-7-sonnet-20250219",
+        model: "claude-sonnet-4-5-20250929",
         tools: [AnthropicTool(from: RAGSearchTool.self)]
     )
     
@@ -1212,7 +1205,7 @@ let messages = [
 let request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     system: "You are a helpful coding assistant. Provide clear, concise answers."
 )
 
@@ -1289,7 +1282,7 @@ func createAnthropicRequest(userMessage: String) -> AnthropicMessageRequestBody 
                 role: .user
             )
         ],
-        model: "claude-3-7-sonnet-20250219",
+        model: "claude-sonnet-4-5-20250929",
         tools: [
             AnthropicTool(from: WeatherTool.self),
             AnthropicTool(from: CalculatorTool.self)
@@ -1391,7 +1384,7 @@ func runConversationWithTools() async throws {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         let finalResponse = try await anthropicProvider.sendMessage(followUpRequest)
@@ -1417,7 +1410,7 @@ func sendBasicMessage(_ text: String) async throws -> String {
                 role: .user
             )
         ],
-        model: "claude-3-7-sonnet-20250219"
+        model: "claude-sonnet-4-5-20250929"
     )
     
     let response = try await anthropicProvider.sendMessage(request)
@@ -1442,7 +1435,7 @@ func sendStreamingMessage(_ text: String) async throws {
                 role: .user
             )
         ],
-        model: "claude-3-7-sonnet-20250219",
+        model: "claude-sonnet-4-5-20250929",
         stream: true
     )
     
@@ -1614,7 +1607,7 @@ struct MyTool: AITool {
 var request = AnthropicMessageRequestBody(
     maxTokens: 1024,
     messages: messages,
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     tools: [AnthropicTool(from: MyTool.self)],
     toolChoice: .auto
 )
@@ -1726,7 +1719,7 @@ Total: 48/48 Real API Tests PASSED
 
 3. **✅ FIXED: Extended Thinking Not Working**
    - **Root Cause**: Missing `thinking` object in request body
-   - **Solution**: Implemented `AnthropicThinkingConfig` and automatic integration
+   - **Solution**: Implemented `AnthropicThinkingConfigParam` and automatic integration
    - **Validation**: Extended thinking tests validated with real API
 
 4. **✅ FIXED: Outdated Beta Headers**
@@ -1798,7 +1791,7 @@ let anthropicRequest = AnthropicMessageRequestBody(
     messages: [
         AnthropicInputMessage(content: [.text("Hello")], role: .user)
     ],
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-5-20250929",
     system: "You are helpful"
 )
 ```

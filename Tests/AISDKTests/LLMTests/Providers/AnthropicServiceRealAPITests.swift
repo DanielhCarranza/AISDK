@@ -62,7 +62,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         // This should succeed with valid API key
@@ -92,7 +92,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -139,14 +139,14 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.1
         )
         
         let response = try await service.messageRequest(body: request)
         
         XCTAssertFalse(response.id.isEmpty)
-        XCTAssertEqual(response.model, "claude-3-7-sonnet-20250219")
+        XCTAssertEqual(response.model, "claude-sonnet-4-5-20250929")
         XCTAssertGreaterThan(response.content.count, 0)
         
         if case .text(let text, citations: _) = response.content.first {
@@ -173,7 +173,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: "You are a helpful assistant who always answers in exactly one word.",
             temperature: 0.1
         )
@@ -208,7 +208,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.1
         )
         
@@ -238,7 +238,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.1
         )
         
@@ -259,9 +259,9 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
         
         let models = [
-            "claude-3-7-sonnet-20250219",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022"
+            "claude-sonnet-4-5-20250929",
+            "claude-opus-4-5-20251101",
+            "claude-haiku-4-5-20251001"
         ]
         
         for model in models {
@@ -306,7 +306,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.1
         )
         
@@ -325,6 +325,14 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                 print("Delta: '\(text)'", terminator: "")
             case .toolUse(_, _):
                 print("Tool use chunk received")
+            case .thinkingDelta:
+                break
+            case .thinkingComplete:
+                break
+            case .messageDelta:
+                break
+            case .done:
+                break
             }
             
             // Limit chunks to prevent infinite loops
@@ -348,12 +356,13 @@ final class AnthropicServiceRealAPITests: XCTestCase {
     
     func testRealAPIBetaFeatures() async throws {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
-        
+
+        // Test token-efficient-tools beta feature (without extended thinking)
         let betaService = service.withBetaFeatures(
             tokenEfficientTools: true,
-            extendedThinking: true
+            extendedThinking: false
         )
-        
+
         let request = AnthropicMessageRequestBody(
             maxTokens: 150,
             messages: [
@@ -362,25 +371,24 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.3
         )
-        
+
         let response = try await betaService.messageRequest(body: request)
-        
+
         XCTAssertFalse(response.id.isEmpty)
         XCTAssertGreaterThan(response.content.count, 0)
-        
+
         if case .text(let text, citations: _) = response.content.first {
             XCTAssertFalse(text.isEmpty)
             print("✅ Real API Beta Features Test Passed")
             print("Response with beta features: '\(text.prefix(100))...'")
         }
-        
+
         // Verify beta configuration is active
         let configStatus = betaService.configurationStatus
         XCTAssertTrue(configStatus.contains("token-efficient-tools"))
-        XCTAssertTrue(configStatus.contains("extended-thinking"))
     }
     
     func testRealAPITokenEfficientTools() async throws {
@@ -415,7 +423,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [weatherTool]
         )
@@ -455,7 +463,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                             role: .user
                         )
                     ],
-                    model: "claude-3-7-sonnet-20250219"
+                    model: "claude-sonnet-4-5-20250929"
                 )
                 
                 do {
@@ -536,7 +544,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         let startTime = Date()
@@ -569,7 +577,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                             role: .user
                         )
                     ],
-                    model: "claude-3-7-sonnet-20250219"
+                    model: "claude-sonnet-4-5-20250929"
                 )
                 
                 return try await service.messageRequest(body: request)
@@ -624,7 +632,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: "You are a helpful assistant. Generate ONLY a simple JSON object with exactly these 4 fields: name, price, category, stockStatus. Do not add any other fields.",
             temperature: 0.1,
             responseFormat: .jsonObject
@@ -647,7 +655,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
     
     func testRealAPIGenerateObjectWithSchema() async throws {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
-        
+
         // Test with a simple structured model
         struct UserProfile: Codable {
             let id: Int
@@ -655,30 +663,35 @@ final class AnthropicServiceRealAPITests: XCTestCase {
             let email: String
             let age: Int
         }
-        
+
         let request = AnthropicMessageRequestBody(
             maxTokens: 300,
             messages: [
                 AnthropicInputMessage(
-                    content: [.text("Create a user profile for a software developer in their 30s")],
+                    content: [.text("""
+                        Create a user profile for a software developer in their 30s.
+                        Return EXACTLY this JSON structure with NO additional fields:
+                        {"id": <integer>, "name": "<string>", "email": "<string>", "age": <integer>}
+                        The id MUST be a simple positive integer like 1234, NOT a string.
+                        """)],
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
-            system: "Generate realistic user profile data with id, name, email, and age fields in JSON format.",
-            temperature: 0.2,
+            model: "claude-sonnet-4-5-20250929",
+            system: "You generate JSON with EXACTLY the requested fields. Never add extra fields. Always use simple integers for numeric IDs, not strings.",
+            temperature: 0.1,
             responseFormat: .jsonObject
         )
-        
+
         let userProfile: UserProfile = try await service.generateObject(request: request)
-        
+
         // Validate the generated user profile
         XCTAssertGreaterThan(userProfile.id, 0, "User ID should be positive")
         XCTAssertFalse(userProfile.name.isEmpty, "User name should not be empty")
         XCTAssertTrue(userProfile.email.contains("@"), "Email should contain @ symbol")
         XCTAssertGreaterThanOrEqual(userProfile.age, 18, "Age should be at least 18")
         XCTAssertLessThanOrEqual(userProfile.age, 120, "Age should be reasonable")
-        
+
         print("✅ Real API Generate Object with Schema Test Passed")
         print("Generated User Profile:")
         print("  🆔 ID: \(userProfile.id)")
@@ -689,7 +702,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
     
     func testRealAPIGenerateObjectComplexStructure() async throws {
         try XCTSkipUnless(shouldUseRealAPI(), "Real API tests disabled")
-        
+
         // Test with nested structures
         struct Address: Codable {
             let street: String
@@ -697,31 +710,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
             let country: String
             let zipCode: String
         }
-        
-        struct CompanyWrapper: Codable {
-            let company: Company?
-            let name: String?
-            let industry: String?
-            let employees: Int?
-            let founded: Int?
-            let headquarters: Address?
-            
-            // Extract the actual company data regardless of structure
-            var actualCompany: Company {
-                if let company = company {
-                    return company
-                } else {
-                    return Company(
-                        name: name ?? "Unknown",
-                        industry: industry ?? "Unknown",
-                        employees: employees ?? 0,
-                        founded: founded ?? 2000,
-                        headquarters: headquarters ?? Address(street: "", city: "", country: "", zipCode: "")
-                    )
-                }
-            }
-        }
-        
+
         struct Company: Codable {
             let name: String
             let industry: String
@@ -729,36 +718,52 @@ final class AnthropicServiceRealAPITests: XCTestCase {
             let founded: Int
             let headquarters: Address
         }
-        
+
         let request = AnthropicMessageRequestBody(
             maxTokens: 400,
             messages: [
                 AnthropicInputMessage(
-                    content: [.text("Create a technology company profile with headquarters address. Make it realistic and detailed.")],
+                    content: [.text("""
+                        Create a technology company profile.
+                        Return EXACTLY this JSON structure with NO additional fields:
+                        {
+                          "name": "<company name>",
+                          "industry": "<industry>",
+                          "employees": <integer>,
+                          "founded": <integer year>,
+                          "headquarters": {
+                            "street": "<street address>",
+                            "city": "<city>",
+                            "country": "<country>",
+                            "zipCode": "<zip code>"
+                          }
+                        }
+                        Do NOT nest headquarters inside another object.
+                        Do NOT add any extra fields like coordinates or building_details.
+                        """)],
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
-            system: "Generate realistic company data with nested address information in JSON format.",
-            temperature: 0.3,
+            model: "claude-sonnet-4-5-20250929",
+            system: "You generate JSON with EXACTLY the requested structure. Never add extra fields or nested wrappers.",
+            temperature: 0.1,
             responseFormat: .jsonObject
         )
-        
-        let companyWrapper: CompanyWrapper = try await service.generateObject(request: request)
-        let company = companyWrapper.actualCompany
-        
+
+        let company: Company = try await service.generateObject(request: request)
+
         // Validate the generated company
         XCTAssertFalse(company.name.isEmpty, "Company name should not be empty")
         XCTAssertFalse(company.industry.isEmpty, "Industry should not be empty")
         XCTAssertGreaterThan(company.employees, 0, "Employee count should be positive")
         XCTAssertGreaterThan(company.founded, 1800, "Founded year should be reasonable")
-        
+
         // Validate nested address
         XCTAssertFalse(company.headquarters.street.isEmpty, "Street should not be empty")
         XCTAssertFalse(company.headquarters.city.isEmpty, "City should not be empty")
         XCTAssertFalse(company.headquarters.country.isEmpty, "Country should not be empty")
         XCTAssertFalse(company.headquarters.zipCode.isEmpty, "Zip code should not be empty")
-        
+
         print("✅ Real API Generate Object Complex Structure Test Passed")
         print("Generated Company:")
         print("  🏢 Name: \(company.name)")
@@ -785,7 +790,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: "You must respond with valid JSON only.",
             temperature: 0.1,
             responseFormat: .jsonObject
@@ -826,7 +831,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: "You are a helpful AI assistant built with AnthropicService.",
             temperature: 0.2
         )
@@ -845,7 +850,7 @@ final class AnthropicServiceRealAPITests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         var streamChunks = 0

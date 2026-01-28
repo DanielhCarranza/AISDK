@@ -34,6 +34,12 @@ class CommandHandler {
     /// Reference to runtime config
     weak var runtimeConfig: RuntimeConfig?
 
+    /// Selected provider
+    var provider: ProviderType = .openrouter
+
+    /// Callback for provider config changes
+    var onProviderConfigChanged: (() -> Void)?
+
     /// Callback for model change requests
     var onModelChangeRequested: (() async -> Void)?
 
@@ -60,6 +66,16 @@ class CommandHandler {
 
         let args = Array(parts.dropFirst())
         let argString = args.joined(separator: " ")
+
+        if provider == .anthropic, let runtimeConfig = runtimeConfig {
+            let anthropicCommands = AnthropicCommands(
+                runtimeConfig: runtimeConfig,
+                onConfigChanged: onProviderConfigChanged
+            )
+            if await anthropicCommands.handleCommand(command, args: args) {
+                return .handled
+            }
+        }
 
         switch command {
         case "exit", "quit", "q":
@@ -177,6 +193,23 @@ class CommandHandler {
         \(ANSIStyles.cyan("/files"))              List uploaded files
         \(ANSIStyles.cyan("/store on|off"))       Toggle response storage
         \(ANSIStyles.cyan("/continue <resp_id>")) Continue from a previous response
+        """)
+
+        if provider == .anthropic {
+            print("""
+
+        \(ANSIStyles.bold("Anthropic Commands (--provider anthropic):"))
+        \(ANSIStyles.cyan("/thinking [on|off|budget <n>]"))  Extended thinking control
+        \(ANSIStyles.cyan("/batch [create|status|list|cancel|results]"))  Batch API
+        \(ANSIStyles.cyan("/files [upload|list|get|delete|download]"))    Files API
+        \(ANSIStyles.cyan("/skills [list|enable|disable]"))  Skills control
+        \(ANSIStyles.cyan("/mcp [add|remove|list]"))         MCP servers
+        \(ANSIStyles.cyan("/beta [list|enable|disable]"))    Beta features
+        \(ANSIStyles.cyan("/models [list|info]"))            Claude models
+        """)
+        }
+
+        print("""
 
         \(ANSIStyles.bold("Input Modes:"))
         - Single line: Type message and press Enter
