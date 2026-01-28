@@ -1,1 +1,0 @@
-Task 4.2 StopCondition complete. The StopCondition enum with all 4 cases (.stepCount, .noToolCalls, .tokenBudget, .custom) was verified in AIAgentActor.swift. Added comprehensive integration test for tokenBudget condition that verifies the agent loop stops when accumulated tokens exceed the budget. Implementation review feedback addressed.

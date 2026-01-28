@@ -1,5 +1,0 @@
-{
-  "commits": ["4e9305c", "518da33"],
-  "tests": "swift test --filter SafeAsyncStreamTests (20 tests), swift test --filter AISDKTests (138 tests)",
-  "files": ["Sources/AISDK/Core/Utilities/SafeAsyncStream.swift", "Tests/AISDKTests/Utilities/SafeAsyncStreamTests.swift"]
-}

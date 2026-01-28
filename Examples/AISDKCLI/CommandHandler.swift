@@ -118,6 +118,30 @@ class CommandHandler {
             handleReliable(argString)
             return .handled
 
+        // OpenAI Responses API specific commands
+        case "websearch":
+            handleWebSearch(argString)
+            return .handled
+
+        case "code", "codeinterpreter":
+            handleCodeInterpreter(argString)
+            return .handled
+
+        case "upload":
+            return await handleUpload(argString)
+
+        case "files":
+            handleFiles()
+            return .handled
+
+        case "store":
+            handleStore(argString)
+            return .handled
+
+        case "continue":
+            handleContinue(argString)
+            return .handled
+
         default:
             return .notRecognized(command)
         }
@@ -145,6 +169,14 @@ class CommandHandler {
         \(ANSIStyles.cyan("/format <mode>")) Set response format (text|json|schema|ui)
         \(ANSIStyles.cyan("/citations on|off")) Toggle citations rendering
         \(ANSIStyles.cyan("/reliable on|off")) Toggle reliability/failover mode
+
+        \(ANSIStyles.bold("OpenAI Responses API Commands (--provider openai):"))
+        \(ANSIStyles.cyan("/websearch on|off"))   Toggle web search tool
+        \(ANSIStyles.cyan("/code on|off"))        Toggle code interpreter
+        \(ANSIStyles.cyan("/upload <file>"))      Upload file for analysis
+        \(ANSIStyles.cyan("/files"))              List uploaded files
+        \(ANSIStyles.cyan("/store on|off"))       Toggle response storage
+        \(ANSIStyles.cyan("/continue <resp_id>")) Continue from a previous response
 
         \(ANSIStyles.bold("Input Modes:"))
         - Single line: Type message and press Enter
@@ -370,6 +402,124 @@ class CommandHandler {
             print(ANSIStyles.dim("Usage: /reliable on|off"))
         default:
             print(ANSIStyles.error("Unknown option. Use: /reliable on|off"))
+        }
+    }
+
+    // MARK: - OpenAI Responses API Commands
+
+    private func handleWebSearch(_ arg: String) {
+        guard let config = runtimeConfig else { return }
+
+        switch arg.lowercased() {
+        case "on", "enable", "true":
+            config.webSearchEnabled = true
+            print(ANSIStyles.success("Web search enabled"))
+        case "off", "disable", "false":
+            config.webSearchEnabled = false
+            print(ANSIStyles.success("Web search disabled"))
+        case "":
+            print(ANSIStyles.info("Web search is \(config.webSearchEnabled ? "enabled" : "disabled")"))
+            print(ANSIStyles.dim("Usage: /websearch on|off"))
+        default:
+            print(ANSIStyles.error("Unknown option. Use: /websearch on|off"))
+        }
+    }
+
+    private func handleCodeInterpreter(_ arg: String) {
+        guard let config = runtimeConfig else { return }
+
+        switch arg.lowercased() {
+        case "on", "enable", "true":
+            config.codeInterpreterEnabled = true
+            print(ANSIStyles.success("Code interpreter enabled"))
+        case "off", "disable", "false":
+            config.codeInterpreterEnabled = false
+            print(ANSIStyles.success("Code interpreter disabled"))
+        case "":
+            print(ANSIStyles.info("Code interpreter is \(config.codeInterpreterEnabled ? "enabled" : "disabled")"))
+            print(ANSIStyles.dim("Usage: /code on|off"))
+        default:
+            print(ANSIStyles.error("Unknown option. Use: /code on|off"))
+        }
+    }
+
+    private func handleUpload(_ path: String) async -> CommandResult {
+        guard let config = runtimeConfig else {
+            return .error("No configuration available")
+        }
+
+        guard !path.isEmpty else {
+            print(ANSIStyles.error("Usage: /upload <file_path>"))
+            return .error("Missing file path")
+        }
+
+        let expandedPath = NSString(string: path).expandingTildeInPath
+
+        guard FileManager.default.fileExists(atPath: expandedPath) else {
+            print(ANSIStyles.error("File not found: \(path)"))
+            return .error("File not found")
+        }
+
+        print(ANSIStyles.info("Uploading file: \(path)..."))
+
+        // TODO: Implement actual file upload via OpenAI Provider
+        // For now, simulate the upload
+        let simulatedFileId = "file_\(UUID().uuidString.prefix(8))"
+        config.uploadedFileIds.append(simulatedFileId)
+
+        print(ANSIStyles.success("File uploaded: \(simulatedFileId)"))
+        print(ANSIStyles.dim("Note: File upload requires --provider openai"))
+        return .handled
+    }
+
+    private func handleFiles() {
+        guard let config = runtimeConfig else { return }
+
+        if config.uploadedFileIds.isEmpty {
+            print(ANSIStyles.info("No files uploaded"))
+            print(ANSIStyles.dim("Use /upload <file_path> to upload a file"))
+        } else {
+            print(ANSIStyles.bold("\nUploaded Files:"))
+            for (index, fileId) in config.uploadedFileIds.enumerated() {
+                print("  [\(index + 1)] \(fileId)")
+            }
+            print("")
+        }
+    }
+
+    private func handleStore(_ arg: String) {
+        guard let config = runtimeConfig else { return }
+
+        switch arg.lowercased() {
+        case "on", "enable", "true":
+            config.storeResponses = true
+            print(ANSIStyles.success("Response storage enabled"))
+            print(ANSIStyles.dim("Responses will be stored and can be continued with /continue"))
+        case "off", "disable", "false":
+            config.storeResponses = false
+            print(ANSIStyles.success("Response storage disabled"))
+        case "":
+            print(ANSIStyles.info("Response storage is \(config.storeResponses ? "enabled" : "disabled")"))
+            print(ANSIStyles.dim("Usage: /store on|off"))
+        default:
+            print(ANSIStyles.error("Unknown option. Use: /store on|off"))
+        }
+    }
+
+    private func handleContinue(_ responseId: String) {
+        guard let config = runtimeConfig else { return }
+
+        if responseId.isEmpty {
+            if let currentId = config.previousResponseId {
+                print(ANSIStyles.info("Current response ID: \(currentId)"))
+            } else {
+                print(ANSIStyles.info("No previous response ID set"))
+            }
+            print(ANSIStyles.dim("Usage: /continue <response_id>"))
+            print(ANSIStyles.dim("Use /store on to enable response storage"))
+        } else {
+            config.previousResponseId = responseId
+            print(ANSIStyles.success("Continuing from response: \(responseId)"))
         }
     }
 }

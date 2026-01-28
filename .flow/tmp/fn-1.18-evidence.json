@@ -1,8 +1,0 @@
-{
-  "commits": ["52b8fad6924e6a4f32b6e0bb1cbf9413b1826d53", "e579eba", "9d52d99dd7cf2e8af7967a17e2897e852212fc63"],
-  "tests": "swift test --filter OpenRouter (22 tests passed)",
-  "files_created": [
-    "Sources/AISDK/Core/Providers/OpenRouterClient.swift",
-    "Tests/AISDKTests/Core/Providers/OpenRouterClientTests.swift"
-  ]
-}

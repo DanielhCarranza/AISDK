@@ -163,12 +163,32 @@ public struct ResponseMCPTool: Codable {
 }
 
 /// Function tool (custom functions)
+/// Note: The Responses API uses a flat structure where function properties
+/// are at the top level, unlike Chat Completions which nests them in "function"
 public struct ResponseFunctionTool: Codable {
     public let type: String = "function"
-    public let function: ToolFunction
-    
+    public let name: String
+    public let description: String?
+    public let parameters: Parameters
+    public let strict: Bool
+
     public init(function: ToolFunction) {
-        self.function = function
+        self.name = function.name
+        self.description = function.description
+        self.parameters = function.parameters
+        self.strict = function.strict
+    }
+
+    public init(name: String, description: String? = nil, parameters: Parameters, strict: Bool = true) {
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+        self.strict = strict
+    }
+
+    /// For decoding, reconstruct the ToolFunction
+    public var function: ToolFunction {
+        ToolFunction(name: name, description: description, parameters: parameters, strict: strict)
     }
 }
 

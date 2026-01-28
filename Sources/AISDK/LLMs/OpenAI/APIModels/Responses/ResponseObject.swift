@@ -68,15 +68,16 @@ public enum ResponseStatus: String, Codable {
     case queued = "queued"
     case failed = "failed"
     case cancelled = "cancelled"
-    
+    case incomplete = "incomplete"
+
     /// Check if the response is still processing
     public var isProcessing: Bool {
         return self == .inProgress || self == .queued
     }
-    
+
     /// Check if the response is in a final state
     public var isFinal: Bool {
-        return self == .completed || self == .failed || self == .cancelled
+        return self == .completed || self == .failed || self == .cancelled || self == .incomplete
     }
 }
 
