@@ -928,35 +928,22 @@ extension BuiltInTool {
     }
 }
 
+// MARK: - MCP Types (Backwards Compatibility)
+
+// These types have been moved to Sources/AISDK/MCP/MCPServerConfiguration.swift
+// Typealiases are provided here for backwards compatibility.
+
 /// MCP Server Configuration for ResponseAgent
-public struct MCPServerConfiguration {
-    let serverUrl: String
-    let serverLabel: String
-    let requireApproval: MCPApprovalLevel
-    let connectionTimeout: TimeInterval
-    let requestTimeout: TimeInterval
-    
-    public init(
-        serverUrl: String,
-        serverLabel: String,
-        requireApproval: MCPApprovalLevel = .never,
-        connectionTimeout: TimeInterval = 30,
-        requestTimeout: TimeInterval = 120
-    ) {
-        self.serverUrl = serverUrl
-        self.serverLabel = serverLabel
-        self.requireApproval = requireApproval
-        self.connectionTimeout = connectionTimeout
-        self.requestTimeout = requestTimeout
-    }
-}
+/// - Note: This type has been moved to `AISDK.MCPServerConfiguration`.
+///   This typealias is provided for backwards compatibility.
+@available(*, deprecated, renamed: "AISDK.MCPServerConfiguration", message: "MCPServerConfiguration has been moved to the MCP module")
+public typealias ResponseAgentMCPServerConfiguration = MCPServerConfiguration
 
 /// MCP Approval levels for server interactions
-public enum MCPApprovalLevel: String, Codable {
-    case never = "never"
-    case always = "always"
-    case dangerous = "dangerous"
-}
+/// - Note: This type has been moved to `AISDK.MCPApprovalLevel`.
+///   This typealias is provided for backwards compatibility.
+@available(*, deprecated, renamed: "AISDK.MCPApprovalLevel", message: "MCPApprovalLevel has been moved to the MCP module")
+public typealias ResponseAgentMCPApprovalLevel = MCPApprovalLevel
 
 /// MCP Tool execution result
 public struct MCPToolResult {

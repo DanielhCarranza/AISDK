@@ -90,6 +90,9 @@ public actor AIAgentActor {
     /// Available tool types for this agent
     private let tools: [AITool.Type]
 
+    /// MCP server configurations for external tool discovery
+    private let mcpServers: [MCPServerConfiguration]
+
     /// System instructions for the agent
     private let instructions: String?
 
@@ -110,6 +113,21 @@ public actor AIAgentActor {
 
     /// Optional name for this agent
     public nonisolated let name: String?
+
+    // MARK: - MCP State
+
+    /// MCP client for communicating with MCP servers
+    private let mcpClient: MCPClient
+
+    /// Discovered MCP tool schemas (populated on first use)
+    private var mcpToolSchemas: [MCPToolSchema] = []
+
+    /// Whether MCP tools have been discovered
+    private var mcpToolsDiscovered: Bool = false
+
+    /// Optional callback to request approval before executing MCP tools.
+    /// Return `true` to approve, `false` to deny execution.
+    public var mcpApprovalHandler: (@Sendable (MCPApprovalContext) async -> Bool)?
 
     // MARK: - Reentrancy Protection
 
@@ -149,15 +167,36 @@ public actor AIAgentActor {
     /// - Parameters:
     ///   - model: The language model to use for generation
     ///   - tools: Array of tool types available to the agent
+    ///   - mcpServers: Array of MCP server configurations for external tools
     ///   - instructions: Optional system instructions for the agent
     ///   - stopCondition: When to stop the agent loop (default: 20 steps)
     ///   - timeout: Timeout policy for operations (default: standard)
     ///   - maxToolRounds: Maximum tool execution rounds per step (default: 10)
     ///   - name: Optional name for the agent
     ///   - agentId: Optional unique identifier (auto-generated if nil)
+    ///
+    /// ## MCP Server Configuration
+    /// MCP servers provide external tools that the agent can discover and use.
+    /// Tools from MCP servers are namespaced as `mcp__<serverLabel>__<toolName>`
+    /// to prevent collisions with native tools.
+    ///
+    /// ```swift
+    /// let agent = AIAgentActor(
+    ///     model: myModel,
+    ///     tools: [SearchTool.self],
+    ///     mcpServers: [
+    ///         MCPServerConfiguration(
+    ///             serverLabel: "github",
+    ///             serverUrl: "https://api.github.com/mcp",
+    ///             allowedTools: ["search_code", "list_repos"]
+    ///         )
+    ///     ]
+    /// )
+    /// ```
     public init(
         model: any AILanguageModel,
         tools: [AITool.Type] = [],
+        mcpServers: [MCPServerConfiguration] = [],
         instructions: String? = nil,
         requestOptions: RequestOptions = RequestOptions(),
         stopCondition: StopCondition = .stepCount(20),
@@ -168,6 +207,8 @@ public actor AIAgentActor {
     ) {
         self.model = model
         self.tools = tools
+        self.mcpServers = mcpServers
+        self.mcpClient = MCPClient()
         self.instructions = instructions
         self.requestOptions = requestOptions
         self.stopCondition = stopCondition
@@ -292,6 +333,9 @@ public actor AIAgentActor {
 
     /// Run the streaming agent loop
     private func runStreamingAgentLoop(operation: AIStreamingOperation) async throws {
+        // Discover MCP tools on first execution (lazy initialization)
+        try await discoverMCPTools()
+
         let continuation = operation.continuation
 
         // Emit start event
@@ -316,6 +360,9 @@ public actor AIAgentActor {
         var totalUsage = AIUsage.zero
         var lastText = ""
 
+        // Build combined tool schemas (native + MCP)
+        let combinedToolSchemas = buildCombinedToolSchemas()
+
         // Main agent loop
         while !Task.isCancelled && !continuation.isTerminated {
             // Emit step start
@@ -325,16 +372,15 @@ public actor AIAgentActor {
             currentState = .thinking
             await setObservableThinking(step: stepIndex)
 
-            // Build request
-            let toolSchemas = tools.isEmpty ? nil : tools.map { $0.jsonSchema() }
+            // Build request with combined tool schemas
             let request = AITextRequest(
                 messages: workingMessages,
                 maxTokens: requestOptions.maxTokens,
                 temperature: requestOptions.temperature,
                 topP: requestOptions.topP,
                 stop: requestOptions.stop,
-                tools: toolSchemas,
-                toolChoice: toolSchemas != nil ? requestOptions.toolChoice : nil,
+                tools: combinedToolSchemas,
+                toolChoice: combinedToolSchemas != nil ? requestOptions.toolChoice : nil,
                 responseFormat: requestOptions.responseFormat,
                 allowedProviders: requestOptions.allowedProviders,
                 sensitivity: requestOptions.sensitivity,
@@ -563,6 +609,9 @@ public actor AIAgentActor {
     /// - Parameter messages: The messages to process
     /// - Returns: The agent result
     private func runAgentLoop(messages: [AIMessage]) async throws -> AIAgentResult {
+        // Discover MCP tools on first execution (lazy initialization)
+        try await discoverMCPTools()
+
         // Set up initial message history
         var workingMessages = messages
 
@@ -578,22 +627,24 @@ public actor AIAgentActor {
         var totalUsage = AIUsage.zero
         var lastText = ""
 
+        // Build combined tool schemas (native + MCP)
+        let combinedToolSchemas = buildCombinedToolSchemas()
+
         // Main agent loop
         while !Task.isCancelled {
             // Update state
             currentState = .thinking
             await setObservableThinking(step: stepIndex)
 
-            // Build request
-            let toolSchemas = tools.isEmpty ? nil : tools.map { $0.jsonSchema() }
+            // Build request with combined tool schemas
             let request = AITextRequest(
                 messages: workingMessages,
                 maxTokens: requestOptions.maxTokens,
                 temperature: requestOptions.temperature,
                 topP: requestOptions.topP,
                 stop: requestOptions.stop,
-                tools: toolSchemas,
-                toolChoice: toolSchemas != nil ? requestOptions.toolChoice : nil,
+                tools: combinedToolSchemas,
+                toolChoice: combinedToolSchemas != nil ? requestOptions.toolChoice : nil,
                 responseFormat: requestOptions.responseFormat,
                 allowedProviders: requestOptions.allowedProviders,
                 sensitivity: requestOptions.sensitivity,
@@ -708,11 +759,22 @@ public actor AIAgentActor {
         )
     }
 
-    /// Execute a single tool call
+    /// Execute a single tool call (native or MCP)
     ///
     /// - Parameter toolCall: The tool call to execute
-    /// - Returns: The tool result as a string
+    /// - Returns: The tool result
     private func executeToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
+        // Check if this is an MCP tool (namespaced with mcp__serverLabel__toolName)
+        if toolCall.name.hasPrefix("mcp__") {
+            return try await executeMCPToolCall(toolCall)
+        }
+
+        // Execute native tool
+        return try await executeNativeToolCall(toolCall)
+    }
+
+    /// Execute a native AITool
+    private func executeNativeToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
         // Find tool type by name
         guard let toolType = tools.first(where: { $0.init().name == toolCall.name }) else {
             throw AISDKErrorV2.toolNotFound(toolCall.name)
@@ -741,6 +803,214 @@ public actor AIAgentActor {
             try await toolToExecute.execute()
         }
         return result
+    }
+
+    /// Execute an MCP tool call
+    private func executeMCPToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
+        // Parse the namespaced tool name: mcp__serverLabel__toolName
+        let components = toolCall.name.components(separatedBy: "__")
+        guard components.count >= 3,
+              components[0] == "mcp" else {
+            throw AISDKErrorV2.toolNotFound(toolCall.name)
+        }
+
+        let serverLabel = components[1]
+        let toolName = components.dropFirst(2).joined(separator: "__")
+
+        guard !serverLabel.isEmpty, !toolName.isEmpty else {
+            throw AISDKErrorV2.toolNotFound(toolCall.name)
+        }
+
+        // Find the server config
+        guard let server = mcpServers.first(where: { $0.serverLabel == serverLabel }) else {
+            throw AISDKErrorV2.toolExecutionFailed(
+                tool: toolCall.name,
+                reason: "MCP server '\(serverLabel)' not configured"
+            )
+        }
+
+        // Check approval policy
+        if server.requireApproval == .always {
+            let context = MCPApprovalContext(
+                serverLabel: serverLabel,
+                toolName: toolName,
+                argumentsJSON: toolCall.arguments
+            )
+
+            if let handler = mcpApprovalHandler {
+                let approved = await handler(context)
+                if !approved {
+                    throw AISDKErrorV2.toolExecutionFailed(
+                        tool: toolCall.name,
+                        reason: "MCP tool execution denied by approval handler"
+                    )
+                }
+            }
+            // If no handler, auto-approve (log warning in production)
+        }
+
+        // Parse arguments to AIProxyJSONValue
+        let arguments = parseToolArguments(toolCall.arguments)
+
+        // Execute via MCP client with timeout
+        // Convert TimeInterval (Double seconds) to Duration
+        let timeoutDuration = Duration.seconds(server.requestTimeout)
+        let result = try await TimeoutExecutor(policy: timeout).execute(
+            timeout: timeoutDuration,
+            operationName: "mcp:\(serverLabel):\(toolName)"
+        ) {
+            try await self.mcpClient.callTool(server: server, name: toolName, arguments: arguments)
+        }
+
+        // Convert MCP result to AIToolResult
+        if result.isError {
+            throw AISDKErrorV2.toolExecutionFailed(
+                tool: toolCall.name,
+                reason: result.textContent
+            )
+        }
+
+        // Return result (metadata is nil for MCP tools - protocol doesn't define metadata format)
+        return AIToolResult(content: result.textContent)
+    }
+
+    /// Parse JSON string arguments to AIProxyJSONValue dictionary
+    private func parseToolArguments(_ argumentsJSON: String) -> [String: AIProxyJSONValue] {
+        guard let data = argumentsJSON.data(using: .utf8) else {
+            return [:]
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            return try decoder.decode([String: AIProxyJSONValue].self, from: data)
+        } catch {
+            return [:]
+        }
+    }
+
+    // MARK: - MCP Tool Discovery
+
+    /// Discover tools from all configured MCP servers.
+    ///
+    /// This method is called lazily on first agent execution. It connects to each
+    /// MCP server, performs the initialize handshake, and fetches available tools
+    /// with pagination support. Results are cached for the lifetime of the agent.
+    ///
+    /// Tool filtering is applied based on `allowedTools` and `blockedTools` in
+    /// each server's configuration.
+    private func discoverMCPTools() async throws {
+        // Only discover once per agent instance
+        guard !mcpToolsDiscovered, !mcpServers.isEmpty else { return }
+
+        var allTools: [MCPToolSchema] = []
+
+        for server in mcpServers {
+            do {
+                let serverTools = try await mcpClient.listTools(server: server)
+
+                // Apply allowedTools filter (whitelist)
+                var filteredTools = serverTools
+                if let allowed = server.allowedTools {
+                    let allowedSet = Set(allowed)
+                    filteredTools = filteredTools.filter { allowedSet.contains($0.name) }
+                }
+
+                // Apply blockedTools filter (blacklist)
+                if let blocked = server.blockedTools {
+                    let blockedSet = Set(blocked)
+                    filteredTools = filteredTools.filter { !blockedSet.contains($0.name) }
+                }
+
+                allTools.append(contentsOf: filteredTools)
+            } catch {
+                // Log error but continue with other servers
+                // In production, consider emitting a warning event
+                print("[AISDK] Warning: Failed to discover tools from MCP server '\(server.serverLabel)': \(error.localizedDescription)")
+            }
+        }
+
+        mcpToolSchemas = allTools
+        mcpToolsDiscovered = true
+    }
+
+    /// Build combined tool schemas from native tools and MCP tools.
+    ///
+    /// This method returns an array of `ToolSchema` that can be passed to the
+    /// language model. Native tools are converted from their `AITool.Type` definitions,
+    /// while MCP tools are converted from their `MCPToolSchema` definitions.
+    ///
+    /// - Returns: Array of tool schemas for the language model, or nil if no tools
+    private func buildCombinedToolSchemas() -> [ToolSchema]? {
+        var schemas: [ToolSchema] = []
+
+        // Add native tool schemas
+        for toolType in tools {
+            schemas.append(toolType.jsonSchema())
+        }
+
+        // Add MCP tool schemas (with namespaced names)
+        for mcpTool in mcpToolSchemas {
+            let toolFunction = ToolFunction(
+                name: mcpTool.namespacedName,
+                description: mcpTool.description ?? "MCP tool from \(mcpTool.serverLabel)",
+                parameters: convertMCPSchemaToParameters(mcpTool.inputSchema)
+            )
+            let schema = ToolSchema(type: "function", function: toolFunction)
+            schemas.append(schema)
+        }
+
+        return schemas.isEmpty ? nil : schemas
+    }
+
+    /// Convert MCP JSON Schema to Parameters for ToolFunction.
+    ///
+    /// MCP tools provide their input schema as a JSON Schema object.
+    /// This method converts it to the format expected by language models.
+    private func convertMCPSchemaToParameters(_ inputSchema: [String: AIProxyJSONValue]) -> Parameters {
+        // Extract properties from the input schema
+        var properties: [String: PropertyDefinition] = [:]
+        var requiredFields: [String] = []
+
+        // Get properties from the schema
+        if case .object(let props)? = inputSchema["properties"] {
+            for (name, value) in props {
+                if case .object(let propDict) = value {
+                    let typeString: String
+                    if case .string(let t)? = propDict["type"] {
+                        typeString = t
+                    } else {
+                        typeString = "string"
+                    }
+
+                    let description: String?
+                    if case .string(let d)? = propDict["description"] {
+                        description = d
+                    } else {
+                        description = nil
+                    }
+
+                    properties[name] = PropertyDefinition(
+                        type: typeString,
+                        description: description
+                    )
+                }
+            }
+        }
+
+        // Get required fields from the schema
+        if case .array(let reqArray)? = inputSchema["required"] {
+            for item in reqArray {
+                if case .string(let fieldName) = item {
+                    requiredFields.append(fieldName)
+                }
+            }
+        }
+
+        return Parameters(
+            type: "object",
+            properties: properties,
+            required: requiredFields.isEmpty ? nil : requiredFields
+        )
     }
 
     /// Check if the agent should stop based on the current step result
