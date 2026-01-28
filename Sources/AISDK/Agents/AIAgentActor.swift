@@ -129,6 +129,20 @@ public actor AIAgentActor {
     /// Return `true` to approve, `false` to deny execution.
     public var mcpApprovalHandler: (@Sendable (MCPApprovalContext) async -> Bool)?
 
+    // MARK: - Skills State
+
+    /// Skill configuration for discovering .aidoctor skills
+    private let skillConfiguration: SkillConfiguration
+
+    /// Skill registry for discovery and activation
+    private let skillRegistry: SkillRegistry
+
+    /// Whether skills have been discovered
+    private var skillsDiscovered: Bool = false
+
+    /// Currently activated skills (skill name -> LoadedSkill)
+    private var activatedSkills: [String: LoadedSkill] = [:]
+
     // MARK: - Reentrancy Protection
 
     /// Queue of pending operations
@@ -197,6 +211,7 @@ public actor AIAgentActor {
         model: any AILanguageModel,
         tools: [AITool.Type] = [],
         mcpServers: [MCPServerConfiguration] = [],
+        skillConfiguration: SkillConfiguration = .default,
         instructions: String? = nil,
         requestOptions: RequestOptions = RequestOptions(),
         stopCondition: StopCondition = .stepCount(20),
@@ -209,6 +224,8 @@ public actor AIAgentActor {
         self.tools = tools
         self.mcpServers = mcpServers
         self.mcpClient = MCPClient()
+        self.skillConfiguration = skillConfiguration
+        self.skillRegistry = SkillRegistry(configuration: skillConfiguration)
         self.instructions = instructions
         self.requestOptions = requestOptions
         self.stopCondition = stopCondition
@@ -336,6 +353,9 @@ public actor AIAgentActor {
         // Discover MCP tools on first execution (lazy initialization)
         try await discoverMCPTools()
 
+        // Discover skills on first execution
+        try await discoverSkills()
+
         let continuation = operation.continuation
 
         // Emit start event
@@ -348,9 +368,10 @@ public actor AIAgentActor {
         // Set up initial message history
         var workingMessages = operation.messages
 
-        // Add system instructions if provided
-        if let instructions = instructions {
-            workingMessages.insert(.system(instructions), at: 0)
+        // Build system prompt with skills metadata
+        let systemPrompt = try await buildSystemPromptWithSkills()
+        if !systemPrompt.isEmpty {
+            workingMessages.insert(.system(systemPrompt), at: 0)
         }
 
         messageHistory = workingMessages
@@ -612,12 +633,16 @@ public actor AIAgentActor {
         // Discover MCP tools on first execution (lazy initialization)
         try await discoverMCPTools()
 
+        // Discover skills on first execution
+        try await discoverSkills()
+
         // Set up initial message history
         var workingMessages = messages
 
-        // Add system instructions if provided
-        if let instructions = instructions {
-            workingMessages.insert(.system(instructions), at: 0)
+        // Build system prompt with skills metadata
+        let systemPrompt = try await buildSystemPromptWithSkills()
+        if !systemPrompt.isEmpty {
+            workingMessages.insert(.system(systemPrompt), at: 0)
         }
 
         messageHistory = workingMessages
@@ -931,6 +956,107 @@ public actor AIAgentActor {
 
         mcpToolSchemas = allTools
         mcpToolsDiscovered = true
+    }
+
+    // MARK: - Skills Discovery
+
+    /// Discover skills from configured search roots.
+    ///
+    /// This method is called lazily on first agent execution. It scans
+    /// `.aidoctor/skills/` and `~/.aidoctor/skills/` for valid skills.
+    private func discoverSkills() async throws {
+        guard !skillsDiscovered, skillConfiguration.enabled else { return }
+
+        let skills = try await skillRegistry.discoverSkills()
+        skillsDiscovered = true
+
+        if !skills.isEmpty {
+            print("[AISDK] Discovered \(skills.count) skills: \(skills.map(\.name).joined(separator: ", "))")
+        }
+    }
+
+    /// Build the system prompt including skills metadata.
+    ///
+    /// Combines base instructions with available skills XML and any
+    /// activated skill bodies.
+    ///
+    /// - Returns: Complete system prompt string
+    private func buildSystemPromptWithSkills() async throws -> String {
+        var prompt = instructions ?? ""
+
+        // Discover skills if not done
+        try await discoverSkills()
+
+        // Add available skills block
+        if skillConfiguration.enabled {
+            let skills = try await skillRegistry.getSkillsMetadata()
+            if !skills.isEmpty {
+                let activatedList = Array(activatedSkills.values)
+                let skillsSection = SkillPromptBuilder.buildSkillsSection(
+                    available: skills,
+                    activated: activatedList,
+                    includeInstructions: true
+                )
+                if !prompt.isEmpty {
+                    prompt += "\n\n"
+                }
+                prompt += skillsSection
+            }
+        }
+
+        return prompt
+    }
+
+    // MARK: - Skill Activation API
+
+    /// Activate a skill by loading its full body content.
+    ///
+    /// When a skill is activated, its instructions are added to the context
+    /// and its scripts/references become available.
+    ///
+    /// - Parameter name: Skill name (without `skill::` prefix)
+    /// - Returns: Loaded skill with body content
+    /// - Throws: `SkillError.skillNotFound` if skill doesn't exist
+    public func activateSkill(named name: String) async throws -> LoadedSkill {
+        let loaded = try await skillRegistry.activateSkill(named: name)
+        activatedSkills[name] = loaded
+        return loaded
+    }
+
+    /// Deactivate a skill.
+    ///
+    /// Removes the skill from active context.
+    ///
+    /// - Parameter name: Skill name
+    public func deactivateSkill(named name: String) async {
+        activatedSkills.removeValue(forKey: name)
+        await skillRegistry.deactivateSkill(named: name)
+    }
+
+    /// Check if a skill is currently activated.
+    ///
+    /// - Parameter name: Skill name
+    /// - Returns: True if the skill is activated
+    public func isSkillActivated(named name: String) async -> Bool {
+        return activatedSkills[name] != nil
+    }
+
+    /// Get all discovered skill names.
+    ///
+    /// - Returns: Array of skill names
+    public func getAvailableSkills() async throws -> [String] {
+        try await skillRegistry.discoverSkillNames()
+    }
+
+    /// Read a resource from an activated skill.
+    ///
+    /// - Parameters:
+    ///   - path: Relative path within the skill
+    ///   - skillName: Name of the skill
+    /// - Returns: File contents
+    /// - Throws: `SkillError` for path traversal or read errors
+    public func readSkillResource(path: String, forSkill skillName: String) async throws -> String {
+        try await skillRegistry.readResource(path: path, forSkill: skillName)
     }
 
     /// Build combined tool schemas from native tools and MCP tools.
