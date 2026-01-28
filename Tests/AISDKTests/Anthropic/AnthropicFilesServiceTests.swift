@@ -32,7 +32,7 @@ final class AnthropicFilesServiceTests: XCTestCase {
                 filename: "test.txt",
                 purpose: .messageAttachment,
                 createdAt: "2025-01-01T00:00:00Z",
-                bytes: 5,
+                sizeBytes: 5,
                 mimeType: "text/plain"
             )
 
@@ -71,7 +71,8 @@ final class AnthropicFilesServiceTests: XCTestCase {
                         filename: "test.txt",
                         purpose: .messageAttachment,
                         createdAt: "2025-01-01T00:00:00Z",
-                        bytes: 5
+                        sizeBytes: 5,
+                        mimeType: "text/plain"
                     )
                 ],
                 hasMore: false
