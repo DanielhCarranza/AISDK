@@ -41,6 +41,8 @@ public actor AnthropicClientAdapter: ProviderClient {
     private let apiKey: String
     private let session: URLSession
     private let anthropicVersion: String
+    private let betaConfiguration: BetaConfiguration
+    private let thinkingBudgetOverride: Int?
 
     // MARK: - State
 
@@ -54,8 +56,13 @@ public actor AnthropicClientAdapter: ProviderClient {
 
     // Known Claude models (Anthropic doesn't have a models endpoint)
     private static let knownModels = [
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-1-20250805",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
+        "claude-3-7-sonnet-20250219",
         "claude-3-5-sonnet-20241022",
         "claude-3-5-sonnet-20240620",
         "claude-3-5-haiku-20241022",
@@ -76,12 +83,16 @@ public actor AnthropicClientAdapter: ProviderClient {
         apiKey: String,
         baseURL: URL? = nil,
         session: URLSession? = nil,
-        anthropicVersion: String? = nil
+        anthropicVersion: String? = nil,
+        betaConfiguration: BetaConfiguration = .none,
+        thinkingBudgetOverride: Int? = nil
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
         self.session = session ?? .shared
         self.anthropicVersion = anthropicVersion ?? Self.defaultAnthropicVersion
+        self.betaConfiguration = betaConfiguration
+        self.thinkingBudgetOverride = thinkingBudgetOverride
     }
 
     // MARK: - Health & Status
@@ -100,7 +111,7 @@ public actor AnthropicClientAdapter: ProviderClient {
             // Anthropic doesn't have a health endpoint, so we try a minimal message
             // Using a simple request to verify API key and connectivity
             let testRequest = ProviderRequest(
-                modelId: "claude-3-haiku-20240307",
+                modelId: "claude-haiku-4-5-20251001",
                 messages: [.user("Hi")],
                 maxTokens: 1,
                 timeout: 10
@@ -233,6 +244,10 @@ public actor AnthropicClientAdapter: ProviderClient {
             httpRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         }
 
+        if let betaHeader = betaConfiguration.headerValue() {
+            httpRequest.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta")
+        }
+
         // Build request body
         let body = try buildRequestBody(from: request, streaming: streaming)
         httpRequest.httpBody = try JSONEncoder().encode(body)
@@ -342,6 +357,14 @@ public actor AnthropicClientAdapter: ProviderClient {
         body.topP = request.topP
         body.stopSequences = request.stop
         body.stream = streaming
+
+        if betaConfiguration.extendedThinking, body.thinking == nil {
+            let proposedBudget = thinkingBudgetOverride ?? max(AnthropicThinkingConfigParam.minimumBudget, body.maxTokens / 4)
+            let maxAllowed = max(AnthropicThinkingConfigParam.minimumBudget, body.maxTokens - 1)
+            if proposedBudget >= AnthropicThinkingConfigParam.minimumBudget, body.maxTokens > AnthropicThinkingConfigParam.minimumBudget {
+                body.thinking = .enabled(budgetTokens: min(proposedBudget, maxAllowed))
+            }
+        }
 
         // Tool choice - handle before tools conversion
         var shouldOmitTools = false
@@ -734,6 +757,7 @@ private struct ACARequestBody: Encodable {
     var stream: Bool?
     var tools: [ACATool]?
     var toolChoice: ACAToolChoice?
+    var thinking: AnthropicThinkingConfigParam?
 
     enum CodingKeys: String, CodingKey {
         case model, messages, system, temperature, stream, tools
@@ -741,6 +765,7 @@ private struct ACARequestBody: Encodable {
         case topP = "top_p"
         case stopSequences = "stop_sequences"
         case toolChoice = "tool_choice"
+        case thinking
     }
 }
 

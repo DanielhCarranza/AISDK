@@ -128,6 +128,26 @@ func validateAPIKeys(for provider: ProviderType) -> Bool {
             return false
         }
         return true
+
+    case .anthropic:
+        guard let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"],
+              !key.isEmpty else {
+            print(ANSIStyles.error("ANTHROPIC_API_KEY not found!"))
+            print("""
+
+            Please set your API key using one of these methods:
+
+            \(ANSIStyles.dim("1. Environment variable:"))
+               export ANTHROPIC_API_KEY=your_key_here
+
+            \(ANSIStyles.dim("2. Create a .env file:"))
+               echo "ANTHROPIC_API_KEY=your_key_here" > .env
+
+            Get your API key at: \(ANSIStyles.cyan("https://console.anthropic.com/"))
+            """)
+            return false
+        }
+        return true
     }
 }
 
@@ -161,7 +181,7 @@ func printUsage() {
         swift run AISDKCLI [OPTIONS]
 
     \(ANSIStyles.bold("OPTIONS:"))
-        --provider <type>     Provider: openrouter (default), litellm, or openai
+        --provider <type>     Provider: openrouter (default), litellm, openai, or anthropic
         --model <id>          Pre-select a model (skip interactive selection)
         --system <prompt>     Set custom system prompt
         --temperature <num>   Temperature (0.0-2.0, default: 0.7)
@@ -172,6 +192,8 @@ func printUsage() {
         --citations           Enable citations (default on)
         --no-citations        Disable citations
         --reliable            Enable reliability/failover layer
+        --thinking [budget]   Enable Anthropic extended thinking (default budget: 10000)
+        --beta <features>     Enable Anthropic beta features (space-separated)
         --help, -h            Show this help
 
     \(ANSIStyles.bold("INTERACTIVE COMMANDS:"))
@@ -196,6 +218,7 @@ func printUsage() {
     \(ANSIStyles.bold("ENVIRONMENT VARIABLES:"))
         OPENROUTER_API_KEY    Required for OpenRouter provider
         OPENAI_API_KEY        Required for OpenAI provider (Responses API testing)
+        ANTHROPIC_API_KEY     Required for Anthropic provider
         LITELLM_BASE_URL      LiteLLM server URL (default: http://localhost:4000)
         LITELLM_API_KEY       Optional API key for LiteLLM
         TAVILY_API_KEY        Required for web_search tool

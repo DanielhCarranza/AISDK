@@ -30,7 +30,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             stream: false // Initially not streaming
         )
         
@@ -59,7 +59,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -93,7 +93,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [calculatorTool]
         )
@@ -119,7 +119,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -146,7 +146,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -209,7 +209,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             tools: [weatherTool]
         )
         
@@ -257,7 +257,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         XCTAssertEqual(basicRequest.maxTokens, 100)
@@ -272,7 +272,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: "You are a helpful assistant."
         )
         
@@ -288,7 +288,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             stopSequences: ["END"],
             temperature: 0.8,
             topK: 50,
@@ -315,7 +315,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         // Verify request is properly configured for streaming
@@ -345,7 +345,7 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.1
         )
         
@@ -362,6 +362,14 @@ final class AnthropicServiceStreamingTests: XCTestCase {
                     print("Streaming text: '\(text)'")
                 case .toolUse(let name, let input):
                     print("Tool use: \(name) with \(input)")
+                case .thinkingDelta(let thinking):
+                    print("Thinking delta: '\(thinking)'")
+                case .thinkingComplete(let block):
+                    print("Thinking complete: '\(block.thinking)'")
+                case .messageDelta:
+                    break
+                case .done:
+                    break
                 }
                 
                 // Limit chunks to prevent infinite loops in tests

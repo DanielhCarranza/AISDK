@@ -94,7 +94,7 @@ public struct AgenticModels {
                                             apiKey: ConfigManager.shared["GOOGLE_GEMINI_API_KEY"])
 
     public static let claude = LLMModel(
-        name: "claude-3-7-sonnet-20250219",
+        name: "claude-sonnet-4-5-20250929",
         modalities: [.text, .vision],
         apiKey: ConfigManager.shared["CLAUDE_API_KEY"],
         mode: .tools

@@ -259,7 +259,7 @@ func testImageURL(provider: LLM, providerName: String) async {
         let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .parts([
                     .text("What do you see in this image? Describe it in detail."),
@@ -295,7 +295,7 @@ func testImageBase64(provider: LLM, providerName: String) async {
         }
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .parts([
                     .text("This is a programmatically generated test image. What colors and shapes do you see?"),
@@ -328,7 +328,7 @@ func testMultipleImages(provider: LLM, providerName: String) async {
         let imageURL2 = "https://media1.popsugar-assets.com/files/thumbor/gFMaLiceRbGWkZUWwl2Xhkft6eU=/0x159:2003x2162/fit-in/2011x2514/filters:format_auto():quality(85):upscale()/2019/08/07/875/n/24155406/9ffb00255d4b2e079b0b23.01360060_.jpg"
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .parts([
                     .text("Compare these two images. What are the similarities and differences?"),
@@ -361,7 +361,7 @@ func testJSONMode(provider: LLM, providerName: String) async {
     
     do {
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("You are a helpful assistant that returns valid JSON.")),
                 .user(content: .text("Create a list of 3 programming languages with their main characteristics. Return as JSON with 'languages' array."))
@@ -408,7 +408,7 @@ func testStructuredOutput(provider: LLM, providerName: String) async {
         }
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return a JSON object with the exact structure: {\"title\": string, \"author\": string, \"year\": number, \"genre\": string}")),
                 .user(content: .text("Recommend a classic science fiction book."))
@@ -556,7 +556,7 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
         
         // Test 1: Product generation using JSON Schema
         let productRequest = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a laptop product with realistic data"))
@@ -582,7 +582,7 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
         
         // Test 2: User generation using JSON Schema with nested object
         let userRequest = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a user profile for a software developer"))
@@ -726,7 +726,7 @@ func testToolWithLLM(provider: LLM, providerName: String) async {
         let tools = [WeatherTool.jsonSchema()]
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .text("What's the weather in Boston? Use fahrenheit."))
             ],
@@ -939,7 +939,7 @@ func testAnthropicGenerateObject(provider: AnthropicProvider) async {
         
         // Test 1: Product generation using JSON Schema
         let productRequest = ChatCompletionRequest(
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a laptop product with realistic data"))
@@ -965,7 +965,7 @@ func testAnthropicGenerateObject(provider: AnthropicProvider) async {
         
         // Test 2: User generation using JSON Schema with nested object
         let userRequest = ChatCompletionRequest(
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a user profile for a software developer"))

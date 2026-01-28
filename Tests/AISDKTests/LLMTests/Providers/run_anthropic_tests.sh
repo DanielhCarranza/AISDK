@@ -68,7 +68,7 @@ show_usage() {
     echo "  ANTHROPIC_API_KEY         Your Anthropic API key"
     echo "  CLAUDE_API_KEY            Alternative API key name"
     echo "  USE_REAL_ANTHROPIC_API    Set to 'true' to enable real API tests"
-    echo "  ANTHROPIC_TEST_MODEL      Override test model (default: claude-3-7-sonnet-20250219)"
+    echo "  ANTHROPIC_TEST_MODEL      Override test model (default: claude-sonnet-4-5-20250929)"
 }
 
 # Parse command line arguments

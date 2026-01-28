@@ -66,6 +66,10 @@ class CLIController {
         // Wire up references
         self.commandHandler.sessionManager = sessionManager
         self.commandHandler.runtimeConfig = runtimeConfig
+        self.commandHandler.provider = options.provider
+        self.commandHandler.onProviderConfigChanged = { [weak self] in
+            self?.refreshProviderClient()
+        }
 
         // Initialize built-in tools
         if runtimeConfig.toolsEnabled {
@@ -129,6 +133,8 @@ class CLIController {
                 return nil
             }
             return client
+        case .anthropic:
+            return createAnthropicClient()
         }
     }
 
@@ -138,6 +144,60 @@ class CLIController {
         }
         // Use OpenAIClientAdapter for direct OpenAI API testing
         return OpenAIClientAdapter(apiKey: apiKey)
+    }
+
+    private func createAnthropicClient() -> (any ProviderClient)? {
+        guard let apiKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !apiKey.isEmpty else {
+            print(ANSIStyles.error("Missing ANTHROPIC_API_KEY"))
+            return nil
+        }
+
+        var betaConfig = BetaConfiguration()
+        for feature in runtimeConfig.betaFeatures {
+            switch feature {
+            case "files-api":
+                betaConfig.filesAPI = true
+            case "context-1m":
+                betaConfig.context1M = true
+            case "skills":
+                betaConfig.skills = true
+            case "mcp-client":
+                betaConfig.mcpClient = true
+            case "interleaved-thinking":
+                betaConfig.interleavedThinking = true
+            case "computer-use":
+                betaConfig.computerUse = true
+            case "code-execution":
+                betaConfig.codeExecution = true
+            case "output-128k":
+                betaConfig.output128k = true
+            case "extended-cache-ttl":
+                betaConfig.extendedCacheTTL = true
+            case "context-management":
+                betaConfig.contextManagement = true
+            case "token-efficient-tools":
+                betaConfig.tokenEfficientTools = true
+            default:
+                print(ANSIStyles.warning("Unknown beta feature: \(feature)"))
+            }
+        }
+
+        if runtimeConfig.thinkingEnabled {
+            betaConfig.extendedThinking = true
+            betaConfig.interleavedThinking = true
+        }
+
+        let thinkingBudget = runtimeConfig.thinkingEnabled ? runtimeConfig.thinkingBudget : nil
+        return AnthropicClientAdapter(
+            apiKey: apiKey,
+            betaConfiguration: betaConfig,
+            thinkingBudgetOverride: thinkingBudget
+        )
+    }
+
+    private func refreshProviderClient() {
+        guard options.provider == .anthropic else { return }
+        client = createClient()
     }
 
     // MARK: - Model Selection
@@ -535,6 +595,9 @@ class CLIController {
             }
         case .openai:
             // OpenAI direct testing - no failover needed
+            break
+        case .anthropic:
+            // Anthropic direct testing - no failover needed
             break
         }
 

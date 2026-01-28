@@ -697,10 +697,10 @@ OpenAIModels.o4Mini        // o4-mini
 OpenAIModels.dalle3        // dall-e-3
 
 // Anthropic Models (10 total)
-AnthropicModels.claudeOpus4      // claude-opus-4-20250514
-AnthropicModels.claudeSonnet4    // claude-sonnet-4-20250514
-AnthropicModels.claude37Sonnet   // claude-3-7-sonnet-20250219
-AnthropicModels.claude35Sonnet   // claude-3-5-sonnet-20241022
+AnthropicModels.opus45           // claude-opus-4-5-20251101
+AnthropicModels.sonnet45         // claude-sonnet-4-5-20250929
+AnthropicModels.haiku45          // claude-haiku-4-5-20251001
+AnthropicModels.opus41           // claude-opus-4-1-20250805
 
 // Gemini Models (42 total)
 GeminiModels.gemini25Pro         // gemini-2.5-pro

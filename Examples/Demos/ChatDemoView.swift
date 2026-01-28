@@ -36,7 +36,7 @@ struct ChatDemoView: View {
         case .openAI:
             return "gpt-4o"
         case .claude:
-            return "claude-3-7-sonnet-20250219"
+            return "claude-sonnet-4-5-20250929"
         }
     }
     
@@ -68,7 +68,7 @@ struct ChatDemoView: View {
                     Button("Send Non-Streaming") {
                         Task {
                             do {
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let req = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -90,7 +90,7 @@ struct ChatDemoView: View {
                         textOutput = ""
                         isStreaming = true
                         Task {
-                            let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                            let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                             let streamReq = ChatCompletionRequest(
                                 model: model,
                                 messages: [
@@ -125,7 +125,7 @@ struct ChatDemoView: View {
                             textOutput = ""
                             do {
                                 // Example 1: Simple URL image
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let urlRequest = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -204,7 +204,7 @@ struct ChatDemoView: View {
                                 // Get the tool schema using the static method
                                 let tools = [WeatherTool.jsonSchema()]
                                 
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let toolRequest = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -255,7 +255,7 @@ struct ChatDemoView: View {
                             textOutput = ""
                             do {
                                 // Simple JSON Object example
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let jsonRequest = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -314,7 +314,7 @@ struct ChatDemoView: View {
                             do {
                                 // Use the withExtendedThinking helper method for Claude
                                 let basicRequest = ChatCompletionRequest(
-                                    model: "claude-3-7-sonnet-20250219",
+                                    model: "claude-sonnet-4-5-20250929",
                                     messages: [
                                         .user(content: .text("Solve this complex problem: Find all positive integer solutions to the equation x² - y² = 2023. Explain your approach."))
                                     ]

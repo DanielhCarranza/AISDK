@@ -46,10 +46,12 @@ class ModelSelector {
 
     // Popular models to show first (known good ones)
     private static let popularModels: [ModelInfo] = [
-        ModelInfo(id: "anthropic/claude-3-5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic",
+        ModelInfo(id: "anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "Anthropic",
                   contextWindow: 200000, pricing: "$$", capabilities: ["reasoning", "coding", "tools"]),
-        ModelInfo(id: "anthropic/claude-3-opus", name: "Claude 3 Opus", provider: "Anthropic",
+        ModelInfo(id: "anthropic/claude-opus-4-5", name: "Claude Opus 4.5", provider: "Anthropic",
                   contextWindow: 200000, pricing: "$$$", capabilities: ["reasoning", "coding", "tools"]),
+        ModelInfo(id: "anthropic/claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "Anthropic",
+                  contextWindow: 200000, pricing: "$", capabilities: ["fast", "tools"]),
         ModelInfo(id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI",
                   contextWindow: 128000, pricing: "$$", capabilities: ["vision", "tools", "coding"]),
         ModelInfo(id: "openai/o1-preview", name: "O1 Preview", provider: "OpenAI",

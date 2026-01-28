@@ -90,7 +90,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                 ))
             ],
             id: "msg_test123",
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             role: "assistant",
             stopReason: "tool_use",
             stopSequence: nil,
@@ -111,7 +111,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [weatherTool]
         )
@@ -162,7 +162,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                         role: .user
                     )
                 ],
-                model: "claude-3-7-sonnet-20250219",
+                model: "claude-sonnet-4-5-20250929",
                 toolChoice: toolChoice,
                 tools: tools
             )
@@ -191,7 +191,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [weatherTool]
         )
@@ -240,7 +240,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [calculatorTool]
         )
@@ -296,7 +296,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: tools
         )
@@ -338,7 +338,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .any,
             tools: [weatherTool]
         )
@@ -380,7 +380,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .tool(name: "calculator"),
             tools: tools
         )
@@ -424,7 +424,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [weatherTool]
         )
@@ -445,6 +445,14 @@ final class AnthropicServiceToolsTests: XCTestCase {
             case .toolUse(let name, let input):
                 toolUseChunks.append((name, input))
                 print("Tool use chunk: \(name) with \(input)")
+            case .thinkingDelta(let thinking):
+                print("Thinking delta: '\(thinking)'")
+            case .thinkingComplete(let block):
+                print("Thinking complete: '\(block.thinking)'")
+            case .messageDelta:
+                break
+            case .done:
+                break
             }
             
             // Limit chunks to prevent infinite loops
@@ -491,7 +499,7 @@ final class AnthropicServiceToolsTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: "You are a helpful travel assistant. Use tools when appropriate to help users.",
             toolChoice: .auto,
             tools: tools
@@ -517,6 +525,10 @@ final class AnthropicServiceToolsTests: XCTestCase {
                 print("MCP Tool used: \(mcpToolUse.name) from \(mcpToolUse.serverName)")
             case .mcpToolResult(let mcpToolResult):
                 print("MCP Tool result: \(mcpToolResult.allTextContent)")
+            case .thinking(let thinking):
+                print("Thinking: \(thinking.thinking)")
+            case .redactedThinking(let redacted):
+                print("Redacted thinking: \(redacted.data)")
             }
         }
         
@@ -648,7 +660,10 @@ public class MockAnthropicService {
     
     // MARK: - Mock Methods
     
-    public func messageRequest(body: AnthropicMessageRequestBody) async throws -> AnthropicMessageResponseBody {
+    public func messageRequest(
+        body: AnthropicMessageRequestBody,
+        betaOverride: AnthropicService.BetaConfiguration? = nil
+    ) async throws -> AnthropicMessageResponseBody {
         lastRequest = body
         lastRequestBody = body
         requestCount += 1
@@ -663,7 +678,10 @@ public class MockAnthropicService {
         return mockResponse ?? createDefaultResponse(for: body)
     }
     
-    public func streamingMessageRequest(body: AnthropicMessageRequestBody) -> AsyncThrowingStream<AnthropicMessageStreamingChunk, Error> {
+    public func streamingMessageRequest(
+        body: AnthropicMessageRequestBody,
+        betaOverride: AnthropicService.BetaConfiguration? = nil
+    ) -> AsyncThrowingStream<AnthropicMessageStreamingChunk, Error> {
         lastRequest = body
         requestCount += 1
         
@@ -741,6 +759,10 @@ public class MockAnthropicService {
             throw LLMError.parsingError("Received MCP tool use response when expecting structured data")
         case .mcpToolResult(_):
             throw LLMError.parsingError("Received MCP tool result response when expecting structured data")
+        case .thinking(_):
+            throw LLMError.parsingError("Received thinking response when expecting structured data")
+        case .redactedThinking(_):
+            throw LLMError.parsingError("Received redacted thinking response when expecting structured data")
         }
         
         guard let jsonData = contentText.data(using: .utf8) else {
