@@ -15,25 +15,35 @@ This specification defines how AISDK agents handle **sessions** (conversation st
 
 1. **Session = Complete Conversation State**: Messages, tool calls, steps, metadata, checkpoints—everything in one place
 2. **Protocol-First Design**: `SessionStore` protocol with pluggable adapters (InMemory, FileSystem, SQLite, Firebase)
-3. **Fine-Grained Persistence**: Save after each event for crash recovery (like Claude Code)
-4. **Auto-Compaction**: Summarize/compress at ~90% context window to enable long-running sessions
-5. **Multi-Agent Ready**: Sessions support multiple agents with attribution and handoffs
+3. **Agent API Unchanged**: The agent's `streamExecute(messages:)` stays pure—session management is a ViewModel concern
+4. **Fine-Grained Persistence**: Save after each event for crash recovery (like Claude Code)
+5. **Auto-Compaction**: Summarize/compress at ~90% context window to enable long-running sessions
+6. **Multi-Agent Ready**: Sessions support multiple agents with attribution and handoffs
+7. **SwiftUI-First**: `ChatViewModel` provides `@Observable` state for real-time UI updates
 
 ### Target Developer Experience
 
 ```swift
-// Create a session
-let store = InMemorySessionStore()
-let session = try await Session.create(userId: "user_123", store: store)
-
-// Use with agent
+// Setup
+let store = SQLiteSessionStore(path: "conversations.db")
 let agent = AIAgentActor(model: model, tools: [SearchTool.self])
-for try await event in agent.streamExecute(messages: [.user("Hello")], session: session) {
-    // Events auto-persist to session
+let session = Session(userId: "user_123")
+
+// Use via ViewModel (recommended for SwiftUI)
+let viewModel = ChatViewModel(session: session, agent: agent, store: store)
+await viewModel.send([.text("Hello")])  // Session auto-persists
+
+// Or use agent directly (agent API unchanged)
+session.messages.append(.user("Hello"))
+for try await event in agent.streamExecute(messages: session.messages) {
+    // Handle events, update session manually
 }
+try await store.save(session)
 
 // Resume later
-let resumedSession = try await Session.load(id: session.id, store: store)
+if let resumedSession = try await store.load(id: session.id) {
+    let viewModel = ChatViewModel(session: resumedSession, agent: agent, store: store)
+}
 ```
 
 ---
@@ -99,7 +109,7 @@ let resumedSession = try await Session.load(id: session.id, store: store)
 /// - Metadata (title, tags, timestamps)
 /// - Checkpoint information for resume/rewind
 /// - Agent attribution for multi-agent scenarios
-public struct Session: Codable, Sendable, Identifiable {
+public struct Session: Codable, Sendable, Identifiable, Hashable, Equatable {
     // MARK: - Identity
     
     /// Unique identifier for this session
@@ -170,6 +180,42 @@ public struct Session: Codable, Sendable, Identifiable {
         self.isLastMessageComplete = true
         self.tags = nil
     }
+    
+    // MARK: - Hashable (uses id only for identity)
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    public static func == (lhs: Session, rhs: Session) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+// MARK: - Factory Methods
+
+extension Session {
+    /// Create and persist a new session
+    public static func create(
+        userId: String,
+        store: SessionStore,
+        agentId: String? = nil,
+        title: String? = nil,
+        metadata: [String: String]? = nil
+    ) async throws -> Session {
+        let session = Session(
+            userId: userId,
+            agentId: agentId,
+            title: title,
+            metadata: metadata
+        )
+        return try await store.create(session)
+    }
+    
+    /// Load an existing session
+    public static func load(id: String, store: SessionStore) async throws -> Session? {
+        try await store.load(id: id)
+    }
 }
 ```
 
@@ -195,23 +241,30 @@ public enum SessionStatus: String, Codable, Sendable {
 }
 ```
 
-### 3.3 AIMessage Extensions for Sessions
+### 3.3 AIMessage Session Properties
 
 Tool calls, tool results, and reasoning are stored as part of the message stream (not separately). This aligns with how LLMs work: user → assistant (with tool_calls) → tool (result) → assistant (final).
 
+**Implementation Note:** These properties must be added directly to the `AIMessage` struct (Swift extensions cannot add stored properties). Add to `Sources/AISDK/Models/AIMessage.swift`:
+
 ```swift
-extension AIMessage {
+// Add these properties to AIMessage struct directly:
+public struct AIMessage: Codable, Sendable {
+    // ... existing properties ...
+    
+    // MARK: - Session Properties
+    
     /// Agent that produced this message (for multi-agent sessions)
-    public var agentId: String? { get set }
+    public var agentId: String?
     
     /// Agent name for display
-    public var agentName: String? { get set }
+    public var agentName: String?
     
     /// Whether this message represents a checkpoint
-    public var isCheckpoint: Bool { get set }
+    public var isCheckpoint: Bool = false
     
     /// Checkpoint index (if this is a checkpoint)
-    public var checkpointIndex: Int? { get set }
+    public var checkpointIndex: Int?
 }
 ```
 
@@ -224,7 +277,7 @@ Checkpoints are created on:
 
 ```swift
 /// Represents a restorable point in the conversation
-public struct SessionCheckpoint: Codable, Sendable {
+public struct SessionCheckpoint: Codable, Sendable, Hashable {
     /// Index of this checkpoint
     public let index: Int
     
@@ -358,7 +411,7 @@ public struct SessionListResult: Codable, Sendable {
 }
 
 /// Lightweight session summary for listing
-public struct SessionSummary: Codable, Sendable, Identifiable {
+public struct SessionSummary: Codable, Sendable, Identifiable, Hashable {
     public let id: String
     public let userId: String
     public let title: String?
@@ -390,7 +443,7 @@ public enum SessionStoreError: Error, Sendable {
     case alreadyExists(sessionId: String)
     
     /// Storage backend unavailable
-    case unavailable(underlying: Error)
+    case unavailable(reason: String)
     
     /// Invalid session data (decode error)
     case invalidData(reason: String)
@@ -714,74 +767,244 @@ extension Session {
 
 ## 8. Agent Integration
 
-### 8.1 Session-Aware Agent Execution
+### 8.1 Architecture Decision: ViewModel-Managed Sessions
+
+**The agent API remains unchanged.** Session management is handled by the ViewModel layer, not the agent. This provides:
+
+- **Clean separation**: Agent is stateless regarding sessions
+- **Full control**: ViewModel decides when/how to persist
+- **SwiftUI optimized**: Single observable source of truth
+- **Testable**: Agent and session logic can be tested independently
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        SwiftUI View                         │
+│                    observes viewModel                       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     ChatViewModel                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   Session   │  │    Agent    │  │   SessionStore      │ │
+│  │  (messages) │  │ (stateless) │  │ (background persist)│ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Reference Implementation: ChatViewModel
 
 ```swift
-extension AIAgentActor {
-    /// Execute with session persistence
-    ///
-    /// Messages are automatically loaded from and saved to the session.
-    /// Checkpoints are created on user messages, tool completions, and assistant responses.
-    ///
-    /// - Parameters:
-    ///   - userMessage: New user message to add
-    ///   - session: Session for persistence
-    ///   - store: Storage backend
-    /// - Returns: Updated session with new messages
-    public func execute(
-        userMessage: AIMessage,
-        session: inout Session,
-        store: SessionStore
-    ) async throws -> AIAgentResult {
-        // Add user message and create checkpoint
+import SwiftUI
+
+/// ViewModel for session-based chat with an AI agent.
+///
+/// Handles:
+/// - Session state as single source of truth
+/// - Agent execution with existing `streamExecute(messages:)` API
+/// - Background persistence (non-blocking)
+/// - Real-time SwiftUI updates
+@Observable
+final class ChatViewModel {
+    // MARK: - State
+    
+    private(set) var session: Session
+    private(set) var isStreaming = false
+    private(set) var error: Error?
+    
+    // MARK: - Dependencies
+    
+    private let agent: AIAgentActor
+    private let store: SessionStore
+    private let titleGenerator: SessionTitleGenerator?
+    private let persistenceBuffer: StreamingPersistenceBuffer
+    
+    // MARK: - Computed Properties
+    
+    var messages: [AIMessage] { session.messages }
+    var title: String? { session.title }
+    
+    // MARK: - Initialization
+    
+    init(
+        session: Session,
+        agent: AIAgentActor,
+        store: SessionStore,
+        titleGenerator: SessionTitleGenerator? = nil
+    ) {
+        self.session = session
+        self.agent = agent
+        self.store = store
+        self.titleGenerator = titleGenerator
+        self.persistenceBuffer = StreamingPersistenceBuffer(
+            store: store,
+            sessionId: session.id
+        )
+    }
+    
+    // MARK: - Actions
+    
+    /// Send a message and stream the agent's response.
+    @MainActor
+    func send(_ content: [AIContentPart]) async {
+        guard !isStreaming else { return }
+        
+        // 1. Add user message to session (UI updates immediately)
+        let userMessage = AIMessage.user(content)
         session.messages.append(userMessage)
         session.lastActivityAt = Date()
         session.lastCheckpointIndex = session.messages.count - 1
-        try await store.appendMessage(userMessage, toSession: session.id)
         
-        // Execute agent with session messages
-        let result = try await execute(messages: session.messages)
-        
-        // Append result messages to session
-        for message in result.messages.dropFirst(session.messages.count) {
-            session.messages.append(message)
-            try await store.appendMessage(message, toSession: session.id)
+        // 2. Persist user message (background, non-blocking)
+        persistInBackground { store, session in
+            try await store.appendMessage(userMessage, toSession: session.id)
         }
         
-        session.isLastMessageComplete = true
-        try await store.save(session)
+        // 3. Generate title if first user message
+        if session.title == nil, let generator = titleGenerator {
+            Task {
+                if let title = try? await generator.generateTitle(for: session) {
+                    await MainActor.run { session.title = title }
+                    persistInBackground { store, session in
+                        try await store.updateMetadata(
+                            SessionMetadataUpdate(title: title),
+                            forSession: session.id
+                        )
+                    }
+                }
+            }
+        }
         
-        return result
+        // 4. Stream agent response
+        isStreaming = true
+        session.isLastMessageComplete = false
+        error = nil
+        
+        do {
+            // Agent API unchanged: just pass messages
+            for try await event in agent.streamExecute(messages: session.messages) {
+                await handleStreamEvent(event)
+            }
+            
+            // Mark complete and final save
+            session.isLastMessageComplete = true
+            session.lastCheckpointIndex = session.messages.count - 1
+            await persistenceBuffer.flush()
+            try await store.save(session)
+            
+        } catch {
+            self.error = error
+            session.status = .error
+            try? await store.save(session)
+        }
+        
+        isStreaming = false
     }
     
-    /// Stream execute with session persistence
-    ///
-    /// Events are persisted incrementally as they arrive.
-    /// Partial responses are marked incomplete until finished.
-    public func streamExecute(
-        userMessage: AIMessage,
-        session: inout Session,
-        store: SessionStore
-    ) -> AsyncThrowingStream<AIStreamEvent, Error> {
-        // Implementation with incremental persistence
+    /// Resume an incomplete session.
+    @MainActor
+    func resume() async {
+        guard !session.isLastMessageComplete else { return }
+        
+        // Remove incomplete message
+        if let last = session.messages.last, last.role == .assistant {
+            session.messages.removeLast()
+        }
+        
+        // Re-run from last checkpoint
+        if let lastUserMessage = session.messages.last(where: { $0.role == .user }) {
+            // Agent will continue from current message state
+            isStreaming = true
+            do {
+                for try await event in agent.streamExecute(messages: session.messages) {
+                    await handleStreamEvent(event)
+                }
+                session.isLastMessageComplete = true
+                try await store.save(session)
+            } catch {
+                self.error = error
+            }
+            isStreaming = false
+        }
+    }
+    
+    /// Rewind to a specific checkpoint.
+    @MainActor
+    func rewind(to checkpointIndex: Int) async throws {
+        session.rewind(to: checkpointIndex)
+        try await store.save(session)
+    }
+    
+    // MARK: - Private
+    
+    @MainActor
+    private func handleStreamEvent(_ event: AIStreamEvent) async {
+        switch event {
+        case .messageStart:
+            // Add placeholder assistant message
+            session.messages.append(.assistant(""))
+            
+        case .textDelta(let delta):
+            // Update last message in place
+            guard var last = session.messages.last, last.role == .assistant else { return }
+            last.appendText(delta)
+            session.messages[session.messages.count - 1] = last
+            
+            // Debounced background persist
+            await persistenceBuffer.bufferDelta(last)
+            
+        case .toolCallStart(let toolCall):
+            // Add tool call to assistant message
+            guard var last = session.messages.last, last.role == .assistant else { return }
+            var calls = last.toolCalls ?? []
+            calls.append(toolCall)
+            last.toolCalls = calls
+            session.messages[session.messages.count - 1] = last
+            
+        case .toolCallDelta(let callId, let delta):
+            // Update tool call arguments
+            guard var last = session.messages.last,
+                  var calls = last.toolCalls,
+                  let index = calls.firstIndex(where: { $0.id == callId }) else { return }
+            calls[index].arguments += delta
+            last.toolCalls = calls
+            session.messages[session.messages.count - 1] = last
+            
+        case .toolResult(let result):
+            // Add tool result as separate message
+            let toolMessage = AIMessage.tool(result.content, toolCallId: result.callId)
+            session.messages.append(toolMessage)
+            session.lastCheckpointIndex = session.messages.count - 1
+            
+            // Persist checkpoint
+            persistInBackground { store, session in
+                try await store.appendMessage(toolMessage, toSession: session.id)
+            }
+            
+        case .stepComplete:
+            // Checkpoint on step completion
+            session.lastCheckpointIndex = session.messages.count - 1
+            await persistenceBuffer.flush()
+            
+        case .finish:
+            break
+            
+        default:
+            break
+        }
+    }
+    
+    private func persistInBackground(_ operation: @escaping (SessionStore, Session) async throws -> Void) {
+        let store = self.store
+        let session = self.session
+        Task.detached {
+            try? await operation(store, session)
+        }
     }
 }
 ```
 
-### 8.2 Auto-Save Behavior
-
-The agent automatically saves after each significant event:
-
-| Event | Persistence Action |
-|-------|-------------------|
-| User message received | `appendMessage()` + create checkpoint |
-| Tool call started | `appendMessage()` (assistant with tool_calls) |
-| Tool result received | `appendMessage()` (tool result) + create checkpoint |
-| Text delta (streaming) | `updateLastMessage()` (debounced, every 500ms) |
-| Assistant complete | `appendMessage()` + create checkpoint + mark complete |
-| Error occurred | `updateStatus(.error)` |
-
-### 8.3 Streaming Delta Persistence
+### 8.3 Streaming Persistence Buffer
 
 Text deltas are debounced to reduce I/O overhead while still preserving progress:
 
@@ -793,25 +1016,31 @@ actor StreamingPersistenceBuffer {
     private let debounceInterval: Duration = .milliseconds(500)
     
     private var pendingMessage: AIMessage?
-    private var debounceTask: Task<Void, Never>?
+    private var flushTask: Task<Void, Never>?
+    
+    init(store: SessionStore, sessionId: String) {
+        self.store = store
+        self.sessionId = sessionId
+    }
     
     /// Buffer a streaming delta for persistence
     func bufferDelta(_ message: AIMessage) async {
         pendingMessage = message
         
-        // Cancel existing debounce
-        debounceTask?.cancel()
-        
-        // Schedule new flush
-        debounceTask = Task {
-            try? await Task.sleep(for: debounceInterval)
-            guard !Task.isCancelled else { return }
-            await flush()
+        // Only create task if none pending
+        if flushTask == nil {
+            flushTask = Task {
+                try? await Task.sleep(for: debounceInterval)
+                await flush()
+            }
         }
     }
     
     /// Immediately persist pending message
     func flush() async {
+        flushTask?.cancel()
+        flushTask = nil
+        
         guard let message = pendingMessage else { return }
         pendingMessage = nil
         try? await store.updateLastMessage(message, inSession: sessionId)
@@ -824,7 +1053,21 @@ This ensures:
 - No data loss on normal completion (final flush)
 - Recoverable progress on crash (up to 500ms of text lost)
 
-### 8.3 Resume from Checkpoint
+### 8.4 Auto-Save Behavior
+
+The ViewModel saves after each significant event:
+
+| Event | Persistence Action |
+|-------|-------------------|
+| User message added | `appendMessage()` + create checkpoint |
+| Tool call started | Updated in-memory (assistant message) |
+| Tool result received | `appendMessage()` (tool result) + create checkpoint |
+| Text delta (streaming) | `updateLastMessage()` (debounced, every 500ms) |
+| Step complete | Flush buffer + checkpoint |
+| Stream finish | `save()` full session + mark complete |
+| Error occurred | `save()` with status = `.error` |
+
+### 8.5 Resume from Checkpoint
 
 ```swift
 extension Session {
@@ -909,10 +1152,14 @@ extension Session {
     /// Fork this session for a handoff
     /// - Returns: New session with copied messages and new ID
     public func fork() -> Session {
-        var forked = self
-        forked.id = UUID().uuidString
-        forked.createdAt = Date()
-        return forked
+        Session(
+            id: UUID().uuidString,
+            userId: userId,
+            agentId: agentId,
+            title: title.map { "\($0) (fork)" },
+            messages: messages,
+            metadata: metadata
+        )
     }
 }
 ```
@@ -961,8 +1208,9 @@ Storage errors propagate to the caller (fail loudly):
 // Errors are thrown, not swallowed
 do {
     try await store.save(session)
-} catch SessionStoreError.unavailable(let underlying) {
+} catch SessionStoreError.unavailable(let reason) {
     // Handle network/database error
+    logger.error("Storage unavailable: \(reason)")
     // Option: Fall back to in-memory, warn user
 } catch SessionStoreError.invalidData(let reason) {
     // Handle corruption - this is serious
@@ -1036,12 +1284,20 @@ func load(id: String) async throws -> Session? {
 | `SQLiteSessionStore` | Mobile apps, desktop apps |
 | `FirebaseSessionStore` | Cloud sync, multi-device |
 
-### 11.4 Services
+### 11.4 ViewModels
+
+| ViewModel | Description |
+|-----------|-------------|
+| `ChatViewModel` | SwiftUI-ready session management with streaming |
+| `SessionListViewModel` | Session listing and management |
+
+### 11.5 Services
 
 | Service | Description |
 |---------|-------------|
 | `SessionCompactionService` | Context window management |
 | `DefaultTitleGenerator` | LLM-based title generation |
+| `StreamingPersistenceBuffer` | Debounced streaming persistence |
 
 ---
 
@@ -1077,18 +1333,20 @@ func load(id: String) async throws -> Session? {
    - [ ] Implement queries with indexes
    - [ ] Add tests
 
-### Phase 3: Agent Integration (Week 3-4)
+### Phase 3: ViewModel & Agent Integration (Week 3-4)
 
-6. **AIAgentActor Extensions**
-   - [ ] Add `execute(session:store:)` method
-   - [ ] Add `streamExecute(session:store:)` method
-   - [ ] Implement auto-save behavior
-   - [ ] Implement checkpointing
+6. **ChatViewModel Reference Implementation**
+   - [ ] Implement `ChatViewModel` with `@Observable`
+   - [ ] Implement `send(_:)` with streaming
+   - [ ] Implement `StreamingPersistenceBuffer` for debounced saves
+   - [ ] Implement event handling (`handleStreamEvent`)
+   - [ ] Add checkpointing on user message, tool result, step complete
 
 7. **Resume/Rewind**
    - [ ] Implement `Session.rewind(to:)`
    - [ ] Implement `Session.messagesAtCheckpoint(_:)`
-   - [ ] Add retry logic for incomplete responses
+   - [ ] Implement `ChatViewModel.resume()` for incomplete sessions
+   - [ ] Implement `ChatViewModel.retryLastTurn()`
 
 ### Phase 4: Context Management (Week 4-5)
 
@@ -1193,14 +1451,19 @@ manager.sendMessage("Hello")
 After:
 ```swift
 let store = FirebaseSessionStore()
-var session = try await Session.create(userId: userId, store: store)
-let agent = AIAgentActor(model: model, tools: tools)
+let session = Session(userId: userId)
+_ = try await store.create(session)
 
-let result = try await agent.execute(
-    userMessage: .user("Hello"),
-    session: &session,
-    store: store
+let agent = AIAgentActor(model: model, tools: tools)
+let viewModel = ChatViewModel(
+    session: session,
+    agent: agent,
+    store: store,
+    titleGenerator: DefaultTitleGenerator(model: model)
 )
+
+// Send message (handles streaming, persistence, title generation)
+await viewModel.send([.text("Hello")])
 ```
 
 ---
@@ -1230,17 +1493,18 @@ extension Session {
         md += "---\n\n"
         
         for message in messages {
+            let text = message.textContent ?? ""
             switch message.role {
             case .user:
-                md += "## User\n\n\(message.content)\n\n"
+                md += "## User\n\n\(text)\n\n"
             case .assistant:
                 let agent = message.agentName ?? "Assistant"
-                md += "## \(agent)\n\n\(message.content)\n\n"
+                md += "## \(agent)\n\n\(text)\n\n"
             case .tool:
                 md += "> **Tool Result** (\(message.toolCallId ?? "unknown"))\n>\n"
-                md += "> \(message.content)\n\n"
+                md += "> \(text)\n\n"
             case .system:
-                md += "*System: \(message.content.prefix(100))...*\n\n"
+                md += "*System: \(text.prefix(100))...*\n\n"
             }
         }
         
@@ -1460,6 +1724,16 @@ public actor MockSessionStore: SessionStore {
     
     // MARK: - Test Helpers
     
+    /// Set a session directly (for test setup)
+    public func setSession(_ session: Session) {
+        sessions[session.id] = session
+    }
+    
+    /// Set the next error to throw
+    public func setNextError(_ error: Error) {
+        nextError = error
+    }
+    
     /// Reset all recorded operations
     public func reset() {
         createCalls = []
@@ -1530,11 +1804,11 @@ public enum SessionTestHelpers {
    - Option A: Version field + migration on load
    - Option B: Backwards-compatible additions only
    
-2. **Offline-first for Firebase**: Should we add local caching layer?
+2. **Offline-first for Firebase**: Should we add local caching layer? -ANSWER: YES!!!
    - Firebase has built-in offline support
    - May need custom handling for long offline periods
 
-3. **Encryption at rest**: Should we provide `EncryptedSessionStore` wrapper?
+3. **Encryption at rest**: Should we provide `EncryptedSessionStore` wrapper? NO
    - OpenAI SDK has this
    - Could be a separate package
 
@@ -1548,108 +1822,261 @@ public enum SessionTestHelpers {
 
 ## 18. Appendix: Usage Examples
 
-### A. Basic Session Usage
+### A. Basic SwiftUI Chat App
 
 ```swift
-// Create store and session
-let store = SQLiteSessionStore(path: "conversations.db")
-let session = try await Session.create(userId: "user_123", store: store)
+import SwiftUI
 
-// Create agent
-let agent = AIAgentActor(
-    model: OpenRouterClient(modelId: "anthropic/claude-3.5-sonnet"),
-    tools: [SearchTool.self]
-)
+// MARK: - App Setup
 
-// Execute with session
-var mutableSession = session
-let result = try await agent.execute(
-    userMessage: .user("What's the weather in Tokyo?"),
-    session: &mutableSession,
-    store: store
-)
+@main
+struct ChatApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
 
-print(result.text)
-// Session auto-saved with all messages
-```
+struct ContentView: View {
+    @State private var viewModel: ChatViewModel?
+    
+    var body: some View {
+        Group {
+            if let viewModel = viewModel {
+                ChatView(viewModel: viewModel)
+            } else {
+                ProgressView("Loading...")
+            }
+        }
+        .task {
+            await setupChat()
+        }
+    }
+    
+    private func setupChat() async {
+        let store = SQLiteSessionStore(path: "conversations.db")
+        let agent = AIAgentActor(
+            model: OpenRouterClient(modelId: "anthropic/claude-3.5-sonnet"),
+            tools: [SearchTool.self]
+        )
+        
+        // Create or load session
+        let session = try? await store.load(id: "current") 
+            ?? Session(id: "current", userId: "user_123")
+        
+        viewModel = ChatViewModel(
+            session: session,
+            agent: agent,
+            store: store,
+            titleGenerator: DefaultTitleGenerator(model: agent.model)
+        )
+    }
+}
 
-### B. Streaming with Session
+// MARK: - Chat View
 
-```swift
-var session = try await Session.load(id: sessionId, store: store)!
-
-for try await event in agent.streamExecute(
-    userMessage: .user("Tell me a story"),
-    session: &session,
-    store: store
-) {
-    switch event {
-    case .textDelta(let text):
-        print(text, terminator: "")
-    case .stepFinish(let index, let result):
-        // Checkpoint created
-        print("\n[Step \(index) complete]")
-    case .finish:
-        print("\n[Done]")
-    default:
-        break
+struct ChatView: View {
+    @Bindable var viewModel: ChatViewModel
+    @State private var inputText = ""
+    
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(viewModel.messages, id: \.id) { message in
+                            MessageBubble(message: message)
+                                .id(message.id)
+                        }
+                    }
+                    .padding()
+                }
+                .onChange(of: viewModel.messages.count) {
+                    withAnimation {
+                        proxy.scrollTo(viewModel.messages.last?.id)
+                    }
+                }
+            }
+            .navigationTitle(viewModel.title ?? "New Chat")
+            .safeAreaInset(edge: .bottom) {
+                InputBar(
+                    text: $inputText,
+                    isLoading: viewModel.isStreaming
+                ) {
+                    Task {
+                        await viewModel.send([.text(inputText)])
+                    }
+                    inputText = ""
+                }
+            }
+        }
     }
 }
 ```
 
-### C. Resume from Checkpoint
+### B. Session List & Management
 
 ```swift
-// Load session
-var session = try await Session.load(id: sessionId, store: store)!
-
-// Check if last message was incomplete
-if !session.isLastMessageComplete {
-    // Remove incomplete message and retry
-    session.messages.removeLast()
-    session.isLastMessageComplete = true
-    try await store.save(session)
+@Observable
+final class SessionListViewModel {
+    private(set) var sessions: [SessionSummary] = []
+    private let store: SessionStore
+    private let userId: String
+    
+    init(store: SessionStore, userId: String) {
+        self.store = store
+        self.userId = userId
+    }
+    
+    func load() async {
+        let result = try? await store.list(
+            userId: userId,
+            status: nil,
+            limit: 50,
+            cursor: nil,
+            orderBy: .lastActivityAtDesc
+        )
+        sessions = result?.sessions ?? []
+    }
+    
+    func createNew() async -> Session {
+        let session = Session(userId: userId)
+        _ = try? await store.create(session)
+        await load()
+        return session
+    }
+    
+    func delete(_ sessionId: String) async {
+        try? await store.delete(id: sessionId)
+        await load()
+    }
 }
 
-// Continue conversation
-let result = try await agent.execute(
-    userMessage: .user("Please continue"),
-    session: &session,
-    store: store
-)
+struct SessionListView: View {
+    @Bindable var viewModel: SessionListViewModel
+    var onSelect: (String) -> Void
+    
+    var body: some View {
+        List {
+            ForEach(viewModel.sessions, id: \.id) { session in
+                Button {
+                    onSelect(session.id)
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(session.title ?? "Untitled")
+                            .font(.headline)
+                        Text(session.lastActivityAt.formatted())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .onDelete { indexSet in
+                for index in indexSet {
+                    let id = viewModel.sessions[index].id
+                    Task { await viewModel.delete(id) }
+                }
+            }
+        }
+        .task { await viewModel.load() }
+    }
+}
 ```
 
-### D. Multi-Agent Handoff
+### C. Resume Incomplete Session
 
 ```swift
-let triageAgent = AIAgentActor(
-    model: model,
-    tools: [TransferToSalesAgent.self, TransferToSupportAgent.self],
-    instructions: "Triage customer requests"
-)
+extension ChatViewModel {
+    /// Check and handle incomplete session on load
+    @MainActor
+    func handleIncompleteSessionOnLoad() async {
+        guard !session.isLastMessageComplete else { return }
+        
+        // Show user options
+        // Option 1: Resume (continue from where it stopped)
+        // Option 2: Retry (remove incomplete message, re-run)
+        // Option 3: Discard (remove incomplete message, wait for user)
+    }
+    
+    /// Retry the last incomplete turn
+    @MainActor
+    func retryLastTurn() async {
+        guard !session.isLastMessageComplete,
+              let lastAssistant = session.messages.lastIndex(where: { $0.role == .assistant }) else {
+            return
+        }
+        
+        // Remove incomplete assistant message
+        session.messages.remove(at: lastAssistant)
+        session.isLastMessageComplete = true
+        
+        // Find the last user message
+        guard let lastUser = session.messages.last(where: { $0.role == .user }) else { return }
+        
+        // Re-run from that point
+        isStreaming = true
+        do {
+            for try await event in agent.streamExecute(messages: session.messages) {
+                await handleStreamEvent(event)
+            }
+            session.isLastMessageComplete = true
+            try await store.save(session)
+        } catch {
+            self.error = error
+        }
+        isStreaming = false
+    }
+}
+```
 
-let salesAgent = AIAgentActor(
-    model: model,
-    tools: [PlaceOrder.self],
-    instructions: "Help with purchases"
-)
+### D. Multi-Agent Chat (Handoffs)
 
-// Start with triage
-var session = try await Session.create(userId: userId, store: store)
-let result = try await triageAgent.execute(
-    userMessage: .user("I want to buy something"),
-    session: &session,
-    store: store
-)
-
-// Check for handoff
-if let handoff = result.handoff {
-    // Continue with sales agent (shared session)
-    let salesResult = try await handoff.targetAgent.execute(
-        userMessage: .user("What do you recommend?"),
-        session: &session,
-        store: store
-    )
+```swift
+@Observable
+final class MultiAgentChatViewModel {
+    private(set) var session: Session
+    private(set) var activeAgent: AIAgentActor
+    private(set) var isStreaming = false
+    
+    private let agents: [String: AIAgentActor]
+    private let store: SessionStore
+    
+    init(session: Session, agents: [String: AIAgentActor], store: SessionStore) {
+        self.session = session
+        self.agents = agents
+        self.activeAgent = agents["triage"]!
+        self.store = store
+    }
+    
+    @MainActor
+    func send(_ content: [AIContentPart]) async {
+        session.messages.append(.user(content))
+        isStreaming = true
+        
+        do {
+            for try await event in activeAgent.streamExecute(messages: session.messages) {
+                switch event {
+                case .handoff(let handoff):
+                    // Switch to new agent
+                    if let newAgent = agents[handoff.targetAgentId] {
+                        activeAgent = newAgent
+                        // Add handoff message for context
+                        if let summary = handoff.summary {
+                            session.messages.append(.system("Handoff: \(summary)"))
+                        }
+                    }
+                default:
+                    await handleStreamEvent(event)
+                }
+            }
+            try await store.save(session)
+        } catch {
+            // Handle error
+        }
+        
+        isStreaming = false
+    }
 }
 ```
 
@@ -1714,49 +2141,256 @@ for result in results {
 ### G. Testing with MockSessionStore
 
 ```swift
-func testAgentSavesMessagesOnExecute() async throws {
+// MARK: - ViewModel Tests
+
+func testViewModelSavesMessagesOnSend() async throws {
     // Arrange
     let mockStore = MockSessionStore()
-    var session = Session(userId: "test_user")
-    mockStore.sessions[session.id] = session
+    let mockAgent = MockAIAgentActor(responses: [.text("Hello back!")])
+    let session = Session(userId: "test_user")
+    await mockStore.setSession(session)
     
-    let agent = AIAgentActor(model: mockModel, tools: [])
-    
-    // Act
-    _ = try await agent.execute(
-        userMessage: .user("Hello"),
-        session: &session,
+    let viewModel = ChatViewModel(
+        session: session,
+        agent: mockAgent,
         store: mockStore
     )
     
+    // Act
+    await viewModel.send([.text("Hello")])
+    
     // Assert
-    XCTAssertEqual(mockStore.saveCount, 1)
-    XCTAssertEqual(mockStore.appendMessageCalls.count, 2) // user + assistant
-    XCTAssertEqual(mockStore.lastSavedSession?.messages.count, 2)
+    let saveCount = await mockStore.saveCount
+    let appendCount = await mockStore.appendMessageCalls.count
+    XCTAssertEqual(saveCount, 1)  // Final save
+    XCTAssertGreaterThanOrEqual(appendCount, 1)  // At least user message
+    XCTAssertEqual(viewModel.messages.count, 2)  // user + assistant
 }
 
-func testAgentHandlesStorageError() async throws {
+func testViewModelHandlesStorageError() async throws {
     // Arrange
     let mockStore = MockSessionStore()
-    mockStore.nextError = SessionStoreError.unavailable(
-        underlying: NSError(domain: "Test", code: -1)
+    let mockAgent = MockAIAgentActor(responses: [.text("Response")])
+    let session = Session(userId: "test_user")
+    
+    // Set error on save (not append, so we can add user message)
+    await mockStore.setNextError(SessionStoreError.unavailable(reason: "Network timeout"))
+    
+    let viewModel = ChatViewModel(
+        session: session,
+        agent: mockAgent,
+        store: mockStore
     )
     
-    var session = Session(userId: "test_user")
-    let agent = AIAgentActor(model: mockModel, tools: [])
+    // Act
+    await viewModel.send([.text("Hello")])
     
-    // Act & Assert
-    await XCTAssertThrowsError(
-        try await agent.execute(
-            userMessage: .user("Hello"),
-            session: &session,
-            store: mockStore
-        )
-    ) { error in
-        XCTAssertTrue(error is SessionStoreError)
-    }
+    // Assert - ViewModel captures error, session marked as error
+    XCTAssertNotNil(viewModel.error)
+    XCTAssertEqual(viewModel.session.status, .error)
+}
+
+// MARK: - Session Store Tests
+
+func testSessionStoreRoundTrip() async throws {
+    let store = InMemorySessionStore()
+    var session = Session(userId: "user_123")
+    session.title = "Test Chat"
+    session.messages = [
+        .user("Hello"),
+        .assistant("Hi there!")
+    ]
+    
+    // Create
+    let created = try await store.create(session)
+    XCTAssertEqual(created.id, session.id)
+    
+    // Load
+    let loaded = try await store.load(id: session.id)
+    XCTAssertNotNil(loaded)
+    XCTAssertEqual(loaded?.messages.count, 2)
+    XCTAssertEqual(loaded?.title, "Test Chat")
+    
+    // Update
+    var updated = loaded!
+    updated.messages.append(.user("Another message"))
+    try await store.save(updated)
+    
+    // Verify update
+    let reloaded = try await store.load(id: session.id)
+    XCTAssertEqual(reloaded?.messages.count, 3)
 }
 ```
+
+---
+
+## 19. Appendix: Design Interview
+
+The following interview captured requirements and design decisions for this specification.
+
+### Session Content & Scope (Q11-Q13)
+
+**Q11: What should be stored in a session?**
+> All of it—messages, metadata, tools, thinking, stop message, resume, thread creation. Think of modern AI agentic systems like Claude Code, ChatGPT. When you start a session with an agent, you want to see everything.
+
+**Q12: How should we approach session design?**
+> Study how modern agentic systems handle sessions (Claude Agents SDK, Codex, Google ADK, Agno) and extract first principles and best practices.
+
+**Q13: Session relationship to memory?**
+> Session is equivalent to short-term memory.
+
+### Persistence Strategy (Q21-Q23)
+
+**Q21: When should we persist?**
+> Follow best practices—save every step. Even if the assistant is streaming, save partial responses. Same with tools, reasoning, or errors.
+
+**Q22: Streaming persistence approach?**
+> Incremental saves (Option A).
+
+**Q23: Checkpoint granularity?**
+> Depends—need to resume incomplete assistant messages, and also checkpoint when a step completes.
+
+### Metadata & Storage (Q31-Q33)
+
+**Q31: Session metadata fields?**
+> All fields are important except versioning.
+
+**Q32: Storage architecture?**
+> Sessions can be local or via provider (Firebase, Supabase). Build foundations and then create adapters.
+
+**Q33: Existing storage solutions to leverage?**
+> No, but account for fundamentals. Build initial adapters for local and Firebase. Protocol-first is the right approach.
+
+### Context Management (Q41-Q43)
+
+**Q41-Q42: Context management approach?**
+> Follow best practices.
+
+**Q43: Model context window changes?**
+> If the next model has a bigger context window, keep it. If smaller, summarize/compress like Claude Code.
+
+### Multi-Step & Error Handling (Q51-Q53)
+
+**Q51: Multi-step agent patterns?**
+> Search for best practices on how Claude Agents SDK works.
+
+**Q52: Error recovery?**
+> Make checkpoints.
+
+**Q53: Branching/threading?**
+> No, keep it simple for now.
+
+### Lifecycle & Multi-User (Q61-Q62)
+
+**Q61: Session lifecycle/cleanup?**
+> Developer responsibility. Forget about auto-cleanup.
+
+**Q62: Multi-user support?**
+> Yes. A user can have multiple sessions.
+
+### API Design (Q71)
+
+**Q71: Naming conventions?**
+> `Session`, `SessionStore`.
+
+**Q71b: Error handling approach?**
+> Fully transparent (Option B). Errors propagate to caller.
+
+**Additional:** When a user sends their first message, there's a separate LLM call that generates a title for the conversation.
+
+### Data Model Details (Q81-Q83)
+
+**Q81: Session data model structure?**
+> a) Steps should be part of messages. Think about how an AI agent works: user sends → agent thinks → tools, results → response. All composed, can be parallel tool calls, multiple steps. Do it like Claude Code.
+> b) Include agent configuration.
+> c) `userId` is required because a user can have multiple sessions. Also think about testing.
+> d) Don't store tokens in session—that's an agent concern, not session.
+
+**Q82: Retry/resume scope?**
+> Only the final response. Tool calls get checkpoints. User can retry or resume if it's the final agent response message.
+
+**Q83: Storage vs memory tradeoff?**
+> Like Claude Code—favor more storage.
+
+### API Ergonomics (Q91-Q93)
+
+**Q91: API ergonomics preference?**
+> Whatever is best for clean code that works.
+
+**Q92: Session creation pattern?**
+> Option A.
+
+**Q93: Message append pattern?**
+> Option A.
+
+### Agent-Session Relationship (Q101-Q102)
+
+**Q101: Agent-session coupling?**
+> Option B (loosely coupled).
+
+**Q102: Observable state approach?**
+> Cleanest/easiest option.
+
+### Context Compaction (Q111-Q112)
+
+**Q111: When to compact?**
+> Compaction at ~90% of the agent's token limit. Session should have a method for this. Claude Code does compaction/summarization. Important for longer sessions.
+
+**Q112: Compaction implementation?**
+> Cleanest approach, follow best practices.
+
+### Cloud Integration (Q121-Q122)
+
+**Q121: Firebase integration?**
+> Best practices, clean and robust implementation.
+
+**Q122: Real-time updates?**
+> Option A, follow best practices.
+
+### Multi-Agent Support (Q131-Q132)
+
+**Q131: Multi-agent patterns?**
+> Claude Code has subagents, also Codex SDK. They're the best at that—emulate what they do.
+
+**Q132: Parallel subagents?**
+> Subagents work in parallel, account for that. Storing agent ID and name is nice for future use cases. Imagine multiple agents in the same conversation, or some working in parallel.
+
+### Built-in Adapters (Q141-Q142)
+
+**Q141: Which adapters to build?**
+> Like those 4 (InMemory, FileSystem, SQLite, Firebase). Default should be InMemory.
+
+**Q142: Adapter selection criteria?**
+> Best UX, considering that an AI agent will appear in a UI streaming conversation.
+
+### Testing (Q151-Q152)
+
+**Q151-Q152: Testing strategy?**
+> Follow best practices.
+
+### Export & Features (Q161-Q192)
+
+**Q161: Export format?** Option A.
+
+**Q171: Search capability?** Option A.
+
+**Q172: Session limits?** No limit.
+
+**Q181: Migration path?** Ok.
+
+**Q191: Streaming persistence buffer?** Yes.
+
+**Q192: Export/import features?** Yes.
+
+**Q20: Search and testing support?** Ok.
+
+### Architecture Decision (Post-Interview)
+
+**Q: Agent API for session-aware execution?**
+
+After analysis for SwiftUI + background persistence, the decision was made:
+
+> **Option C: ViewModel-managed sessions.** The agent API stays unchanged (`streamExecute(messages:)`). The ViewModel owns the session, feeds messages to the agent, handles events, updates session state, and persists in background. This keeps the agent pure/stateless regarding sessions, gives the ViewModel full control over persistence timing, and provides a single source of truth for SwiftUI observation.
 
 ---
 
