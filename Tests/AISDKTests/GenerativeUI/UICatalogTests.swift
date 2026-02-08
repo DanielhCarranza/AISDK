@@ -52,6 +52,30 @@ final class UICatalogTests: XCTestCase {
         XCTAssertNotNil(catalog.validators["pattern"])
     }
 
+    // MARK: - Extended Catalog Tests
+
+    func testExtendedCatalogIncludesTier1Components() {
+        let catalog = UICatalog.extended
+
+        XCTAssertTrue(catalog.hasComponent("Metric"))
+        XCTAssertTrue(catalog.hasComponent("Badge"))
+        XCTAssertTrue(catalog.hasComponent("Divider"))
+        XCTAssertTrue(catalog.hasComponent("Section"))
+        XCTAssertTrue(catalog.hasComponent("Progress"))
+        XCTAssertTrue(catalog.hasComponent("BarChart"))
+        XCTAssertTrue(catalog.hasComponent("LineChart"))
+        XCTAssertTrue(catalog.hasComponent("PieChart"))
+        XCTAssertTrue(catalog.hasComponent("Gauge"))
+        XCTAssertTrue(catalog.hasComponent("Toggle"))
+        XCTAssertTrue(catalog.hasComponent("Slider"))
+        XCTAssertTrue(catalog.hasComponent("Stepper"))
+        XCTAssertTrue(catalog.hasComponent("SegmentedControl"))
+        XCTAssertTrue(catalog.hasComponent("Picker"))
+        XCTAssertTrue(catalog.hasComponent("Grid"))
+        XCTAssertTrue(catalog.hasComponent("Tabs"))
+        XCTAssertTrue(catalog.hasComponent("Accordion"))
+    }
+
     // MARK: - Component Lookup Tests
 
     func testComponentLookupByType() {

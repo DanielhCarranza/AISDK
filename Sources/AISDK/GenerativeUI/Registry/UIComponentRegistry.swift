@@ -9,6 +9,9 @@
 #if canImport(SwiftUI)
 import Foundation
 import SwiftUI
+#if canImport(Charts)
+import Charts
+#endif
 
 // MARK: - UIActionHandler
 
@@ -380,6 +383,29 @@ extension UIComponentRegistry {
         return registry
     }
 
+    /// Extended registry with Core 8 + Tier 1 components
+    public static var extended: UIComponentRegistry {
+        var registry = UIComponentRegistry()
+        registerCore8Components(in: &registry)
+        registerTier1Components(in: &registry)
+        registerChartComponents(in: &registry)
+        registerInteractiveComponents(in: &registry)
+        registerLayoutComponents(in: &registry)
+        return registry
+    }
+
+    /// Secure extended registry with Core 8 + Tier 1 components and standard actions allowed
+    public static var secureExtended: UIComponentRegistry {
+        var registry = UIComponentRegistry()
+        registerCore8Components(in: &registry)
+        registerTier1Components(in: &registry)
+        registerChartComponents(in: &registry)
+        registerInteractiveComponents(in: &registry)
+        registerLayoutComponents(in: &registry)
+        registry.allowActions(["submit", "navigate", "dismiss"])
+        return registry
+    }
+
     /// Register all Core 8 component views in the registry
     private static func registerCore8Components(in registry: inout UIComponentRegistry) {
         // Container views receive buildChild closure to render children
@@ -430,6 +456,106 @@ extension UIComponentRegistry {
 
         registry.register("Spacer") { node, _, decoder, _, _ in
             GenerativeSpacerView(node: node, decoder: decoder)
+        }
+    }
+
+    /// Register all Tier 1 component views in the registry
+    private static func registerTier1Components(in registry: inout UIComponentRegistry) {
+        registry.register("Metric") { node, _, decoder, _, _ in
+            GenerativeMetricView(node: node, decoder: decoder)
+        }
+
+        registry.register("Badge") { node, _, decoder, _, _ in
+            GenerativeBadgeView(node: node, decoder: decoder)
+        }
+
+        registry.register("Divider") { node, _, decoder, _, _ in
+            GenerativeDividerView(node: node, decoder: decoder)
+        }
+
+        registry.register("Section") { node, tree, decoder, _, buildChild in
+            GenerativeSectionView(
+                node: node,
+                tree: tree,
+                decoder: decoder,
+                buildChild: buildChild
+            )
+        }
+
+        registry.register("Progress") { node, _, decoder, _, _ in
+            GenerativeProgressView(node: node, decoder: decoder)
+        }
+    }
+
+    /// Register all chart component views in the registry
+    private static func registerChartComponents(in registry: inout UIComponentRegistry) {
+        registry.register("BarChart") { node, _, decoder, _, _ in
+            GenerativeBarChartView(node: node, decoder: decoder)
+        }
+
+        registry.register("LineChart") { node, _, decoder, _, _ in
+            GenerativeLineChartView(node: node, decoder: decoder)
+        }
+
+        registry.register("PieChart") { node, _, decoder, _, _ in
+            GenerativePieChartView(node: node, decoder: decoder)
+        }
+
+        registry.register("Gauge") { node, _, decoder, _, _ in
+            GenerativeGaugeView(node: node, decoder: decoder)
+        }
+    }
+
+    /// Register all interactive component views in the registry
+    private static func registerInteractiveComponents(in registry: inout UIComponentRegistry) {
+        registry.register("Toggle") { node, _, decoder, _, _ in
+            GenerativeToggleView(node: node, decoder: decoder)
+        }
+
+        registry.register("Slider") { node, _, decoder, _, _ in
+            GenerativeSliderView(node: node, decoder: decoder)
+        }
+
+        registry.register("Stepper") { node, _, decoder, _, _ in
+            GenerativeStepperView(node: node, decoder: decoder)
+        }
+
+        registry.register("SegmentedControl") { node, _, decoder, _, _ in
+            GenerativeSegmentedControlView(node: node, decoder: decoder)
+        }
+
+        registry.register("Picker") { node, _, decoder, _, _ in
+            GenerativePickerView(node: node, decoder: decoder)
+        }
+    }
+
+    /// Register all layout component views in the registry
+    private static func registerLayoutComponents(in registry: inout UIComponentRegistry) {
+        registry.register("Grid") { node, tree, decoder, _, buildChild in
+            GenerativeGridView(
+                node: node,
+                tree: tree,
+                decoder: decoder,
+                buildChild: buildChild
+            )
+        }
+
+        registry.register("Tabs") { node, tree, decoder, _, buildChild in
+            GenerativeTabsView(
+                node: node,
+                tree: tree,
+                decoder: decoder,
+                buildChild: buildChild
+            )
+        }
+
+        registry.register("Accordion") { node, tree, decoder, _, buildChild in
+            GenerativeAccordionView(
+                node: node,
+                tree: tree,
+                decoder: decoder,
+                buildChild: buildChild
+            )
         }
     }
 }
@@ -806,6 +932,884 @@ private struct GenerativeSpacerView: View {
             Spacer()
                 .accessibilityHidden(true)
         }
+    }
+}
+
+// MARK: - Tier 1 SwiftUI Views
+
+/// Internal view for Metric component
+private struct GenerativeMetricView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(MetricComponentDefinition.Props.self, from: node.propsData)
+        let label = props?.label ?? ""
+        let value = props?.value ?? 0
+        let formatted = formatValue(value, format: props?.format, prefix: props?.prefix, suffix: props?.suffix)
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(formatted)
+                    .font(.title.bold())
+
+                if let trend = props?.trend, let change = props?.change {
+                    MetricTrendView(trend: trend, change: change)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityValue(formatted)
+    }
+
+    private func formatValue(
+        _ value: Double,
+        format: MetricComponentDefinition.MetricFormat?,
+        prefix: String?,
+        suffix: String?
+    ) -> String {
+        let formatted: String
+        switch format {
+        case .currency:
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .currency
+            formatter.maximumFractionDigits = 2
+            formatted = formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+        case .percent:
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .percent
+            formatter.maximumFractionDigits = 1
+            formatted = formatter.string(from: NSNumber(value: value)) ?? String(format: "%.1f%%", value * 100)
+        case .compact:
+            formatted = compactNumber(value)
+        case .number, .none:
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = 2
+            formatted = formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+        }
+
+        var result = formatted
+        if let prefix, !prefix.isEmpty {
+            result = prefix + result
+        }
+        if let suffix, !suffix.isEmpty {
+            result += suffix
+        }
+        return result
+    }
+
+    private func compactNumber(_ value: Double) -> String {
+        let absValue = abs(value)
+        let sign = value < 0 ? "-" : ""
+        switch absValue {
+        case 1_000_000_000...:
+            return "\(sign)\(String(format: "%.1f", absValue / 1_000_000_000))B"
+        case 1_000_000...:
+            return "\(sign)\(String(format: "%.1f", absValue / 1_000_000))M"
+        case 1_000...:
+            return "\(sign)\(String(format: "%.1f", absValue / 1_000))K"
+        default:
+            return "\(sign)\(String(format: "%.0f", absValue))"
+        }
+    }
+}
+
+private struct MetricTrendView: View {
+    let trend: MetricComponentDefinition.Trend
+    let change: Double
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbolName(for: trend))
+            Text(String(format: "%.1f%%", abs(change)))
+        }
+        .font(.caption.bold())
+        .foregroundStyle(trendColor(for: trend))
+    }
+
+    private func symbolName(for trend: MetricComponentDefinition.Trend) -> String {
+        switch trend {
+        case .up:
+            return "arrow.up"
+        case .down:
+            return "arrow.down"
+        case .neutral:
+            return "minus"
+        }
+    }
+
+    private func trendColor(for trend: MetricComponentDefinition.Trend) -> Color {
+        switch trend {
+        case .neutral:
+            return .secondary
+        case .up:
+            return .green
+        case .down:
+            return .red
+        }
+    }
+}
+
+/// Internal view for Badge component
+private struct GenerativeBadgeView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(BadgeComponentDefinition.Props.self, from: node.propsData)
+        let text = props?.text ?? ""
+        let variant = props?.variant ?? .default
+        let size = props?.size ?? .medium
+
+        Text(text)
+            .font(font(for: size))
+            .padding(.horizontal, horizontalPadding(for: size))
+            .padding(.vertical, verticalPadding(for: size))
+            .background(backgroundColor(for: variant))
+            .foregroundStyle(foregroundColor(for: variant))
+            .clipShape(Capsule())
+            .accessibilityLabel(text)
+    }
+
+    private func font(for size: BadgeComponentDefinition.BadgeSize) -> Font {
+        switch size {
+        case .small:
+            return .caption2.weight(.semibold)
+        case .medium:
+            return .caption.weight(.semibold)
+        case .large:
+            return .callout.weight(.semibold)
+        }
+    }
+
+    private func horizontalPadding(for size: BadgeComponentDefinition.BadgeSize) -> CGFloat {
+        switch size {
+        case .small:
+            return 6
+        case .medium:
+            return 8
+        case .large:
+            return 10
+        }
+    }
+
+    private func verticalPadding(for size: BadgeComponentDefinition.BadgeSize) -> CGFloat {
+        switch size {
+        case .small:
+            return 2
+        case .medium:
+            return 4
+        case .large:
+            return 6
+        }
+    }
+
+    private func backgroundColor(for variant: BadgeComponentDefinition.BadgeVariant) -> Color {
+        switch variant {
+        case .default:
+            return Color.gray.opacity(0.2)
+        case .success:
+            return Color.green.opacity(0.2)
+        case .warning:
+            return Color.orange.opacity(0.2)
+        case .error:
+            return Color.red.opacity(0.2)
+        case .info:
+            return Color.blue.opacity(0.2)
+        }
+    }
+
+    private func foregroundColor(for variant: BadgeComponentDefinition.BadgeVariant) -> Color {
+        switch variant {
+        case .default:
+            return .primary
+        case .success:
+            return .green
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        case .info:
+            return .blue
+        }
+    }
+}
+
+/// Internal view for Divider component
+private struct GenerativeDividerView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(DividerComponentDefinition.Props.self, from: node.propsData)
+        let label = props?.label
+        let style = props?.style ?? .solid
+
+        if let label, !label.isEmpty {
+            HStack(spacing: 8) {
+                DividerLine(style: style)
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                DividerLine(style: style)
+            }
+        } else {
+            DividerLine(style: style)
+        }
+    }
+}
+
+private struct DividerLine: View {
+    let style: DividerComponentDefinition.DividerStyle
+
+    var body: some View {
+        GeometryReader { proxy in
+            Path { path in
+                let y = proxy.size.height / 2
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+            }
+            .stroke(
+                Color.secondary.opacity(0.4),
+                style: StrokeStyle(
+                    lineWidth: 1,
+                    dash: style == .dashed ? [4, 4] : []
+                )
+            )
+        }
+        .frame(height: 1)
+    }
+}
+
+/// Internal view for Section component
+private struct GenerativeSectionView: View {
+    let node: UINode
+    let tree: UITree
+    let decoder: JSONDecoder
+    let buildChild: ChildViewBuilder
+
+    @State private var isCollapsed = false
+
+    var body: some View {
+        let props = try? decoder.decode(SectionComponentDefinition.Props.self, from: node.propsData)
+        let title = props?.title
+        let subtitle = props?.subtitle
+        let canCollapse = props?.collapsible ?? false
+        let childNodes = node.childKeys.compactMap { tree.nodes[$0] }
+
+        VStack(alignment: .leading, spacing: 8) {
+            if title != nil || subtitle != nil {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let title {
+                            Text(title)
+                                .font(.headline)
+                        }
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if canCollapse {
+                        Button(action: { isCollapsed.toggle() }) {
+                            Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if !isCollapsed {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(childNodes, id: \.key) { childNode in
+                        buildChild(childNode)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Internal view for Progress component
+private struct GenerativeProgressView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(ProgressComponentDefinition.Props.self, from: node.propsData)
+        let label = props?.label
+        let value = props?.value
+        let showValue = props?.showValue ?? false
+        let style = props?.style ?? .linear
+
+        VStack(alignment: .leading, spacing: 6) {
+            if let label {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            progressView(for: value, style: style)
+                .tint(color(for: props?.color))
+
+            if showValue, let value {
+                Text("\(Int(value * 100))%")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func progressView(for value: Double?, style: ProgressComponentDefinition.ProgressStyle) -> some View {
+        if let value {
+            if style == .circular {
+                ProgressView(value: value)
+                    .progressViewStyle(.circular)
+            } else {
+                ProgressView(value: value)
+                    .progressViewStyle(.linear)
+            }
+        } else {
+            if style == .circular {
+                ProgressView()
+                    .progressViewStyle(.circular)
+            } else {
+                ProgressView()
+                    .progressViewStyle(.linear)
+            }
+        }
+    }
+
+    private func color(for color: ProgressComponentDefinition.ProgressColor?) -> Color? {
+        guard let color else { return nil }
+        switch color {
+        case .accent:
+            return .accentColor
+        case .success:
+            return .green
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        }
+    }
+}
+
+// MARK: - Chart Helpers
+
+private func colorFromString(_ value: String?) -> Color? {
+    guard let value else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if trimmed.hasPrefix("#") {
+        let hexString = String(trimmed.dropFirst())
+        guard let hex = UInt64(hexString, radix: 16) else { return nil }
+        let red, green, blue, alpha: Double
+        switch hexString.count {
+        case 6:
+            red = Double((hex & 0xFF0000) >> 16) / 255.0
+            green = Double((hex & 0x00FF00) >> 8) / 255.0
+            blue = Double(hex & 0x0000FF) / 255.0
+            alpha = 1.0
+        case 8:
+            red = Double((hex & 0xFF000000) >> 24) / 255.0
+            green = Double((hex & 0x00FF0000) >> 16) / 255.0
+            blue = Double((hex & 0x0000FF00) >> 8) / 255.0
+            alpha = Double(hex & 0x000000FF) / 255.0
+        default:
+            return nil
+        }
+        return Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
+    }
+
+    switch trimmed {
+    case "accent":
+        return .accentColor
+    case "success":
+        return .green
+    case "warning":
+        return .orange
+    case "error":
+        return .red
+    case "info":
+        return .blue
+    case "primary":
+        return .primary
+    case "secondary":
+        return .secondary
+    case "red":
+        return .red
+    case "green":
+        return .green
+    case "blue":
+        return .blue
+    case "orange":
+        return .orange
+    case "yellow":
+        return .yellow
+    case "purple":
+        return .purple
+    case "gray":
+        return .gray
+    default:
+        return nil
+    }
+}
+
+// MARK: - Chart Views
+
+private struct GenerativeBarChartView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(BarChartComponentDefinition.Props.self, from: node.propsData)
+        let data = props?.data ?? []
+        let orientation = props?.orientation ?? .vertical
+        let showLabels = props?.showLabels ?? true
+        let showValues = props?.showValues ?? false
+        let height = CGFloat(props?.height ?? 180)
+        let defaultColor = colorFromString(props?.barColor)
+
+        #if canImport(Charts)
+        Chart(data, id: \.label) { point in
+            if orientation == .horizontal {
+                BarMark(
+                    x: .value("Value", point.value),
+                    y: .value("Label", point.label)
+                )
+                .foregroundStyle(colorFromString(point.color) ?? defaultColor ?? .accentColor)
+                .annotation(position: .trailing, alignment: .leading) {
+                    if showValues {
+                        Text(String(format: "%.0f", point.value))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                BarMark(
+                    x: .value("Label", point.label),
+                    y: .value("Value", point.value)
+                )
+                .foregroundStyle(colorFromString(point.color) ?? defaultColor ?? .accentColor)
+                .annotation(position: .top) {
+                    if showValues {
+                        Text(String(format: "%.0f", point.value))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .chartXAxis(showLabels ? .automatic : .hidden)
+        .chartYAxis(showLabels ? .automatic : .hidden)
+        .frame(height: height)
+        #else
+        Text("Charts not available")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        #endif
+    }
+}
+
+private struct GenerativeLineChartView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(LineChartComponentDefinition.Props.self, from: node.propsData)
+        let series = props?.series ?? []
+        let showPoints = props?.showPoints ?? false
+        let smooth = props?.smooth ?? false
+        let showGrid = props?.showGrid ?? true
+        let height = CGFloat(props?.height ?? 180)
+
+        #if canImport(Charts)
+        Chart {
+            ForEach(series, id: \.name) { seriesEntry in
+                let color = colorFromString(seriesEntry.color) ?? .accentColor
+                ForEach(Array(seriesEntry.data.enumerated()), id: \.offset) { _, point in
+                    LineMark(
+                        x: .value("X", point.x),
+                        y: .value("Y", point.y)
+                    )
+                    .foregroundStyle(color)
+                    .interpolationMethod(smooth ? .catmullRom : .linear)
+
+                    if showPoints {
+                        PointMark(
+                            x: .value("X", point.x),
+                            y: .value("Y", point.y)
+                        )
+                        .foregroundStyle(color)
+                    }
+                }
+            }
+        }
+        .chartXAxis(showGrid ? .automatic : .hidden)
+        .chartYAxis(showGrid ? .automatic : .hidden)
+        .frame(height: height)
+        #else
+        Text("Charts not available")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        #endif
+    }
+}
+
+private struct GenerativePieChartView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(PieChartComponentDefinition.Props.self, from: node.propsData)
+        let data = props?.data ?? []
+        let donut = props?.donut ?? false
+        let showLegend = props?.showLegend ?? false
+        let showLabels = props?.showLabels ?? false
+
+        #if canImport(Charts)
+        Chart(data, id: \.label) { slice in
+            SectorMark(
+                angle: .value("Value", slice.value),
+                innerRadius: .ratio(donut ? 0.6 : 0)
+            )
+            .foregroundStyle(colorFromString(slice.color) ?? .accentColor)
+            .annotation(position: .overlay, alignment: .center) {
+                if showLabels {
+                    Text(slice.label)
+                        .font(.caption2)
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+        .chartLegend(showLegend ? .visible : .hidden)
+        #else
+        Text("Charts not available")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        #endif
+    }
+}
+
+private struct GenerativeGaugeView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+
+    var body: some View {
+        let props = try? decoder.decode(GaugeComponentDefinition.Props.self, from: node.propsData)
+        let value = props?.value ?? 0
+        let minValue = props?.min ?? 0
+        let maxValue = props?.max ?? 1
+        let showValue = props?.showValue ?? false
+        let label = props?.label
+
+        VStack(alignment: .leading, spacing: 6) {
+            Gauge(value: value, in: minValue...maxValue) {
+                if let label {
+                    Text(label)
+                }
+            } currentValueLabel: {
+                if showValue {
+                    Text(String(format: "%.1f", value))
+                }
+            }
+            .tint(colorFromString(props?.color) ?? .accentColor)
+        }
+    }
+}
+
+// MARK: - Interactive Views
+
+private struct GenerativeToggleView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+    @State private var isOn = false
+    @State private var didInitialize = false
+
+    var body: some View {
+        let props = try? decoder.decode(ToggleComponentDefinition.Props.self, from: node.propsData)
+        let label = props?.label ?? "Toggle"
+
+        Toggle(label, isOn: $isOn)
+            .disabled(props?.disabled ?? false)
+            .accessibilityLabel(label)
+            .onAppear {
+                if !didInitialize {
+                    isOn = props?.value ?? false
+                    didInitialize = true
+                }
+            }
+    }
+}
+
+private struct GenerativeSliderView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+    @State private var value: Double = 0
+    @State private var didInitialize = false
+
+    var body: some View {
+        let props = try? decoder.decode(SliderComponentDefinition.Props.self, from: node.propsData)
+        let label = props?.label ?? "Slider"
+        let minValue = props?.min ?? 0
+        let maxValue = props?.max ?? 1
+        let step = props?.step
+        let showValue = props?.showValue ?? false
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                Spacer()
+                if showValue {
+                    Text(String(format: "%.1f", value))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let step {
+                Slider(value: $value, in: minValue...maxValue, step: step)
+            } else {
+                Slider(value: $value, in: minValue...maxValue)
+            }
+        }
+        .accessibilityLabel(label)
+        .onAppear {
+            if !didInitialize {
+                value = props?.value ?? minValue
+                didInitialize = true
+            }
+        }
+    }
+}
+
+private struct GenerativeStepperView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+    @State private var value: Double = 0
+    @State private var didInitialize = false
+
+    var body: some View {
+        let props = try? decoder.decode(StepperComponentDefinition.Props.self, from: node.propsData)
+        let label = props?.label ?? "Stepper"
+        let minValue = props?.min ?? (value - 100)
+        let maxValue = props?.max ?? (value + 100)
+        let step = props?.step ?? 1
+        let showValue = props?.showValue ?? false
+
+        VStack(alignment: .leading, spacing: 6) {
+            Stepper(value: $value, in: minValue...maxValue, step: step) {
+                Text(label)
+            }
+            if showValue {
+                Text(String(format: "%.1f", value))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityLabel(label)
+        .onAppear {
+            if !didInitialize {
+                value = props?.value ?? props?.min ?? value
+                didInitialize = true
+            }
+        }
+    }
+}
+
+private struct GenerativeSegmentedControlView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+    @State private var selection: String = ""
+    @State private var didInitialize = false
+
+    var body: some View {
+        let props = try? decoder.decode(SegmentedControlComponentDefinition.Props.self, from: node.propsData)
+        let options = props?.options ?? []
+        Picker("", selection: $selection) {
+            ForEach(options, id: \.value) { option in
+                Text(option.label).tag(option.value)
+            }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel("Segmented Control")
+        .onAppear {
+            if !didInitialize {
+                selection = props?.selected ?? options.first?.value ?? ""
+                didInitialize = true
+            }
+        }
+    }
+}
+
+private struct GenerativePickerView: View {
+    let node: UINode
+    let decoder: JSONDecoder
+    @State private var selection: String = ""
+    @State private var didInitialize = false
+
+    var body: some View {
+        let props = try? decoder.decode(PickerComponentDefinition.Props.self, from: node.propsData)
+        let options = props?.options ?? []
+        Picker("Select", selection: $selection) {
+            ForEach(options, id: \.value) { option in
+                Text(option.label).tag(option.value)
+            }
+        }
+        .onAppear {
+            if !didInitialize {
+                selection = props?.selected ?? options.first?.value ?? ""
+                didInitialize = true
+            }
+        }
+    }
+}
+
+// MARK: - Layout Views
+
+private struct GenerativeGridView: View {
+    let node: UINode
+    let tree: UITree
+    let decoder: JSONDecoder
+    let buildChild: ChildViewBuilder
+
+    var body: some View {
+        let props = try? decoder.decode(GridComponentDefinition.Props.self, from: node.propsData)
+        let columnsCount = max(1, props?.columns ?? 1)
+        let spacing = CGFloat(props?.spacing ?? 8)
+        let alignment = gridAlignment(from: props?.alignment ?? .leading)
+        let itemAlignment = gridItemAlignment(from: props?.alignment ?? .leading)
+        let items = Array(repeating: GridItem(.flexible(), spacing: spacing, alignment: itemAlignment), count: columnsCount)
+        let childNodes = node.childKeys.compactMap { tree.nodes[$0] }
+
+        LazyVGrid(columns: items, alignment: alignment, spacing: spacing) {
+            ForEach(childNodes, id: \.key) { childNode in
+                buildChild(childNode)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func gridAlignment(from alignment: GridComponentDefinition.GridAlignment) -> HorizontalAlignment {
+        switch alignment {
+        case .leading:
+            return .leading
+        case .center:
+            return .center
+        case .trailing:
+            return .trailing
+        }
+    }
+
+    private func gridItemAlignment(from alignment: GridComponentDefinition.GridAlignment) -> Alignment {
+        switch alignment {
+        case .leading:
+            return .leading
+        case .center:
+            return .center
+        case .trailing:
+            return .trailing
+        }
+    }
+}
+
+private struct GenerativeTabsView: View {
+    let node: UINode
+    let tree: UITree
+    let decoder: JSONDecoder
+    let buildChild: ChildViewBuilder
+    @State private var selectedKey: String = ""
+    @State private var didInitialize = false
+
+    var body: some View {
+        let props = try? decoder.decode(TabsComponentDefinition.Props.self, from: node.propsData)
+        let tabs = props?.tabs ?? []
+        let childNodes = node.childKeys.compactMap { tree.nodes[$0] }
+        let selectedIndex = tabs.firstIndex(where: { $0.key == selectedKey }) ?? 0
+        let contentNode = selectedIndex < childNodes.count ? childNodes[selectedIndex] : nil
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(tabs, id: \.key) { tab in
+                    Button(action: { selectedKey = tab.key }) {
+                        Text(tab.label)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(tab.key == selectedKey ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let contentNode {
+                buildChild(contentNode)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .onAppear {
+            if !didInitialize {
+                selectedKey = props?.selected ?? tabs.first?.key ?? ""
+                didInitialize = true
+            }
+        }
+    }
+}
+
+private struct GenerativeAccordionView: View {
+    let node: UINode
+    let tree: UITree
+    let decoder: JSONDecoder
+    let buildChild: ChildViewBuilder
+    @State private var expandedKeys: Set<String> = []
+
+    var body: some View {
+        let props = try? decoder.decode(AccordionComponentDefinition.Props.self, from: node.propsData)
+        let items = props?.items ?? []
+        let childNodes = node.childKeys.compactMap { tree.nodes[$0] }
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.element.key) { index, item in
+                let isExpanded = expandedKeys.contains(item.key)
+                DisclosureGroup(isExpanded: Binding(get: {
+                    isExpanded
+                }, set: { newValue in
+                    if newValue {
+                        expandedKeys.insert(item.key)
+                    } else {
+                        expandedKeys.remove(item.key)
+                    }
+                })) {
+                    if index < childNodes.count {
+                        buildChild(childNodes[index])
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.headline)
+                        if let subtitle = item.subtitle {
+                            Text(subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
