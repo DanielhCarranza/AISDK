@@ -59,6 +59,9 @@ struct CLIOptions {
     /// Response format mode
     var responseFormat: ResponseFormatMode = .text
 
+    /// Render a UI JSON file and exit
+    var renderUIJSONPath: String?
+
     /// Enable citations rendering
     var citationsEnabled: Bool = true
 
@@ -130,6 +133,12 @@ struct CLIOptions {
             case "--format":
                 if index + 1 < args.count {
                     options.responseFormat = ResponseFormatMode(rawValue: args[index + 1].lowercased()) ?? .text
+                    index += 1
+                }
+
+            case "--render-ui-json":
+                if index + 1 < args.count {
+                    options.renderUIJSONPath = args[index + 1]
                     index += 1
                 }
 

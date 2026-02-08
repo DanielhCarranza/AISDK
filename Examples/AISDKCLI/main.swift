@@ -37,6 +37,11 @@ func runCLI() async {
         return
     }
 
+    if let renderPath = options.renderUIJSONPath {
+        renderUIJSON(at: renderPath)
+        return
+    }
+
     // Validate API keys
     guard validateAPIKeys(for: options.provider) else {
         return
@@ -48,6 +53,21 @@ func runCLI() async {
     // Create and run the CLI controller
     let controller = CLIController(options: options)
     await controller.run()
+}
+
+// MARK: - UI JSON Rendering
+
+func renderUIJSON(at path: String) {
+    let expandedPath = NSString(string: path).expandingTildeInPath
+    do {
+        let data = try Data(contentsOf: URL(fileURLWithPath: expandedPath))
+        let tree = try UITree.parse(from: data, validatingWith: UICatalog.extended)
+        let renderer = TerminalUIRenderer()
+        let rendered = try renderer.render(tree: tree)
+        print(rendered)
+    } catch {
+        print(ANSIStyles.error("Failed to render UI JSON: \(error.localizedDescription)"))
+    }
 }
 
 // MARK: - Environment Loading
@@ -189,6 +209,7 @@ func printUsage() {
         --verbose             Show detailed output (API calls, timing)
         --no-tools            Disable built-in tools
         --format <mode>       Response format: text|json|schema|ui
+        --render-ui-json <p>  Render a UI JSON file and exit
         --citations           Enable citations (default on)
         --no-citations        Disable citations
         --reliable            Enable reliability/failover layer

@@ -1,0 +1,93 @@
+{
+  "root": "dashboard",
+  "elements": {
+    "dashboard": {
+      "type": "Stack",
+      "props": { "direction": "vertical", "spacing": 16 },
+      "children": ["metrics", "divider", "charts", "controls", "layout"]
+    },
+    "metrics": {
+      "type": "Grid",
+      "props": { "columns": 2, "spacing": 12 },
+      "children": ["metric1", "metric2", "metric3", "metric4"]
+    },
+    "metric1": { "type": "Metric", "props": { "label": "Revenue", "value": 125000, "format": "currency", "trend": "up", "change": 12.5 } },
+    "metric2": { "type": "Metric", "props": { "label": "Churn", "value": 0.032, "format": "percent", "trend": "down", "change": 0.8 } },
+    "metric3": { "type": "Metric", "props": { "label": "Active Users", "value": 38420, "format": "compact" } },
+    "metric4": { "type": "Badge", "props": { "text": "On Track", "variant": "success" } },
+    "divider": { "type": "Divider", "props": { "label": "Trends", "style": "dashed" } },
+    "charts": {
+      "type": "Stack",
+      "props": { "direction": "vertical", "spacing": 12 },
+      "children": ["bar", "line", "pie", "gauge"]
+    },
+    "bar": {
+      "type": "BarChart",
+      "props": {
+        "data": [
+          { "label": "Jan", "value": 100 },
+          { "label": "Feb", "value": 150 },
+          { "label": "Mar", "value": 120 }
+        ],
+        "showValues": true
+      }
+    },
+    "line": {
+      "type": "LineChart",
+      "props": {
+        "series": [
+          { "name": "Revenue", "data": [ { "x": "Jan", "y": 100 }, { "x": "Feb", "y": 150 }, { "x": "Mar", "y": 120 } ] }
+        ],
+        "showPoints": true
+      }
+    },
+    "pie": {
+      "type": "PieChart",
+      "props": {
+        "data": [
+          { "label": "Desktop", "value": 60 },
+          { "label": "Mobile", "value": 30 },
+          { "label": "Tablet", "value": 10 }
+        ],
+        "donut": true,
+        "showLegend": true
+      }
+    },
+    "gauge": { "type": "Gauge", "props": { "value": 72, "min": 0, "max": 100, "label": "CPU Usage", "showValue": true } },
+    "controls": {
+      "type": "Stack",
+      "props": { "direction": "vertical", "spacing": 8 },
+      "children": ["toggle", "slider", "stepper", "segmented", "picker", "progress"]
+    },
+    "toggle": { "type": "Toggle", "props": { "label": "Enable Notifications", "name": "notifications", "value": true } },
+    "slider": { "type": "Slider", "props": { "label": "Volume", "name": "volume", "min": 0, "max": 100, "value": 30, "showValue": true } },
+    "stepper": { "type": "Stepper", "props": { "label": "Guests", "name": "guests", "min": 1, "max": 10, "value": 2, "showValue": true } },
+    "segmented": {
+      "type": "SegmentedControl",
+      "props": { "name": "layout", "options": [ { "value": "list", "label": "List" }, { "value": "grid", "label": "Grid" } ], "selected": "list" }
+    },
+    "picker": {
+      "type": "Picker",
+      "props": { "name": "theme", "options": [ { "value": "light", "label": "Light" }, { "value": "dark", "label": "Dark" } ], "selected": "light" }
+    },
+    "progress": { "type": "Progress", "props": { "value": 0.72, "label": "Upload Progress", "showValue": true } },
+    "layout": {
+      "type": "Tabs",
+      "props": { "tabs": [ { "key": "overview", "label": "Overview" }, { "key": "details", "label": "Details" } ], "selected": "overview" },
+      "children": ["overview", "details"]
+    },
+    "overview": {
+      "type": "Section",
+      "props": { "title": "Overview", "subtitle": "Highlights" },
+      "children": ["overviewText"]
+    },
+    "overviewText": { "type": "Text", "props": { "content": "Summary of key metrics and trends." } },
+    "details": {
+      "type": "Accordion",
+      "props": { "items": [ { "key": "first", "title": "First Detail" }, { "key": "second", "title": "Second Detail", "subtitle": "More info" } ] },
+      "children": ["detail1", "detail2"]
+    },
+    "detail1": { "type": "Text", "props": { "content": "First detail content." } },
+    "detail2": { "type": "Text", "props": { "content": "Second detail content." } }
+  }
+}

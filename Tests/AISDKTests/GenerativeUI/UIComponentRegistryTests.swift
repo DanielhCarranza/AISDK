@@ -42,6 +42,28 @@ final class UIComponentRegistryTests: XCTestCase {
         XCTAssertEqual(types, expected, "Types should be sorted alphabetically")
     }
 
+    func test_extended_registry_has_tier1_components() {
+        let registry = UIComponentRegistry.extended
+
+        XCTAssertTrue(registry.hasComponent("Metric"))
+        XCTAssertTrue(registry.hasComponent("Badge"))
+        XCTAssertTrue(registry.hasComponent("Divider"))
+        XCTAssertTrue(registry.hasComponent("Section"))
+        XCTAssertTrue(registry.hasComponent("Progress"))
+        XCTAssertTrue(registry.hasComponent("BarChart"))
+        XCTAssertTrue(registry.hasComponent("LineChart"))
+        XCTAssertTrue(registry.hasComponent("PieChart"))
+        XCTAssertTrue(registry.hasComponent("Gauge"))
+        XCTAssertTrue(registry.hasComponent("Toggle"))
+        XCTAssertTrue(registry.hasComponent("Slider"))
+        XCTAssertTrue(registry.hasComponent("Stepper"))
+        XCTAssertTrue(registry.hasComponent("SegmentedControl"))
+        XCTAssertTrue(registry.hasComponent("Picker"))
+        XCTAssertTrue(registry.hasComponent("Grid"))
+        XCTAssertTrue(registry.hasComponent("Tabs"))
+        XCTAssertTrue(registry.hasComponent("Accordion"))
+    }
+
     // MARK: - Custom Registration Tests
 
     func test_custom_component_registration() {

@@ -672,3 +672,45 @@ extension UICatalog {
         return catalog
     }()
 }
+
+// MARK: - Extended Catalogs
+
+extension UICatalog {
+    /// Extended catalog with Tier 1, Charts, Interactive, and Layout components
+    public static let extended: UICatalog = {
+        var catalog = core8
+        catalog.registerUnchecked(MetricComponentDefinition.self)
+        catalog.registerUnchecked(BadgeComponentDefinition.self)
+        catalog.registerUnchecked(DividerComponentDefinition.self)
+        catalog.registerUnchecked(SectionComponentDefinition.self)
+        catalog.registerUnchecked(ProgressComponentDefinition.self)
+        catalog.registerUnchecked(BarChartComponentDefinition.self)
+        catalog.registerUnchecked(LineChartComponentDefinition.self)
+        catalog.registerUnchecked(PieChartComponentDefinition.self)
+        catalog.registerUnchecked(GaugeComponentDefinition.self)
+        catalog.registerUnchecked(ToggleComponentDefinition.self)
+        catalog.registerUnchecked(SliderComponentDefinition.self)
+        catalog.registerUnchecked(StepperComponentDefinition.self)
+        catalog.registerUnchecked(SegmentedControlComponentDefinition.self)
+        catalog.registerUnchecked(PickerComponentDefinition.self)
+        catalog.registerUnchecked(GridComponentDefinition.self)
+        catalog.registerUnchecked(TabsComponentDefinition.self)
+        catalog.registerUnchecked(AccordionComponentDefinition.self)
+        return catalog
+    }()
+
+    /// Dashboard-focused catalog (Core 8 + Tier 1 + Charts)
+    public static let dashboard: UICatalog = {
+        var catalog = core8
+        catalog.registerUnchecked(MetricComponentDefinition.self)
+        catalog.registerUnchecked(BadgeComponentDefinition.self)
+        catalog.registerUnchecked(DividerComponentDefinition.self)
+        catalog.registerUnchecked(SectionComponentDefinition.self)
+        catalog.registerUnchecked(ProgressComponentDefinition.self)
+        catalog.registerUnchecked(BarChartComponentDefinition.self)
+        catalog.registerUnchecked(LineChartComponentDefinition.self)
+        catalog.registerUnchecked(PieChartComponentDefinition.self)
+        catalog.registerUnchecked(GaugeComponentDefinition.self)
+        return catalog
+    }()
+}

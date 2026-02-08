@@ -471,8 +471,19 @@ class CLIController {
         case .schema:
             prompt += "\n\nRespond with a JSON object that matches the schema for the CLI response. Do not wrap in markdown."
         case .ui:
-            prompt += "\n\n" + UICatalog.core8.generatePrompt()
-            prompt += "\n\nReturn only valid JSON in the json-render format. Do not wrap in markdown."
+            prompt += "\n\n" + UICatalog.extended.generatePrompt()
+            prompt += """
+
+            CRITICAL INSTRUCTIONS FOR UI FORMAT:
+            - You MUST respond with ONLY valid JSON in the json-render format above
+            - Do NOT include any text before or after the JSON
+            - Do NOT wrap in markdown code fences
+            - If you need to ask the user a question, use a Card with Text components containing your question
+            - If you need to show information, use appropriate UI components
+            - NEVER respond with plain text - always use the JSON UI format
+            - Example for asking a question:
+            {"root":"q","elements":{"q":{"type":"Card","props":{"title":"Question"},"children":["msg"]},"msg":{"type":"Text","props":{"content":"What city would you like weather for?"}}}}
+            """
         case .text:
             break
         }
@@ -513,13 +524,25 @@ class CLIController {
 
         switch runtimeConfig.responseFormat {
         case .ui:
+            // First check if we have JSON-like content
+            let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("{") else {
+                // Model responded with text instead of JSON
+                print(ANSIStyles.warning("⚠ Model responded with text instead of UI JSON."))
+                print(ANSIStyles.dim("Tip: The model should return json-render format. Try rephrasing or being more specific."))
+                print("")
+                print(payload)
+                return
+            }
+
             do {
                 let data = Data(payload.utf8)
-                let tree = try UITree.parse(from: data, validatingWith: UICatalog.core8)
+                let tree = try UITree.parse(from: data, validatingWith: UICatalog.extended)
                 let rendered = try uiRenderer.render(tree: tree)
                 print(rendered)
             } catch {
                 print(ANSIStyles.error("Failed to render UI: \(error.localizedDescription)"))
+                print(ANSIStyles.dim("Raw response:"))
                 print(payload)
             }
         case .json, .schema:

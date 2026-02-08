@@ -119,13 +119,18 @@ public struct SkillConfiguration: Sendable, Codable, Hashable {
     /// Default search roots for skill discovery.
     ///
     /// 1. `.aidoctor/skills/` - Project-level skills (current directory)
-    /// 2. `~/.aidoctor/skills/` - User-level skills (home directory)
+    /// 2. `~/.aidoctor/skills/` - User-level skills (home directory, macOS only)
     public static var defaultSearchRoots: [URL] {
-        [
-            URL(fileURLWithPath: ".aidoctor/skills", isDirectory: true),
+        var roots: [URL] = [
+            URL(fileURLWithPath: ".aidoctor/skills", isDirectory: true)
+        ]
+        #if os(macOS)
+        roots.append(
             FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".aidoctor/skills", isDirectory: true)
-        ]
+        )
+        #endif
+        return roots
     }
 
     /// Default configuration with standard settings.
