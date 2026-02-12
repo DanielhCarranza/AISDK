@@ -287,6 +287,7 @@ public struct AITextRequest: Sendable {
     public let topP: Double?
     public let stop: [String]?
     public let responseFormat: ResponseFormat?
+    public let reasoning: AIReasoningConfig?
 }
 ```
 

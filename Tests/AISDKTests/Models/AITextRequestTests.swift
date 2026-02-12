@@ -33,6 +33,7 @@ struct AITextRequestTests {
         let allowedProviders: Set<String> = ["openai", "anthropic"]
         let bufferPolicy = StreamBufferPolicy.dropOldest(capacity: 500)
 
+        let reasoning = AIReasoningConfig(effort: .high, budgetTokens: 2048)
         let request = AITextRequest(
             messages: messages,
             model: "gpt-4",
@@ -43,6 +44,7 @@ struct AITextRequestTests {
             tools: nil,
             toolChoice: nil,
             responseFormat: nil,
+            reasoning: reasoning,
             allowedProviders: allowedProviders,
             sensitivity: .phi,
             bufferPolicy: bufferPolicy,
@@ -55,6 +57,7 @@ struct AITextRequestTests {
         #expect(request.temperature == 0.7)
         #expect(request.topP == 0.9)
         #expect(request.stop == ["END"])
+        #expect(request.reasoning == reasoning)
         #expect(request.sensitivity == .phi)
         #expect(request.allowedProviders == allowedProviders)
         #expect(request.bufferPolicy?.capacity == 500)
@@ -128,6 +131,29 @@ struct AITextRequestTests {
         #expect(updated.bufferPolicy?.capacity == 2000)
         #expect(updated.bufferPolicy == .dropNewest(capacity: 2000))
         #expect(original.bufferPolicy == nil) // Original unchanged
+    }
+
+    @Test("withReasoning creates new request with reasoning config")
+    func testWithReasoning() {
+        let original = AITextRequest(messages: [.user("Test")])
+        let reasoning = AIReasoningConfig.effort(.medium)
+
+        let updated = original.withReasoning(reasoning)
+
+        #expect(updated.reasoning == reasoning)
+        #expect(original.reasoning == nil)
+    }
+
+    @Test("with* methods preserve reasoning")
+    func testWithMethodsPreserveReasoning() {
+        let reasoning = AIReasoningConfig(effort: .high, budgetTokens: 4096)
+        let original = AITextRequest(messages: [.user("Test")], reasoning: reasoning)
+
+        #expect(original.withSensitivity(.sensitive).reasoning == reasoning)
+        #expect(original.withAllowedProviders(["openai"]).reasoning == reasoning)
+        #expect(original.withBufferPolicy(.bounded).reasoning == reasoning)
+        #expect(original.withConversationId("conv-1").reasoning == reasoning)
+        #expect(original.withProviderOptions(nil).reasoning == reasoning)
     }
 }
 

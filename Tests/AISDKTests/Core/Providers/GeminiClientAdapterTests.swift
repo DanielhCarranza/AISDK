@@ -183,6 +183,57 @@ final class GeminiClientAdapterTests: XCTestCase {
         // Verify we get an AsyncThrowingStream
         XCTAssertNotNil(stream)
     }
+
+    // MARK: - Reasoning Mapping Tests
+
+    func testUnifiedReasoningEffortMapsToThinkingLevel() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig.effort(.medium),
+            providerOptions: nil
+        )
+
+        let thinkingConfig = captured["thinkingConfig"] as? [String: Any]
+        XCTAssertEqual(thinkingConfig?["thinking_level"] as? String, "medium")
+    }
+
+    func testUnifiedReasoningBudgetMapsToThinkingBudget() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig(budgetTokens: 2048),
+            providerOptions: nil
+        )
+
+        let thinkingConfig = captured["thinkingConfig"] as? [String: Any]
+        XCTAssertEqual(thinkingConfig?["thinking_budget"] as? Int, 2048)
+    }
+
+    func testProviderOptionsOverrideUnifiedReasoning() async throws {
+        let options: [String: ProviderJSONValue] = [
+            "thinkingLevel": .string("high"),
+            "thinkingBudget": .int(1024)
+        ]
+
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig.effort(.low),
+            providerOptions: options
+        )
+
+        let thinkingConfig = captured["thinkingConfig"] as? [String: Any]
+        XCTAssertEqual(thinkingConfig?["thinking_level"] as? String, "high")
+        XCTAssertEqual(thinkingConfig?["thinking_budget"] as? Int, 1024)
+    }
+
+    func testUnifiedReasoningIgnoredForNonReasoningModel() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.0-flash",
+            reasoning: AIReasoningConfig.effort(.high),
+            providerOptions: nil
+        )
+
+        XCTAssertNil(captured["thinkingConfig"])
+    }
 }
 
 // MARK: - GeminiResponseParsingTests
@@ -340,6 +391,88 @@ final class GeminiResponseParsingTests: XCTestCase {
 
         XCTAssertNotNil(json)
     }
+}
+
+// MARK: - Helpers
+
+private func captureGeminiRequestBody(
+    modelId: String,
+    reasoning: AIReasoningConfig,
+    providerOptions: [String: ProviderJSONValue]?
+) async -> [String: Any] {
+    MockURLProtocol.reset()
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let client = GeminiClientAdapter(apiKey: "test-api-key", session: session)
+
+    var capturedBody: [String: Any] = [:]
+    MockURLProtocol.requestHandler = { request in
+        let bodyData = readRequestBody(request)
+        if let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            capturedBody = json
+        }
+
+        let responseJSON = """
+        {
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": "ok"}]
+                },
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 1,
+                "totalTokenCount": 2
+            },
+            "modelVersion": "\(modelId)",
+            "responseId": "resp-test"
+        }
+        """.data(using: .utf8) ?? Data()
+
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://generativelanguage.googleapis.com/v1beta")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (response, responseJSON)
+    }
+
+    let providerRequest = ProviderRequest(
+        modelId: modelId,
+        messages: [AIMessage(role: .user, content: .text("Hello"))],
+        reasoning: reasoning,
+        providerOptions: providerOptions
+    )
+
+    _ = try? await client.execute(request: providerRequest)
+    return capturedBody
+}
+
+private func readRequestBody(_ request: URLRequest) -> Data {
+    if let body = request.httpBody {
+        return body
+    }
+    guard let stream = request.httpBodyStream else {
+        return Data()
+    }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    let bufferSize = 1024
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+    while stream.hasBytesAvailable {
+        let count = stream.read(&buffer, maxLength: bufferSize)
+        if count > 0 {
+            data.append(buffer, count: count)
+        } else {
+            break
+        }
+    }
+    return data
 }
 
 // MARK: - GeminiRequestEncodingTests

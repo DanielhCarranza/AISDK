@@ -237,7 +237,8 @@ public extension AIMessage {
 
     /// Create an assistant message with tool calls
     static func assistant(_ text: String, toolCalls: [ToolCall]) -> AIMessage {
-        AIMessage(role: .assistant, content: .text(text), toolCalls: toolCalls)
+        let content: Content = text.isEmpty ? .parts([]) : .text(text)
+        return AIMessage(role: .assistant, content: content, toolCalls: toolCalls)
     }
 }
 

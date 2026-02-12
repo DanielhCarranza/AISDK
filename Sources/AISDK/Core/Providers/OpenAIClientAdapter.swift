@@ -186,7 +186,7 @@ public actor OpenAIClientAdapter: ProviderClient {
             return [.text, .tools, .streaming, .functionCalling]
         case let id where id.hasPrefix("gpt-3.5"):
             return [.text, .tools, .streaming, .functionCalling]
-        case let id where id.hasPrefix("o1") || id.hasPrefix("o3"):
+        case let id where id.hasPrefix("o1") || id.hasPrefix("o3") || id.hasPrefix("o4"):
             return [.text, .tools, .streaming, .reasoning]
         default:
             return nil
@@ -194,6 +194,10 @@ public actor OpenAIClientAdapter: ProviderClient {
     }
 
     // MARK: - Private Methods
+
+    private static func supportsReasoning(for modelId: String) -> Bool {
+        modelId.hasPrefix("o1") || modelId.hasPrefix("o3") || modelId.hasPrefix("o4")
+    }
 
     private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) throws -> URLRequest {
         let endpoint = baseURL.appendingPathComponent(Self.chatCompletionsEndpoint)
@@ -268,11 +272,28 @@ public actor OpenAIClientAdapter: ProviderClient {
             stream: streaming
         )
 
-        // Optional parameters
-        body.maxTokens = request.maxTokens
-        body.temperature = request.temperature
+        // Optional parameters — o-series models require max_completion_tokens instead of max_tokens
+        if Self.supportsReasoning(for: request.modelId) {
+            body.maxCompletionTokens = request.maxTokens
+        } else {
+            body.maxTokens = request.maxTokens
+        }
+        if Self.supportsReasoning(for: request.modelId) {
+            if request.temperature == 1 {
+                body.temperature = 1
+            } else {
+                body.temperature = nil
+            }
+        } else {
+            body.temperature = request.temperature
+        }
         body.topP = request.topP
         body.stop = request.stop
+
+        if Self.supportsReasoning(for: request.modelId),
+           let effort = request.reasoning?.effort {
+            body.reasoningEffort = effort.rawValue
+        }
 
         // Stream options to include usage in streaming responses
         if streaming {
@@ -533,7 +554,7 @@ public actor OpenAIClientAdapter: ProviderClient {
         var responseId: String?
         // Key by index for accumulation; store (id, name, arguments, startEmitted)
         // Use simpler pattern like LiteLLMClient - accumulate args as string, not separate deltas
-        var accumulatedToolCalls: [Int: (id: String, name: String, arguments: String, startEmitted: Bool)] = [:]
+        var accumulatedToolCalls: [Int: (id: String?, name: String, arguments: String, startEmitted: Bool)] = [:]
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
         var decodeErrorCount = 0
@@ -551,9 +572,14 @@ public actor OpenAIClientAdapter: ProviderClient {
             if jsonString.trimmingCharacters(in: .whitespaces) == "[DONE]" {
                 // Emit pending tool call finish events
                 for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
-                    if toolCall.startEmitted {
-                        continuation.yield(.toolCallFinish(id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments))
+                    guard let id = toolCall.id else { continue }
+                    if !toolCall.startEmitted, !toolCall.name.isEmpty {
+                        continuation.yield(.toolCallStart(id: id, name: toolCall.name))
+                        if !toolCall.arguments.isEmpty {
+                            continuation.yield(.toolCallDelta(id: id, argumentsDelta: toolCall.arguments))
+                        }
                     }
+                    continuation.yield(.toolCallFinish(id: id, name: toolCall.name, arguments: toolCall.arguments))
                 }
 
                 // Use last observed finish reason or default to .stop
@@ -599,36 +625,32 @@ public actor OpenAIClientAdapter: ProviderClient {
                         for toolCall in toolCalls {
                             let index = toolCall.index ?? 0
                             // Use real ID if provided, else use existing or generate stable one
-                            let stableId = toolCall.id ?? accumulatedToolCalls[index]?.id ?? "tool_call_\(index)"
-                            let newName = toolCall.function?.name
-                            let existingArgs = accumulatedToolCalls[index]?.arguments ?? ""
-                            let existingName = accumulatedToolCalls[index]?.name ?? ""
-                            let startEmitted = accumulatedToolCalls[index]?.startEmitted ?? false
-                            let name = newName ?? existingName
-
-                            // Get new argument delta (may be empty)
+                            let existing = accumulatedToolCalls[index]
+                            let id = toolCall.id ?? existing?.id
+                            let name = toolCall.function?.name ?? existing?.name ?? ""
                             let argsDelta = toolCall.function?.arguments ?? ""
+                            let existingArgs = existing?.arguments ?? ""
+                            let startEmitted = existing?.startEmitted ?? false
+                            let combinedArgs = existingArgs + argsDelta
 
-                            // Can we emit start? Need a name
-                            if !startEmitted && !name.isEmpty {
-                                continuation.yield(.toolCallStart(id: stableId, name: name))
-                                // Now flush all buffered args as a single delta, then the new delta
+                            // Only emit start once we have a stable id and name
+                            if !startEmitted, let id = id, !name.isEmpty {
+                                continuation.yield(.toolCallStart(id: id, name: name))
                                 if !existingArgs.isEmpty {
-                                    continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: existingArgs))
+                                    continuation.yield(.toolCallDelta(id: id, argumentsDelta: existingArgs))
                                 }
                                 if !argsDelta.isEmpty {
-                                    continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                                    continuation.yield(.toolCallDelta(id: id, argumentsDelta: argsDelta))
                                 }
-                                accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: true)
-                            } else if startEmitted {
-                                // Already emitted start, emit delta directly
+                                accumulatedToolCalls[index] = (id: id, name: name, arguments: combinedArgs, startEmitted: true)
+                            } else if startEmitted, let id = id {
                                 if !argsDelta.isEmpty {
-                                    continuation.yield(.toolCallDelta(id: stableId, argumentsDelta: argsDelta))
+                                    continuation.yield(.toolCallDelta(id: id, argumentsDelta: argsDelta))
                                 }
-                                accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: true)
+                                accumulatedToolCalls[index] = (id: id, name: name, arguments: combinedArgs, startEmitted: true)
                             } else {
-                                // Buffer until we can emit start (no name yet)
-                                accumulatedToolCalls[index] = (id: stableId, name: name, arguments: existingArgs + argsDelta, startEmitted: false)
+                                // Buffer until we have both id + name to emit start
+                                accumulatedToolCalls[index] = (id: id, name: name, arguments: combinedArgs, startEmitted: false)
                             }
                         }
                     }
@@ -641,9 +663,14 @@ public actor OpenAIClientAdapter: ProviderClient {
 
                     // Emit tool call finish events
                     for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
-                        if toolCall.startEmitted {
-                            continuation.yield(.toolCallFinish(id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments))
+                        guard let id = toolCall.id else { continue }
+                        if !toolCall.startEmitted, !toolCall.name.isEmpty {
+                            continuation.yield(.toolCallStart(id: id, name: toolCall.name))
+                            if !toolCall.arguments.isEmpty {
+                                continuation.yield(.toolCallDelta(id: id, argumentsDelta: toolCall.arguments))
+                            }
                         }
+                        continuation.yield(.toolCallFinish(id: id, name: toolCall.name, arguments: toolCall.arguments))
                     }
                     accumulatedToolCalls.removeAll()
 
@@ -670,9 +697,14 @@ public actor OpenAIClientAdapter: ProviderClient {
         // Stream ended without [DONE] or finish_reason
         // Flush pending tool calls
         for (_, toolCall) in accumulatedToolCalls.sorted(by: { $0.key < $1.key }) {
-            if toolCall.startEmitted {
-                continuation.yield(.toolCallFinish(id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments))
+            guard let id = toolCall.id else { continue }
+            if !toolCall.startEmitted, !toolCall.name.isEmpty {
+                continuation.yield(.toolCallStart(id: id, name: toolCall.name))
+                if !toolCall.arguments.isEmpty {
+                    continuation.yield(.toolCallDelta(id: id, argumentsDelta: toolCall.arguments))
+                }
             }
+            continuation.yield(.toolCallFinish(id: id, name: toolCall.name, arguments: toolCall.arguments))
         }
 
         continuation.yield(.finish(reason: lastFinishReason ?? .unknown, usage: totalUsage))
@@ -712,6 +744,7 @@ public actor OpenAIClientAdapter: ProviderClient {
                     id.hasPrefix("gpt-") ||
                     id.hasPrefix("o1") ||
                     id.hasPrefix("o3") ||
+                    id.hasPrefix("o4") ||
                     id.hasPrefix("chatgpt")
                 }
         } catch {
@@ -729,6 +762,7 @@ private struct OpenAIRequestBody: Encodable {
     let stream: Bool
 
     var maxTokens: Int?
+    var maxCompletionTokens: Int?
     var temperature: Double?
     var topP: Double?
     var stop: [String]?
@@ -736,16 +770,19 @@ private struct OpenAIRequestBody: Encodable {
     var toolChoice: OpenAIToolChoice?
     var responseFormat: OpenAIResponseFormat?
     var streamOptions: OpenAIStreamOptions?
+    var reasoningEffort: String?
 
     enum CodingKeys: String, CodingKey {
         case model, messages, stream
         case maxTokens = "max_tokens"
+        case maxCompletionTokens = "max_completion_tokens"
         case temperature
         case topP = "top_p"
         case stop, tools
         case toolChoice = "tool_choice"
         case responseFormat = "response_format"
         case streamOptions = "stream_options"
+        case reasoningEffort = "reasoning_effort"
     }
 }
 
