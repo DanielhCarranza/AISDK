@@ -355,7 +355,7 @@ final class ResponseAgentIntegrationTests: XCTestCase {
     
     func testBuiltInToolsConfiguration() {
         // Test built-in tools configuration
-        let builtInTools: [BuiltInTool] = [
+        let builtInTools: [ResponseBuiltInTool] = [
             .webSearchPreview,
             .codeInterpreter,
             .imageGeneration(partialImages: 3),

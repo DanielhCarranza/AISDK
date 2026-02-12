@@ -129,8 +129,19 @@ public struct ResponseImageGenerationTool: Codable {
 /// Code interpreter tool
 public struct ResponseCodeInterpreterTool: Codable {
     public let type: String = "code_interpreter"
-    
-    public init() {}
+    public let container: CodeInterpreterContainer
+
+    public init(container: CodeInterpreterContainer = CodeInterpreterContainer()) {
+        self.container = container
+    }
+
+    public struct CodeInterpreterContainer: Codable {
+        public let type: String
+
+        public init(type: String = "auto") {
+            self.type = type
+        }
+    }
 }
 
 /// MCP (Model Context Protocol) tool

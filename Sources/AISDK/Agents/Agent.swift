@@ -93,6 +93,9 @@ public actor Agent {
     /// Available tool types for this agent
     private let tools: [Tool.Type]
 
+    /// Built-in provider tools (server-side execution)
+    private let builtInTools: [BuiltInTool]
+
     /// MCP server configurations for external tool discovery
     private let mcpServers: [MCPServerConfiguration]
 
@@ -213,6 +216,7 @@ public actor Agent {
     public init(
         model: any LLM,
         tools: [Tool.Type] = [],
+        builtInTools: [BuiltInTool] = [],
         mcpServers: [MCPServerConfiguration] = [],
         skillConfiguration: SkillConfiguration = .default,
         instructions: String? = nil,
@@ -225,6 +229,7 @@ public actor Agent {
     ) {
         self.model = model
         self.tools = tools
+        self.builtInTools = builtInTools
         self.mcpServers = mcpServers
         self.mcpClient = MCPClient()
         self.skillConfiguration = skillConfiguration
@@ -405,6 +410,7 @@ public actor Agent {
                 stop: requestOptions.stop,
                 tools: combinedToolSchemas,
                 toolChoice: combinedToolSchemas != nil ? requestOptions.toolChoice : nil,
+                builtInTools: builtInTools.isEmpty ? nil : builtInTools,
                 responseFormat: requestOptions.responseFormat,
                 reasoning: requestOptions.reasoning,
                 allowedProviders: requestOptions.allowedProviders,
@@ -495,9 +501,10 @@ public actor Agent {
 
             // Build step result
             var toolResults: [AIToolResultData] = []
+            let executableToolCalls = toolCalls.filter { !builtInToolNameSet.contains($0.name) }
 
             // Check if we should stop (no tool calls)
-            guard !toolCalls.isEmpty else {
+            guard !executableToolCalls.isEmpty else {
                 // No tool calls, emit step finish and we're done
                 let stepResult = AIStepResult(
                     stepIndex: stepIndex,
@@ -515,11 +522,11 @@ public actor Agent {
             }
 
             // Execute tool calls
-            let firstToolName = toolCalls.first?.name ?? "unknown"
+            let firstToolName = executableToolCalls.first?.name ?? "unknown"
             currentState = .executingTool(firstToolName)
             await setObservableState(.executingTool(firstToolName))
 
-            for toolCall in toolCalls {
+            for toolCall in executableToolCalls {
                 do {
                     let toolResult = try await executeToolCall(toolCall)
                     let resultData = AIToolResultData(
@@ -674,6 +681,7 @@ public actor Agent {
                 stop: requestOptions.stop,
                 tools: combinedToolSchemas,
                 toolChoice: combinedToolSchemas != nil ? requestOptions.toolChoice : nil,
+                builtInTools: builtInTools.isEmpty ? nil : builtInTools,
                 responseFormat: requestOptions.responseFormat,
                 reasoning: requestOptions.reasoning,
                 allowedProviders: requestOptions.allowedProviders,
@@ -712,8 +720,10 @@ public actor Agent {
             workingMessages.append(assistantMessage)
             messageHistory = workingMessages
 
+            let executableToolCalls = toolCalls.filter { !builtInToolNameSet.contains($0.name) }
+
             // Check if we should stop (no tool calls)
-            guard !toolCalls.isEmpty else {
+            guard !executableToolCalls.isEmpty else {
                 // No tool calls - build step result and we're done
                 let stepResult = AIStepResult(
                     stepIndex: stepIndex,
@@ -730,12 +740,12 @@ public actor Agent {
             }
 
             // Execute tool calls and collect results
-            let firstToolName = toolCalls.first?.name ?? "unknown"
+            let firstToolName = executableToolCalls.first?.name ?? "unknown"
             currentState = .executingTool(firstToolName)
             await setObservableState(.executingTool(firstToolName))
 
             var toolResults: [AIToolResultData] = []
-            for toolCall in toolCalls {
+            for toolCall in executableToolCalls {
                 do {
                     let toolResult = try await executeToolCall(toolCall)
                     toolResults.append(AIToolResultData(
@@ -1062,6 +1072,27 @@ public actor Agent {
     /// - Throws: `SkillError` for path traversal or read errors
     public func readSkillResource(path: String, forSkill skillName: String) async throws -> String {
         try await skillRegistry.readResource(path: path, forSkill: skillName)
+    }
+
+    private var builtInToolNameSet: Set<String> {
+        var names: Set<String> = []
+        for tool in builtInTools {
+            switch tool {
+            case .webSearch, .webSearchDefault:
+                names.insert("web_search")
+                names.insert("web_search_preview")
+            case .codeExecution, .codeExecutionDefault:
+                names.insert("code_execution")
+                names.insert("code_interpreter")
+            case .fileSearch:
+                names.insert("file_search")
+            case .imageGeneration, .imageGenerationDefault:
+                names.insert("image_generation")
+            case .urlContext:
+                names.insert("url_context")
+            }
+        }
+        return names
     }
 
     /// Build combined tool schemas from native tools and MCP tools.

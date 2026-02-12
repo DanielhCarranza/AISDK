@@ -265,7 +265,19 @@ public actor AnthropicClientAdapter: ProviderClient {
         if shouldAddThinkingBetaHeader(for: request, body: body) {
             effectiveConfig = effectiveConfig.merging(with: BetaConfiguration(interleavedThinking: true))
         }
-        return effectiveConfig.headerValue()
+        var headers: [String] = []
+        if let baseHeader = effectiveConfig.headerValue() {
+            headers.append(contentsOf: baseHeader.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        }
+
+        if let builtInTools = request.builtInTools,
+           builtInTools.contains(where: { $0.kind == "codeExecution" }) {
+            if !headers.contains("code-execution-2025-08-25") {
+                headers.append("code-execution-2025-08-25")
+            }
+        }
+
+        return headers.isEmpty ? nil : headers.joined(separator: ",")
     }
 
     private func shouldAddThinkingBetaHeader(for request: ProviderRequest, body: ACARequestBody) -> Bool {
@@ -432,7 +444,7 @@ public actor AnthropicClientAdapter: ProviderClient {
 
         // Tools - convert from ProviderJSONValue to Anthropic format (unless toolChoice is .none)
         if !shouldOmitTools, let tools = request.tools {
-            var convertedTools: [ACATool] = []
+            var convertedTools: [ACAToolEntry] = []
             for (index, toolValue) in tools.enumerated() {
                 guard case .object(let toolDict) = toolValue else {
                     throw ProviderError.invalidRequest("Tool at index \(index) is not an object")
@@ -459,13 +471,64 @@ public actor AnthropicClientAdapter: ProviderClient {
                     inputSchema = nil
                 }
 
-                convertedTools.append(ACATool(
+                convertedTools.append(.function(ACATool(
                     name: name,
                     description: description,
                     inputSchema: inputSchema ?? ["type": .string("object")]
-                ))
+                )))
             }
             body.tools = convertedTools
+        }
+
+        // Built-in tools
+        if let builtInTools = request.builtInTools, !builtInTools.isEmpty {
+            if body.tools == nil { body.tools = [] }
+            for tool in builtInTools {
+                switch tool {
+                case .webSearch(let config):
+                    var toolDict: [String: Any] = [
+                        "type": "web_search_20250305",
+                        "name": "web_search"
+                    ]
+                    if let maxUses = config.maxUses { toolDict["max_uses"] = maxUses }
+                    if let allowed = config.allowedDomains { toolDict["allowed_domains"] = allowed }
+                    if let blocked = config.blockedDomains { toolDict["blocked_domains"] = blocked }
+                    if let loc = config.userLocation {
+                        var locDict: [String: String] = ["type": "approximate"]
+                        if let city = loc.city { locDict["city"] = city }
+                        if let region = loc.region { locDict["region"] = region }
+                        if let country = loc.country { locDict["country"] = country }
+                        if let tz = loc.timezone { locDict["timezone"] = tz }
+                        toolDict["user_location"] = locDict
+                    }
+                    body.tools?.append(.builtIn(toolDict))
+
+                case .webSearchDefault:
+                    body.tools?.append(.builtIn([
+                        "type": "web_search_20250305",
+                        "name": "web_search"
+                    ]))
+
+                case .codeExecution, .codeExecutionDefault:
+                    body.tools?.append(.builtIn([
+                        "type": "code_execution_20250825",
+                        "name": "code_execution"
+                    ]))
+
+                case .fileSearch:
+                    throw ProviderError.invalidRequest(
+                        "fileSearch is not supported by Anthropic. Supported: webSearch, codeExecution."
+                    )
+                case .imageGeneration, .imageGenerationDefault:
+                    throw ProviderError.invalidRequest(
+                        "imageGeneration is not supported by Anthropic. Supported: webSearch, codeExecution."
+                    )
+                case .urlContext:
+                    throw ProviderError.invalidRequest(
+                        "urlContext is not supported by Anthropic. Supported: webSearch, codeExecution."
+                    )
+                }
+            }
         }
 
         return body
@@ -589,6 +652,19 @@ public actor AnthropicClientAdapter: ProviderClient {
                     name: toolUseBlock.name,
                     arguments: argsString
                 ))
+            case .serverToolUse:
+                // Server-side tool calls don't require client execution
+                break
+            case .webSearchResult(let resultBlock):
+                for result in resultBlock.content {
+                    let parts = [result.title, result.url].compactMap { value in
+                        if let value, !value.isEmpty { return value }
+                        return nil
+                    }
+                    guard !parts.isEmpty else { continue }
+                    if !textContent.isEmpty { textContent += "\n" }
+                    textContent += parts.joined(separator: " - ")
+                }
             case .toolResult, .image:
                 // These shouldn't appear in responses
                 break
@@ -699,6 +775,18 @@ public actor AnthropicClientAdapter: ProviderClient {
                         case .text:
                             // Text block starting, nothing special needed
                             break
+                        case .serverToolUse:
+                            // Server-side tool use doesn't require client action
+                            break
+                        case .webSearchResult(let resultBlock):
+                            for (resultIndex, result) in resultBlock.content.enumerated() {
+                                let sourceId = result.url ?? "source_\(resultIndex)"
+                                continuation.yield(.source(AISource(
+                                    id: sourceId,
+                                    url: result.url,
+                                    title: result.title
+                                )))
+                            }
                         }
                     }
 
@@ -803,7 +891,7 @@ private struct ACARequestBody: Encodable {
     var topP: Double?
     var stopSequences: [String]?
     var stream: Bool?
-    var tools: [ACATool]?
+    var tools: [ACAToolEntry]?
     var toolChoice: ACAToolChoice?
     var thinking: AnthropicThinkingConfigParam?
 
@@ -895,6 +983,23 @@ private struct ACATool: Encodable {
     }
 }
 
+private enum ACAToolEntry: Encodable {
+    case function(ACATool)
+    case builtIn([String: Any])
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .function(let tool):
+            try tool.encode(to: encoder)
+        case .builtIn(let dict):
+            var container = encoder.singleValueContainer()
+            let data = try JSONSerialization.data(withJSONObject: dict)
+            let json = try JSONDecoder().decode(ProviderJSONValue.self, from: data)
+            try container.encode(json)
+        }
+    }
+}
+
 private struct ACAToolChoice: Encodable {
     let type: String
     let name: String?
@@ -927,6 +1032,8 @@ private enum ACAResponseContentBlock: Decodable {
     case toolUse(ACAToolUseContent)
     case toolResult(ACAToolResultContent)
     case image(ACAImageContent)
+    case serverToolUse(ACAServerToolUseContent)
+    case webSearchResult(ACAWebSearchResultContent)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -943,6 +1050,10 @@ private enum ACAResponseContentBlock: Decodable {
             self = .toolUse(try ACAToolUseContent(from: decoder))
         case "tool_result":
             self = .toolResult(try ACAToolResultContentDecodable(from: decoder).toContent())
+        case "server_tool_use":
+            self = .serverToolUse(try ACAServerToolUseContent(from: decoder))
+        case "web_search_tool_result":
+            self = .webSearchResult(try ACAWebSearchResultContent(from: decoder))
         default:
             // Default to empty text for unknown types
             self = .text(ACATextContent(type: type, text: ""))
@@ -964,6 +1075,37 @@ private struct ACAToolResultContentDecodable: Decodable {
 
     func toContent() -> ACAToolResultContent {
         ACAToolResultContent(type: type, toolUseId: toolUseId, content: content)
+    }
+}
+
+private struct ACAServerToolUseContent: Decodable {
+    let type: String
+    let id: String
+    let name: String
+    let input: [String: ProviderJSONValue]?
+}
+
+private struct ACAWebSearchResultContent: Decodable {
+    let type: String
+    let toolUseId: String
+    let content: [ACAWebSearchResult]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
+    }
+}
+
+private struct ACAWebSearchResult: Decodable {
+    let type: String
+    let title: String?
+    let url: String?
+    let pageAge: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type, title, url
+        case pageAge = "page_age"
     }
 }
 
@@ -1009,6 +1151,8 @@ private struct ACAStreamMessage: Decodable {
 private enum ACAStreamContentBlock: Decodable {
     case text(ACATextContent)
     case toolUse(ACAStreamToolUse)
+    case serverToolUse(ACAServerToolUseContent)
+    case webSearchResult(ACAWebSearchResultContent)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -1023,6 +1167,10 @@ private enum ACAStreamContentBlock: Decodable {
             self = .text(try ACATextContent(from: decoder))
         case "tool_use":
             self = .toolUse(try ACAStreamToolUse(from: decoder))
+        case "server_tool_use":
+            self = .serverToolUse(try ACAServerToolUseContent(from: decoder))
+        case "web_search_tool_result":
+            self = .webSearchResult(try ACAWebSearchResultContent(from: decoder))
         default:
             self = .text(ACATextContent(type: type, text: ""))
         }

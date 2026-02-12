@@ -591,6 +591,15 @@ class CLIController {
                         print(ANSIStyles.dim("\n[Finished: \(reason)]"))
                     }
 
+                case .source(let aiSource):
+                    if let url = aiSource.url {
+                        sources.append(WebSearchSource(
+                            title: aiSource.title ?? "",
+                            url: url,
+                            snippet: aiSource.snippet
+                        ))
+                    }
+
                 default:
                     break
                 }
@@ -655,6 +664,7 @@ class CLIController {
         return Agent(
             model: languageModel,
             tools: toolTypes,
+            builtInTools: runtimeConfig.activeBuiltInTools,
             instructions: buildSystemPrompt(),
             requestOptions: requestOptions
         )
@@ -868,6 +878,11 @@ class CLIController {
         if runtimeConfig.toolsEnabled {
             let toolNames = builtInTools.map { $0.init().name }.joined(separator: ", ")
             print(" Tools: \(ANSIStyles.green(toolNames))")
+        }
+
+        if !runtimeConfig.activeBuiltInTools.isEmpty {
+            let builtInNames = runtimeConfig.activeBuiltInTools.map { $0.kind }.joined(separator: ", ")
+            print(" Built-in: \(ANSIStyles.green(builtInNames))")
         }
 
         print(ANSIStyles.dim(String(repeating: "─", count: 60)))

@@ -226,6 +226,9 @@ public struct ProviderRequest: Sendable {
     /// Tool choice behavior
     public let toolChoice: ProviderToolChoice?
 
+    /// Built-in provider tools (passed through for adapter-specific mapping)
+    public let builtInTools: [BuiltInTool]?
+
     /// Response format specification
     public let responseFormat: ProviderResponseFormat?
 
@@ -254,6 +257,7 @@ public struct ProviderRequest: Sendable {
         stream: Bool = false,
         tools: [ProviderJSONValue]? = nil,
         toolChoice: ProviderToolChoice? = nil,
+        builtInTools: [BuiltInTool]? = nil,
         responseFormat: ProviderResponseFormat? = nil,
         reasoning: AIReasoningConfig? = nil,
         timeout: TimeInterval = 120,
@@ -270,6 +274,7 @@ public struct ProviderRequest: Sendable {
         self.stream = stream
         self.tools = tools
         self.toolChoice = toolChoice
+        self.builtInTools = builtInTools
         self.responseFormat = responseFormat
         self.reasoning = reasoning
         self.timeout = timeout
@@ -509,8 +514,14 @@ public enum ProviderStreamEvent: Sendable {
     /// Tool call finished
     case toolCallFinish(id: String, name: String, arguments: String)
 
+    /// Result from executing a tool
+    case toolResult(id: String, result: String, metadata: ToolMetadata?)
+
     /// Reasoning delta (for o1/o3 models)
     case reasoningDelta(String)
+
+    /// Source/citation information
+    case source(AISource)
 
     /// Usage information
     case usage(ProviderUsage)
@@ -650,8 +661,12 @@ public extension ProviderStreamEvent {
             return .toolCallDelta(id: id, argumentsDelta: delta)
         case .toolCallFinish(let id, let name, let args):
             return .toolCallFinish(id: id, name: name, arguments: args)
+        case .toolResult(let id, let result, let metadata):
+            return .toolResult(id: id, result: result, metadata: metadata)
         case .reasoningDelta(let text):
             return .reasoningDelta(text)
+        case .source(let source):
+            return .source(source)
         case .usage(let usage):
             return .usage(usage.toAIUsage())
         case .finish(let reason, let usage):
@@ -683,6 +698,7 @@ public extension AITextRequest {
             stream: stream,
             tools: try tools?.map { try $0.toProviderJSONValue() },
             toolChoice: toolChoice?.toProviderToolChoice(),
+            builtInTools: builtInTools,
             responseFormat: try responseFormat?.toProviderResponseFormat(),
             reasoning: reasoning,
             timeout: 120,
