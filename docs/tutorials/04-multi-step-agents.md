@@ -19,7 +19,7 @@ When an agent receives a message, it may:
 let agent = AIAgentActor(
     model: client,
     tools: [WeatherTool.self, CalendarTool.self, EmailTool.self],
-    systemPrompt: """
+    instructions: """
         You are a personal assistant that can:
         - Check the weather
         - Access calendar events
@@ -172,7 +172,7 @@ struct NoteTool: AITool {
 let researchAgent = AIAgentActor(
     model: client,
     tools: [WebSearchTool.self, WikipediaTool.self, NoteTool.self],
-    systemPrompt: """
+    instructions: """
         You are a research assistant. When given a topic:
         1. Search for relevant information using web_search
         2. Look up key concepts on Wikipedia
