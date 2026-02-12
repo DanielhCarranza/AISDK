@@ -484,27 +484,24 @@ swiftSettings: [
 import XCTest
 
 final class AgentTests: XCTestCase {
-    var agent: Agent!
-    var mockProvider: MockLLMProvider!
-    
+    var agent: AIAgentActor!
+    var mockModel: MockAILanguageModel!
+
     override func setUp() {
         super.setUp()
-        mockProvider = MockLLMProvider()
-        agent = try! Agent(
-            model: .gpt4o,
-            llm: mockProvider
-        )
+        mockModel = MockAILanguageModel()
+        agent = AIAgentActor(model: mockModel)
     }
-    
+
     func testSendMessage() async throws {
         // Arrange
-        mockProvider.mockResponse = ChatCompletionResponse(/* ... */)
-        
+        mockModel.mockResponse = .text("Expected response")
+
         // Act
-        let response = try await agent.send("Hello")
-        
+        let result = try await agent.execute(messages: [.user("Hello")])
+
         // Assert
-        XCTAssertEqual(response.content, "Expected response")
+        XCTAssertEqual(result.text, "Expected response")
     }
 }
 ```
