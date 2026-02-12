@@ -23,8 +23,8 @@ public struct AnthropicMessageRequestBody: Encodable {
     /// Input messages.
     ///
     /// Our models are trained to operate on alternating user and assistant conversational turns.
-    /// When creating a new Message, you specify the prior conversational turns with the messages
-    /// parameter, and the model then generates the next Message in the conversation.
+    /// When creating a new LegacyMessage, you specify the prior conversational turns with the messages
+    /// parameter, and the model then generates the next LegacyMessage in the conversation.
     ///
     /// Each input message must be an object with a role and content. You can specify a single
     /// user-role message, or you can include multiple user and assistant messages. The first

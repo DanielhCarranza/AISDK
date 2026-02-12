@@ -2,7 +2,7 @@
 //  AIMessage+AnthropicConversions.swift
 //  AISDK
 //
-//  Conversion extensions from Universal Message System to Anthropic API
+//  Conversion extensions from Universal LegacyMessage System to Anthropic API
 //
 
 import Foundation
@@ -10,7 +10,7 @@ import Foundation
 // MARK: - Anthropic API Conversions
 
 extension AIInputMessage {
-    /// Convert universal message to Anthropic Message
+    /// Convert universal message to Anthropic LegacyMessage
     func toAnthropicMessage() -> AnthropicInputMessage {
         let anthropicContent = content.map { $0.toAnthropicContent() }
         return AnthropicInputMessage(

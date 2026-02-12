@@ -70,11 +70,11 @@ private func accessibilityTraits(from traits: [String]?) -> AccessibilityTraits 
 /// - Default registry with Core 8 component views
 ///
 /// ## Security
-/// The registry includes action allowlisting to prevent LLM-generated UI from
+/// The registry includes action allowlisting to prevent LegacyLLM-generated UI from
 /// triggering unauthorized actions. When actions are registered via `allowAction`,
 /// only those actions will be passed through to the handler.
 ///
-/// **Important**: For production use with LLM-generated UI, always configure
+/// **Important**: For production use with LegacyLLM-generated UI, always configure
 /// an explicit allowlist using `allowAction(_:)` or use `secureDefault` which
 /// pre-populates the allowlist with standard actions.
 ///
@@ -142,7 +142,7 @@ public struct UIComponentRegistry: @unchecked Sendable {
     /// `allowAction(_:)` to configure the action allowlist.
     ///
     /// - Note: By default, an empty allowlist means all actions pass through.
-    ///   For production use with LLM-generated UI, always configure explicit
+    ///   For production use with LegacyLLM-generated UI, always configure explicit
     ///   allowed actions or use `secureDefault`.
     public init() {
         self.builders = [:]
@@ -360,7 +360,7 @@ extension UIComponentRegistry {
     /// meaning all actions are passed through. Configure security
     /// by calling `allowAction(_:)` after obtaining the registry.
     ///
-    /// - Note: For production use with LLM-generated UI, use `secureDefault`
+    /// - Note: For production use with LegacyLLM-generated UI, use `secureDefault`
     ///   or explicitly configure allowed actions.
     public static var `default`: UIComponentRegistry {
         var registry = UIComponentRegistry()
@@ -375,7 +375,7 @@ extension UIComponentRegistry {
     /// - navigate
     /// - dismiss
     ///
-    /// Use this for production deployments with LLM-generated UI.
+    /// Use this for production deployments with LegacyLLM-generated UI.
     public static var secureDefault: UIComponentRegistry {
         var registry = UIComponentRegistry()
         registerCore8Components(in: &registry)

@@ -23,7 +23,7 @@ public struct ResearchMetadata: ToolMetadata {
     public let sources: [ResearchSource]
     
     /// Current state of the research
-    public let state: ResearcherAgentState
+    public let state: ResearcherLegacyAgentState
     
     /// Any hypotheses generated
     public let hypotheses: [String]
@@ -64,7 +64,7 @@ public struct ResearchMetadata: ToolMetadata {
         startTime: Date,
         endTime: Date? = nil,
         sources: [ResearchSource] = [],
-        state: ResearcherAgentState,
+        state: ResearcherLegacyAgentState,
         hypotheses: [String] = [],
         qualityScore: Double? = nil,
         toolName: String? = nil,

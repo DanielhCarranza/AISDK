@@ -2,7 +2,7 @@
 //  AIMessage+GeminiConversions.swift
 //  AISDK
 //
-//  Conversion extensions from Universal Message System to Gemini API
+//  Conversion extensions from Universal LegacyMessage System to Gemini API
 //
 
 import Foundation

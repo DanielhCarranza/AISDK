@@ -291,7 +291,7 @@ public struct ResponseExamples {
             case .modelNotAvailable:
                 print("The requested model is not available.")
             default:
-                print("LLM Error: \(error.detailedDescription)")
+                print("LegacyLLM Error: \(error.detailedDescription)")
             }
         } catch {
             print("Unexpected error: \(error.localizedDescription)")

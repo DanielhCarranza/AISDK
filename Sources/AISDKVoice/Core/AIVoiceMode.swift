@@ -226,7 +226,7 @@ public final class AIVoiceMode: NSObject, VoiceActivityDetectorDelegate {
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = "LLM Error: \(error.localizedDescription)"
+                    self.errorMessage = "LegacyLLM Error: \(error.localizedDescription)"
                     self.aiThinking = false
                     self.isAISpeaking = false
                 }

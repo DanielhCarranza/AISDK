@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TypingIndicator: View {
-    let state: AgentState
+    let state: LegacyAgentState
     
     @State private var bounceOffset: CGFloat = 0
     

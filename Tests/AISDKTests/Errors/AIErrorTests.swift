@@ -384,7 +384,7 @@ final class AIErrorTests: XCTestCase {
         XCTAssertEqual(dict["isRetryable"] as? Bool, true)
         XCTAssertEqual(dict["isSecurityRelated"] as? Bool, false)
         XCTAssertEqual(dict["phiRedacted"] as? Bool, true)
-        // Message should be generic (PHI-safe)
+        // LegacyMessage should be generic (PHI-safe)
         XCTAssertEqual(dict["message"] as? String, "Rate limit exceeded")
     }
 

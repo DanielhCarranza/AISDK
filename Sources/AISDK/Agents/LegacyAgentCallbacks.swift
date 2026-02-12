@@ -7,40 +7,40 @@ public enum CallbackResult {
     /// Cancel the current operation
     case cancel
     /// Replace the current message/response with a new one
-    case replace(Message)
+    case replace(LegacyMessage)
 }
 
 /// Protocol defining all possible agent callbacks
-public protocol AgentCallbacks: AnyObject {
-    // Message Events
-    func onMessageReceived(message: Message) async -> CallbackResult
-    func onMessageProcessed(message: Message) async -> CallbackResult
+public protocol LegacyAgentCallbacks: AnyObject {
+    // LegacyMessage Events
+    func onMessageReceived(message: LegacyMessage) async -> CallbackResult
+    func onMessageProcessed(message: LegacyMessage) async -> CallbackResult
     
     // Tool Events
     func onBeforeToolExecution(name: String, arguments: String) async -> CallbackResult
     func onAfterToolExecution(name: String, result: String) async -> CallbackResult
     func onToolError(name: String, error: Error) async -> CallbackResult
     
-    // LLM Events
-    func onBeforeLLMRequest(messages: [Message]) async -> CallbackResult
-    func onAfterLLMResponse(response: Message) async -> CallbackResult
-    func onStreamChunk(chunk: Message) async -> CallbackResult
+    // LegacyLLM Events
+    func onBeforeLLMRequest(messages: [LegacyMessage]) async -> CallbackResult
+    func onAfterLLMResponse(response: LegacyMessage) async -> CallbackResult
+    func onStreamChunk(chunk: LegacyMessage) async -> CallbackResult
 }
 
 /// Default implementations to make all methods optional
-public extension AgentCallbacks {
-    func onMessageReceived(message: Message) async -> CallbackResult { .continue }
-    func onMessageProcessed(message: Message) async -> CallbackResult { .continue }
+public extension LegacyAgentCallbacks {
+    func onMessageReceived(message: LegacyMessage) async -> CallbackResult { .continue }
+    func onMessageProcessed(message: LegacyMessage) async -> CallbackResult { .continue }
     func onBeforeToolExecution(name: String, arguments: String) async -> CallbackResult { .continue }
     func onAfterToolExecution(name: String, result: String) async -> CallbackResult { .continue }
     func onToolError(name: String, error: Error) async -> CallbackResult { .continue }
-    func onBeforeLLMRequest(messages: [Message]) async -> CallbackResult { .continue }
-    func onAfterLLMResponse(response: Message) async -> CallbackResult { .continue }
-    func onStreamChunk(chunk: Message) async -> CallbackResult { .continue }
+    func onBeforeLLMRequest(messages: [LegacyMessage]) async -> CallbackResult { .continue }
+    func onAfterLLMResponse(response: LegacyMessage) async -> CallbackResult { .continue }
+    func onStreamChunk(chunk: LegacyMessage) async -> CallbackResult { .continue }
 }
 
 /// Callback handler that tracks metadata during streaming
-public class MetadataTracker: AgentCallbacks {
+public class MetadataTracker: LegacyAgentCallbacks {
     private let lock = NSLock()
     private var toolMetadata: [String: ToolMetadata] = [:]
     public private(set) var lastMetadata: ToolMetadata?
@@ -79,13 +79,13 @@ public class MetadataTracker: AgentCallbacks {
         }
     }
     
-    // MARK: - AgentCallbacks
+    // MARK: - LegacyAgentCallbacks
     
     public func onAfterToolExecution(name: String, result: String) async -> CallbackResult {
         return .continue
     }
     
-    public func onMessageProcessed(message: Message) async -> CallbackResult {
+    public func onMessageProcessed(message: LegacyMessage) async -> CallbackResult {
         if case .assistant = message {
             // Use withLock instead of lock/unlock
             lock.withLock {

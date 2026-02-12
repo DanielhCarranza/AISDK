@@ -14,7 +14,7 @@ private struct EchoTool: AITool {
     let name = "echo"
     let description = "Echoes back the input message"
 
-    @AIParameter(description: "Message to echo")
+    @AIParameter(description: "LegacyMessage to echo")
     var message: String = ""
 
     init() {}

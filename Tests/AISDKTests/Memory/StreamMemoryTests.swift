@@ -183,7 +183,7 @@ final class StreamMemoryTests: XCTestCase {
         print("Completed: \(completedCount), Errors: \(errorCount)")
     }
 
-    // MARK: - Test 5: Agent Operations Don't Leak
+    // MARK: - Test 5: LegacyAgent Operations Don't Leak
 
     /// Tests that agent execute operations don't accumulate leaked objects
     func test_agent_operations_dont_leak() async throws {
@@ -228,7 +228,7 @@ final class StreamMemoryTests: XCTestCase {
         print("Deallocated: \(deallocatedCount)/\(iterations) agents")
     }
 
-    // MARK: - Test 6: Streaming Agent Operations Don't Leak
+    // MARK: - Test 6: Streaming LegacyAgent Operations Don't Leak
 
     /// Tests that streaming agent operations are properly cleaned up
     func test_streaming_agent_operations_dont_leak() async throws {

@@ -228,7 +228,7 @@ public extension AIMessage {
 // MARK: - AILanguageModel Protocol
 
 /// Unified protocol for all AI language model providers
-/// This protocol provides a consistent interface across different LLM providers
+/// This protocol provides a consistent interface across different LegacyLLM providers
 /// and supports both synchronous and streaming operations.
 public protocol AILanguageModel: Sendable {
     /// The provider name (e.g., "openai", "anthropic", "google")

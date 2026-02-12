@@ -5,9 +5,9 @@
 //  Integration tests for MCP (Model Context Protocol) support in AIAgentActor.
 //
 //  These tests verify the complete MCP flow:
-//  1. Agent discovers tools from MCP server
-//  2. LLM requests an MCP tool call
-//  3. Agent routes the call to MCPClient
+//  1. LegacyAgent discovers tools from MCP server
+//  2. LegacyLLM requests an MCP tool call
+//  3. LegacyAgent routes the call to MCPClient
 //  4. MCPClient communicates with the MCP server
 //  5. Result flows back through the agent
 //
@@ -24,7 +24,7 @@ private struct TestEchoTool: AITool {
     let name = "echo"
     let description = "Echoes back the input"
 
-    @AIParameter(description: "Message to echo")
+    @AIParameter(description: "LegacyMessage to echo")
     var message: String = ""
 
     init() {}
@@ -593,18 +593,18 @@ final class MCPIntegrationTests: XCTestCase {
 
 extension MCPIntegrationTests {
 
-    /// Test a complete scenario: Agent uses MCP tool to read a file
+    /// Test a complete scenario: LegacyAgent uses MCP tool to read a file
     func testEndToEndFileReadScenario() async throws {
         // This test demonstrates the full flow:
         // 1. User asks agent to read a file
-        // 2. Agent calls LLM which returns an MCP tool call
-        // 3. Agent routes to MCP client
+        // 2. LegacyAgent calls LegacyLLM which returns an MCP tool call
+        // 3. LegacyAgent routes to MCP client
         // 4. MCP client calls the mock server
         // 5. Result flows back
 
         // For a complete E2E test, you would:
         // 1. Set up a mock MCP server with initialize, tools/list, and tools/call responses
-        // 2. Set up a mock LLM that returns tool calls
+        // 2. Set up a mock LegacyLLM that returns tool calls
         // 3. Run the agent and verify the complete flow
 
         // Verify the building blocks work

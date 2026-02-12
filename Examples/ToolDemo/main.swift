@@ -199,14 +199,14 @@ func testDirectToolCalls() async {
 }
 
 func testAgentWithTools() async {
-    print("\n🤖 Testing Agent with Tools")
+    print("\n🤖 Testing LegacyAgent with Tools")
     print("-" * 30)
     
-    // Note: This would require actual LLM provider setup
-    print("ℹ️  Agent tool integration requires LLM provider configuration")
+    // Note: This would require actual LegacyLLM provider setup
+    print("ℹ️  LegacyAgent tool integration requires LegacyLLM provider configuration")
     print("   Example usage:")
     print("""
-    let agent = try Agent(
+    let agent = try LegacyAgent(
         model: AgenticModels.gpt4,
         tools: [WeatherTool.self, CalculatorTool.self],
         instructions: "You are a helpful assistant."

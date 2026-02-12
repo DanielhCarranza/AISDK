@@ -9,7 +9,7 @@ import MarkdownUI
 import SwiftUI
 
 struct MessageBubble: View {
-    let chatMessage: ChatMessage
+    let chatMessage: LegacyChatMessage
     @State private var showingMetadata = false
     @State private var selectedAttachment: Attachment?
     

@@ -2,7 +2,7 @@
 //  ReasoningDisplay.swift
 //  AISDKTestRunner
 //
-//  Cursor-style reasoning display for showing LLM thinking process
+//  Cursor-style reasoning display for showing LegacyLLM thinking process
 //
 
 import Foundation

@@ -1,9 +1,9 @@
 import XCTest
 @testable import AISDK
 
-// MARK: - Agent Tool Integration Tests
+// MARK: - LegacyAgent Tool Integration Tests
 
-// Currently disabled due to Agent API changes
+// Currently disabled due to LegacyAgent API changes
 /*
 final class AgentToolTests: XCTestCase {
     
@@ -34,7 +34,7 @@ final class AgentToolTests: XCTestCase {
         // Then setup final response after tool execution
         mockProvider.setupMockResponse("Based on the weather data, it's 22°C and sunny in San Francisco today.")
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful weather assistant.",
@@ -64,7 +64,7 @@ final class AgentToolTests: XCTestCase {
         // Final response
         mockProvider.setupMockResponse("The weather is 72°F, and the difference from freezing is 40°F.")
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestWeatherTool.self, TestCalculatorTool.self],
             instructions: "You are a helpful assistant.",
@@ -86,7 +86,7 @@ final class AgentToolTests: XCTestCase {
             arguments: "{}"
         )
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestFailingTool.self],
             instructions: "You are a helpful assistant.",
@@ -109,7 +109,7 @@ final class AgentToolTests: XCTestCase {
             arguments: "{}"
         )
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [],
             instructions: "You are a helpful assistant.",
@@ -135,14 +135,14 @@ final class AgentToolTests: XCTestCase {
             arguments: "{\"timezone\": \"UTC\"}"
         )
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestTimeTool.self],
             instructions: "You are a helpful assistant.",
             llmProvider: mockProvider
         )
         
-        var receivedMessages: [ChatMessage] = []
+        var receivedMessages: [LegacyChatMessage] = []
         
         for await message in try await agent.stream("What time is it?") {
             receivedMessages.append(message)
@@ -161,7 +161,7 @@ final class AgentToolTests: XCTestCase {
         )
         mockProvider.setupMockResponse("Weather data retrieved successfully")
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful weather assistant.",
@@ -186,7 +186,7 @@ final class AgentToolTests: XCTestCase {
         )
         mockProvider.setupMockResponse("The result is 45")
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestCalculatorTool.self],
             instructions: "Always use the calculator for math problems.",
@@ -204,7 +204,7 @@ final class AgentToolTests: XCTestCase {
     // MARK: - Multi-turn Conversation with Tools
     
     func testAgentMultiTurnWithTools() async throws {
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestWeatherTool.self, TestCalculatorTool.self],
             instructions: "You are a helpful assistant.",
@@ -251,7 +251,7 @@ final class AgentToolTests: XCTestCase {
         
         mockProvider.setupMockResponse("Chain completed successfully")
         
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestChainedTool.self],
             instructions: "Process requests in chains when needed.",
@@ -268,7 +268,7 @@ final class AgentToolTests: XCTestCase {
     // MARK: - Performance Tests
     
     func testAgentToolPerformance() async throws {
-        let agent = try Agent(
+        let agent = try LegacyAgent(
             model: AgenticModels.gpt4,
             tools: [TestWeatherTool.self],
             instructions: "You are a weather assistant.",

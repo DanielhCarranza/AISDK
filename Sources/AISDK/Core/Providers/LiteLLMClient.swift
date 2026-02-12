@@ -13,7 +13,7 @@ import Foundation
 /// LiteLLM provider client for self-hosted AI routing
 ///
 /// LiteLLM is an open-source proxy that provides a unified OpenAI-compatible API
-/// for 100+ LLM providers. It's designed for self-hosted deployments where you need
+/// for 100+ LegacyLLM providers. It's designed for self-hosted deployments where you need
 /// full control over routing and cost management.
 ///
 /// ## Features

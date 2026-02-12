@@ -41,7 +41,7 @@ class SessionManager {
         self.messages = [.system(systemPrompt)]
     }
 
-    // MARK: - Message Management
+    // MARK: - LegacyMessage Management
 
     /// Add a user message
     func addUserMessage(_ content: String) {

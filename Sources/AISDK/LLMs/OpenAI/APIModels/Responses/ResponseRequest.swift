@@ -249,7 +249,7 @@ public struct ResponseItemReference: Codable {
     }
 }
 
-/// Message input item
+/// LegacyMessage input item
 public struct ResponseMessage: Codable {
     public let type: String = "message"
     public let role: String

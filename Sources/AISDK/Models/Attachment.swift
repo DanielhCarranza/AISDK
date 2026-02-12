@@ -99,7 +99,7 @@ public struct Attachment: Identifiable, Codable {
         return try? decoder.decode(type, from: data)
     }
     
-    /// Gets the LLM context string for the medical record
+    /// Gets the LegacyLLM context string for the medical record
     public func getLLMContext<T: MedicalRecordContent>(as type: T.Type) -> String? {
         return getMedicalRecord(as: type)?.toLLMContext()
     }

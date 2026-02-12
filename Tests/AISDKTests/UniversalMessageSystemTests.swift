@@ -2,7 +2,7 @@
 //  UniversalMessageSystemTests.swift
 //  AISDKTests
 //
-//  Tests for Universal Message System
+//  Tests for Universal LegacyMessage System
 //
 
 import XCTest
@@ -10,7 +10,7 @@ import XCTest
 
 final class UniversalMessageSystemTests: XCTestCase {
     
-    // MARK: - Core Message Creation Tests
+    // MARK: - Core LegacyMessage Creation Tests
     
     func testCreateSimpleMessage() {
         let message = AIInputMessage.user("Hello, world!")

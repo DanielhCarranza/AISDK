@@ -76,14 +76,14 @@ public enum ResponseAgentError: Error, LocalizedError, Equatable {
         case .emptyConversation:
             return "Cannot process empty conversation"
         case .messageConversionFailed(let message):
-            return "Message conversion failed: \(message)"
+            return "LegacyMessage conversion failed: \(message)"
             
         case .invalidState(let message):
             return "Invalid agent state: \(message)"
         case .operationCancelled:
             return "Operation was cancelled"
         case .agentBusy:
-            return "Agent is currently busy processing another request"
+            return "LegacyAgent is currently busy processing another request"
             
         case .backgroundTaskTimeout(let taskId):
             return "Background task '\(taskId)' timed out"
