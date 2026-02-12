@@ -155,7 +155,7 @@ let agent = AIAgentActor(
     instructions: "You can check the weather."
 )
 
-for try await event in agent.sendStream("What's the weather in Tokyo?") {
+for try await event in agent.streamExecute(messages: [.user("What's the weather in Tokyo?")]) {
     switch event {
     case .textDelta(let text):
         print(text, terminator: "")
