@@ -28,6 +28,8 @@ final class AnthropicCommands {
         switch command {
         case "thinking":
             return handleThinking(args)
+        case "caching":
+            return handleCaching(args)
         case "batch":
             return await handleBatch(args)
         case "files":
@@ -92,6 +94,54 @@ final class AnthropicCommands {
         print("  Min budget: 1,024 tokens")
         print("  Max budget: 128,000 tokens")
         print("\nNote: Budget must be less than max_tokens\n")
+    }
+
+    // MARK: - Caching Commands
+
+    private func handleCaching(_ args: [String]) -> Bool {
+        guard !args.isEmpty else {
+            printCachingStatus()
+            return true
+        }
+
+        switch args[0].lowercased() {
+        case "on":
+            runtimeConfig.cachingEnabled = true
+            runtimeConfig.cachingExtended = false
+            print("✓ Prompt caching enabled (standard retention)")
+            onConfigChanged?()
+        case "off":
+            runtimeConfig.cachingEnabled = false
+            runtimeConfig.cachingExtended = false
+            print("✓ Prompt caching disabled")
+            onConfigChanged?()
+        case "extended":
+            runtimeConfig.cachingEnabled = true
+            runtimeConfig.cachingExtended = true
+            print("✓ Prompt caching enabled (extended 1h retention)")
+            print("  Note: Extended TTL beta header will be auto-enabled")
+            onConfigChanged?()
+        case "status":
+            printCachingStatus()
+        default:
+            print("Usage: /caching [on|off|extended|status]")
+        }
+
+        return true
+    }
+
+    private func printCachingStatus() {
+        print("\n📊 Prompt Caching Status:")
+        print("  Enabled: \(runtimeConfig.cachingEnabled ? "Yes" : "No")")
+        if runtimeConfig.cachingEnabled {
+            print("  Retention: \(runtimeConfig.cachingExtended ? "Extended (1hr)" : "Standard (5min)")")
+        }
+        print("\n  How it works:")
+        print("  - System prompt is sent as a content block with cache_control")
+        print("  - First request: cache_creation_input_tokens charged (25% premium)")
+        print("  - Subsequent requests: cache_read_input_tokens (90% discount)")
+        print("  - Minimum cacheable content: 1,024 tokens")
+        print("  - Extended retention requires the extended-cache-ttl beta header\n")
     }
 
     // MARK: - Batch Commands

@@ -99,6 +99,11 @@ public struct AnthropicMessageRequestBody: Encodable {
     /// specifying a particular goal or role. See our guide to system prompts.
     public let system: String?
 
+    /// System prompt as an array of content blocks (alternative to `system` string).
+    /// When set, this is encoded for the `system` key instead of the string form.
+    /// Required for attaching `cache_control` to system prompt blocks.
+    public let systemBlocks: [AnthropicSystemBlock]?
+
     /// Amount of randomness injected into the response.
     ///
     /// Defaults to 1.0. Ranges from 0.0 to 1.0. Use temperature closer to 0.0 for analytical /
@@ -272,7 +277,12 @@ public struct AnthropicMessageRequestBody: Encodable {
         try container.encodeIfPresent(metadata, forKey: .metadata)
         try container.encodeIfPresent(stopSequences, forKey: .stopSequences)
         try container.encodeIfPresent(stream, forKey: .stream)
-        try container.encodeIfPresent(system, forKey: .system)
+        // Prefer systemBlocks (array form) over system (string form) for cache_control support
+        if let systemBlocks = systemBlocks {
+            try container.encode(systemBlocks, forKey: .system)
+        } else {
+            try container.encodeIfPresent(system, forKey: .system)
+        }
         try container.encodeIfPresent(temperature, forKey: .temperature)
         try container.encodeIfPresent(topK, forKey: .topK)
         try container.encodeIfPresent(topP, forKey: .topP)
@@ -313,6 +323,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         stopSequences: [String]? = nil,
         stream: Bool? = nil,
         system: String? = nil,
+        systemBlocks: [AnthropicSystemBlock]? = nil,
         temperature: Double? = nil,
         toolChoice: AnthropicToolChoice? = nil,
         tools: [AnthropicTool]? = nil,
@@ -330,6 +341,7 @@ public struct AnthropicMessageRequestBody: Encodable {
         self.stopSequences = stopSequences
         self.stream = stream
         self.system = system
+        self.systemBlocks = systemBlocks
         self.temperature = temperature
         self.toolChoice = toolChoice
         self.tools = tools
@@ -683,44 +695,83 @@ extension AnthropicPropertySchema {
     }
 }
 
+// MARK: - AnthropicSystemBlock
+
+/// System content block with optional cache control (array form of the `system` field).
+///
+/// The Anthropic API accepts `system` as either a plain string or an array of content blocks.
+/// The array form is required to attach `cache_control` for prompt caching.
+public struct AnthropicSystemBlock: Encodable {
+    public let type: String
+    public let text: String
+    public let cacheControl: AnthropicCacheControl?
+
+    public init(text: String, cacheControl: AnthropicCacheControl? = nil) {
+        self.type = "text"
+        self.text = text
+        self.cacheControl = cacheControl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case cacheControl = "cache_control"
+    }
+}
+
 // MARK: - AnthropicTool
 
 /// Clean, type-safe Anthropic tool definition
 public struct AnthropicTool: Encodable {
     /// The tool name
     public let name: String
-    
+
     /// Description of what this tool does
     /// Tool descriptions should be as detailed as possible. The more information that the
     /// model has about what the tool is and how to use it, the better it will perform.
     public let description: String
-    
+
     /// Type-safe JSON schema for this tool's input
     public let inputSchema: AnthropicToolSchema
+
+    /// Optional cache control for this tool definition (prompt caching)
+    public let cacheControl: AnthropicCacheControl?
 
     private enum CodingKeys: String, CodingKey {
         case name
         case description
         case inputSchema = "input_schema"
+        case cacheControl = "cache_control"
     }
-    
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(description, forKey: .description)
+        try container.encode(inputSchema, forKey: .inputSchema)
+        try container.encodeIfPresent(cacheControl, forKey: .cacheControl)
+    }
+
     /// Primary initializer: Create from AISDK Tool type
     public init<T: Tool>(from toolType: T.Type) {
         let toolInstance = T()
         self.name = toolInstance.name
         self.description = toolInstance.description
         self.inputSchema = AnthropicToolSchema(from: T.jsonSchema())
+        self.cacheControl = nil
     }
-    
+
     /// Direct initializer for custom use cases
     public init(
         name: String,
         description: String,
-        inputSchema: AnthropicToolSchema
+        inputSchema: AnthropicToolSchema,
+        cacheControl: AnthropicCacheControl? = nil
     ) {
         self.name = name
         self.description = description
         self.inputSchema = inputSchema
+        self.cacheControl = cacheControl
     }
 }
 
@@ -852,15 +903,25 @@ public struct AnthropicSearchResultCitations: Encodable {
     }
 }
 
-/// Cache control for search results
+/// Cache control for content blocks (system prompts, tools, search results)
 public struct AnthropicCacheControl: Encodable {
     public let type: String
-    
-    public init(type: String = "ephemeral") {
+    /// TTL for extended cache (e.g. "5m" for 5 minutes, "1h" for 1 hour)
+    public let ttl: String?
+
+    public init(type: String = "ephemeral", ttl: String? = nil) {
         self.type = type
+        self.ttl = ttl
     }
-    
+
     private enum CodingKeys: String, CodingKey {
         case type
+        case ttl
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(ttl, forKey: .ttl)
     }
 }

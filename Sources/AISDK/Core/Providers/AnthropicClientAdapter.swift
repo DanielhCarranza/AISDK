@@ -265,6 +265,11 @@ public actor AnthropicClientAdapter: ProviderClient {
         if shouldAddThinkingBetaHeader(for: request, body: body) {
             effectiveConfig = effectiveConfig.merging(with: BetaConfiguration(interleavedThinking: true))
         }
+        // Auto-enable extended cache TTL header when request uses 1h cache control
+        if let blocks = body.systemBlocks, blocks.contains(where: { $0.cacheControl?.ttl == "1h" }) {
+            effectiveConfig = effectiveConfig.merging(with: BetaConfiguration(extendedCacheTTL: true))
+        }
+
         var headers: [String] = []
         if let baseHeader = effectiveConfig.headerValue() {
             headers.append(contentsOf: baseHeader.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
@@ -386,8 +391,13 @@ public actor AnthropicClientAdapter: ProviderClient {
             maxTokens: maxTokens // Anthropic requires max_tokens
         )
 
-        // Optional parameters
-        body.system = systemContent
+        // Optional parameters — apply caching if enabled
+        if let cacheConfig = request.caching, cacheConfig.enabled, let systemText = systemContent {
+            let ttl: String? = (cacheConfig.retention == .extended) ? "1h" : nil
+            body.systemBlocks = [ACASystemBlock(text: systemText, cacheControl: ACACacheControl(ttl: ttl))]
+        } else {
+            body.system = systemContent
+        }
         body.temperature = request.temperature
         body.topP = request.topP
         body.stopSequences = request.stop
@@ -887,6 +897,7 @@ private struct ACARequestBody: Encodable {
     let maxTokens: Int
 
     var system: String?
+    var systemBlocks: [ACASystemBlock]?
     var temperature: Double?
     var topP: Double?
     var stopSequences: [String]?
@@ -902,6 +913,64 @@ private struct ACARequestBody: Encodable {
         case stopSequences = "stop_sequences"
         case toolChoice = "tool_choice"
         case thinking
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(model, forKey: .model)
+        try container.encode(messages, forKey: .messages)
+        try container.encode(maxTokens, forKey: .maxTokens)
+        if let systemBlocks = systemBlocks {
+            try container.encode(systemBlocks, forKey: .system)
+        } else {
+            try container.encodeIfPresent(system, forKey: .system)
+        }
+        try container.encodeIfPresent(temperature, forKey: .temperature)
+        try container.encodeIfPresent(topP, forKey: .topP)
+        try container.encodeIfPresent(stopSequences, forKey: .stopSequences)
+        try container.encodeIfPresent(stream, forKey: .stream)
+        try container.encodeIfPresent(tools, forKey: .tools)
+        try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
+        try container.encodeIfPresent(thinking, forKey: .thinking)
+    }
+}
+
+/// System content block with optional cache control for AnthropicClientAdapter
+private struct ACASystemBlock: Encodable {
+    let type: String
+    let text: String
+    let cacheControl: ACACacheControl?
+
+    init(text: String, cacheControl: ACACacheControl? = nil) {
+        self.type = "text"
+        self.text = text
+        self.cacheControl = cacheControl
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, text
+        case cacheControl = "cache_control"
+    }
+}
+
+/// Cache control annotation for Anthropic prompt caching
+private struct ACACacheControl: Encodable {
+    let type: String
+    let ttl: String?
+
+    init(type: String = "ephemeral", ttl: String? = nil) {
+        self.type = type
+        self.ttl = ttl
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(ttl, forKey: .ttl)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, ttl
     }
 }
 

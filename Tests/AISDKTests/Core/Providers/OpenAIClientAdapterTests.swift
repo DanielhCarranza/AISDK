@@ -585,6 +585,116 @@ final class OpenAIErrorMappingTests: XCTestCase {
     }
 }
 
+// MARK: - OpenAIUsageParsingTests
+
+final class OpenAIUsageParsingTests: XCTestCase {
+    func testNestedPromptTokensDetailsParsesCachedTokens() async throws {
+        let response = try await executeWithMockResponse(usageJSON: """
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "prompt_tokens_details": {
+                "cached_tokens": 80
+            }
+        }
+        """)
+
+        XCTAssertEqual(response.usage?.promptTokens, 100)
+        XCTAssertEqual(response.usage?.completionTokens, 50)
+        XCTAssertEqual(response.usage?.cachedTokens, 80)
+    }
+
+    func testNestedCompletionTokensDetailsParsesReasoningTokens() async throws {
+        let response = try await executeWithMockResponse(usageJSON: """
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "completion_tokens_details": {
+                "reasoning_tokens": 30
+            }
+        }
+        """)
+
+        XCTAssertEqual(response.usage?.reasoningTokens, 30)
+    }
+
+    func testBothNestedDetailsParseCorrectly() async throws {
+        let response = try await executeWithMockResponse(usageJSON: """
+        {
+            "prompt_tokens": 200,
+            "completion_tokens": 100,
+            "total_tokens": 300,
+            "prompt_tokens_details": {
+                "cached_tokens": 150
+            },
+            "completion_tokens_details": {
+                "reasoning_tokens": 40
+            }
+        }
+        """)
+
+        XCTAssertEqual(response.usage?.cachedTokens, 150)
+        XCTAssertEqual(response.usage?.reasoningTokens, 40)
+    }
+
+    func testUsageWithoutNestedDetailsReturnsNil() async throws {
+        let response = try await executeWithMockResponse(usageJSON: """
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15
+        }
+        """)
+
+        XCTAssertEqual(response.usage?.promptTokens, 10)
+        XCTAssertNil(response.usage?.cachedTokens)
+        XCTAssertNil(response.usage?.reasoningTokens)
+    }
+
+    // Helper: execute a request with a mock response containing custom usage JSON
+    private func executeWithMockResponse(usageJSON: String) async throws -> ProviderResponse {
+        MockURLProtocol.reset()
+        let session = makeMockSession()
+        let client = OpenAIClientAdapter(apiKey: "sk-test-key", session: session)
+
+        MockURLProtocol.requestHandler = { request in
+            let responseJSON = """
+            {
+                "id": "chatcmpl-usage-test",
+                "object": "chat.completion",
+                "model": "gpt-4o",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "ok"
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": \(usageJSON)
+            }
+            """.data(using: .utf8) ?? Data()
+
+            let response = HTTPURLResponse(
+                url: request.url ?? URL(string: "https://api.openai.com/v1/chat/completions")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, responseJSON)
+        }
+
+        let providerRequest = ProviderRequest(
+            modelId: "gpt-4o",
+            messages: [AIMessage(role: .user, content: .text("Hello"))]
+        )
+
+        return try await client.execute(request: providerRequest)
+    }
+}
+
 // MARK: - OpenAIMultipartContentTests
 
 final class OpenAIMultipartContentTests: XCTestCase {
