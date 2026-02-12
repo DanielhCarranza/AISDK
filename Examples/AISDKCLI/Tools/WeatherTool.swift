@@ -9,14 +9,14 @@ import Foundation
 import AISDK
 
 /// Live weather tool that returns real weather data via Open-Meteo.
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get the current weather for a specified city using live data (temperature, conditions, humidity, wind, and UV index when available)."
 
-    @AIParameter(description: "The city name to get weather for (e.g., 'Tokyo', 'New York', 'London')")
+    @Parameter(description: "The city name to get weather for (e.g., 'Tokyo', 'New York', 'London')")
     var city: String = ""
 
-    @AIParameter(description: "Temperature unit (celsius or fahrenheit). Defaults to celsius.")
+    @Parameter(description: "Temperature unit (celsius or fahrenheit). Defaults to celsius.")
     var unit: WeatherUnit = .celsius
 
     private let client: WeatherClient
@@ -29,9 +29,9 @@ struct WeatherTool: AITool {
         self.client = client
     }
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let report = try await client.fetchWeather(for: city, unit: unit)
-        return AIToolResult(content: formatWeatherResponse(report, unit: unit))
+        return ToolResult(content: formatWeatherResponse(report, unit: unit))
     }
 
     // MARK: - Response Formatting

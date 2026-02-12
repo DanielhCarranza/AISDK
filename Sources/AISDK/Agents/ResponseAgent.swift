@@ -75,7 +75,7 @@ public struct BackgroundTaskResult {
     public let taskId: String
     public let duration: TimeInterval
     public let reasoning: [ReasoningStep]?
-    public let toolExecutions: [ToolExecutionResult]
+    public let toolExecutions: [ResponseToolExecutionResult]
     public let status: ResponseStatus
 }
 
@@ -93,7 +93,7 @@ public struct ReasoningStep {
 }
 
 /// Tool execution result information
-public struct ToolExecutionResult {
+public struct ResponseToolExecutionResult {
     public let toolName: String
     public let arguments: String
     public let result: String
@@ -116,7 +116,7 @@ public class ResponseAgent {
     // MARK: - Properties
     
     private let provider: OpenAIProvider
-    private let tools: [AITool.Type]
+    private let tools: [Tool.Type]
     private let builtInTools: [BuiltInTool]
     private let mcpServers: [MCPServerConfiguration]
     private let instructions: String?
@@ -149,7 +149,7 @@ public class ResponseAgent {
     ///   - model: Model to use (default: gpt-4o)
     public init(
         provider: OpenAIProvider,
-        tools: [AITool.Type] = [],
+        tools: [Tool.Type] = [],
         builtInTools: [BuiltInTool] = [.webSearchPreview, .codeInterpreter, .imageGeneration(), .fileSearch(vectorStoreId: "")],
         mcpServers: [MCPServerConfiguration] = [],
         instructions: String? = nil,
@@ -171,7 +171,7 @@ public class ResponseAgent {
         try validateToolConflicts()
         
         // Register custom tools
-        AIToolRegistry.registerAll(tools: tools)
+        ToolRegistry.registerAll(tools: tools)
         
         // Add system instructions if provided
         if let instructions = instructions {
@@ -270,7 +270,7 @@ public class ResponseAgent {
         configuration.onStatusChange?(.queued)
         
         let startTime = Date()
-        var toolExecutions: [ToolExecutionResult] = []
+        var toolExecutions: [ResponseToolExecutionResult] = []
         var reasoningSteps: [ReasoningStep] = []
         
         do {
@@ -581,7 +581,7 @@ public class ResponseAgent {
     ) async throws -> (response: String, metadata: ToolMetadata?) {
         
         // Line 1: Get tool type from registry
-        guard let toolType = AIToolRegistry.toolType(forName: name) else {
+        guard let toolType = ToolRegistry.toolType(forName: name) else {
             throw ResponseAgentError.toolNotFound(name)
         }
         
@@ -685,13 +685,13 @@ public class ResponseAgent {
     }
     
     /// Extract tool executions from response
-    private func extractToolExecutions(from response: ResponseObject) -> [ToolExecutionResult] {
-        var executions: [ToolExecutionResult] = []
+    private func extractToolExecutions(from response: ResponseObject) -> [ResponseToolExecutionResult] {
+        var executions: [ResponseToolExecutionResult] = []
         
         for output in response.output {
             switch output {
             case .functionCall(let functionCall):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: functionCall.name,
                     arguments: functionCall.arguments,
                     result: "Function called", // Simplified for now
@@ -701,7 +701,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .webSearchCall(let webSearch):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "web_search_preview",
                     arguments: webSearch.query ?? "",
                     result: "Web search completed",
@@ -711,7 +711,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .codeInterpreterCall(let codeInterpreter):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "code_interpreter",
                     arguments: codeInterpreter.code ?? "",
                     result: "Code executed",
@@ -721,7 +721,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .imageGenerationCall(let imageGen):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "image_generation",
                     arguments: imageGen.prompt ?? "",
                     result: "Image generated",
@@ -731,7 +731,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .mcpApprovalRequest(let mcpRequest):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "mcp_approval_request",
                     arguments: "MCP approval requested",
                     result: "MCP approval requested",

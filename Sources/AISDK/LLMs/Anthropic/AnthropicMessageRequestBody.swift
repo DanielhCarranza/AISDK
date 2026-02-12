@@ -705,7 +705,7 @@ public struct AnthropicTool: Encodable {
     }
     
     /// Primary initializer: Create from AISDK Tool type
-    public init<T: AITool>(from toolType: T.Type) {
+    public init<T: Tool>(from toolType: T.Type) {
         let toolInstance = T()
         self.name = toolInstance.name
         self.description = toolInstance.description

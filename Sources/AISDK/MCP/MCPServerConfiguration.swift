@@ -27,7 +27,7 @@ import Foundation
 ///     allowedTools: ["search_code", "list_repos"]
 /// )
 ///
-/// let agent = AIAgentActor(
+/// let agent = Agent(
 ///     model: myModel,
 ///     mcpServers: [config]
 /// )

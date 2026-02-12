@@ -196,14 +196,14 @@ public enum WebSearchError: Error, LocalizedError, Sendable {
 
 // MARK: - Tool
 
-public struct WebSearchTool: AITool {
+public struct WebSearchTool: Tool {
     public let name = "web_search"
     public let description = "Search the web for information on a given query. Returns relevant results with titles, snippets, and URLs."
 
-    @AIParameter(description: "The search query")
+    @Parameter(description: "The search query")
     public var query: String = ""
 
-    @AIParameter(description: "Number of results to return (1-10, default 5)", .range(1...10))
+    @Parameter(description: "Number of results to return (1-10, default 5)", .range(1...10))
     public var numResults: Int = 5
 
     private let client: any WebSearchClient
@@ -216,12 +216,12 @@ public struct WebSearchTool: AITool {
         self.client = client
     }
 
-    public func execute() async throws -> AIToolResult {
+    public func execute() async throws -> ToolResult {
         let clamped = max(1, min(numResults, 10))
         let sources = try await client.search(query: query, maxResults: clamped)
         let metadata = WebSearchMetadata(query: query, sources: sources)
         let content = formatSearchResults(query: query, sources: sources)
-        return AIToolResult(content: content, metadata: metadata)
+        return ToolResult(content: content, metadata: metadata)
     }
 
     private func formatSearchResults(query: String, sources: [WebSearchSource]) -> String {

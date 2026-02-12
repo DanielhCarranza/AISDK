@@ -252,7 +252,7 @@ extension OpenAIProvider {
     internal func convertToAITextResult(_ response: ResponseObject) -> AITextResult {
         // Extract text from message outputs
         var text = ""
-        var toolCalls: [AIToolCallResult] = []
+        var toolCalls: [ToolCallResult] = []
 
         for item in response.output {
             switch item {
@@ -267,7 +267,7 @@ extension OpenAIProvider {
                     }
                 }
             case .functionCall(let call):
-                toolCalls.append(AIToolCallResult(
+                toolCalls.append(ToolCallResult(
                     id: call.callId,
                     name: call.name,
                     arguments: call.arguments

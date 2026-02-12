@@ -3,7 +3,7 @@ import AISDK
 
 // MARK: - Demo Tools
 
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
     
@@ -12,15 +12,15 @@ struct WeatherTool: AITool {
         case fahrenheit
     }
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
     
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         print("🌤️  Getting weather for \(city) in \(unit.rawValue)...")
         
         // Simulate API delay
@@ -33,18 +33,18 @@ struct WeatherTool: AITool {
         let condition = conditions.randomElement()!
         
         let result = "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)"
-        return AIToolResult(content: result)
+        return ToolResult(content: result)
     }
 }
 
-struct CalculatorTool: AITool {
+struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform basic arithmetic calculations"
     
-    @AIParameter(description: "First number")
+    @Parameter(description: "First number")
     var a: Double = 0.0
     
-    @AIParameter(description: "Second number")
+    @Parameter(description: "Second number")
     var b: Double = 0.0
     
     enum Operation: String, Codable, CaseIterable {
@@ -54,12 +54,12 @@ struct CalculatorTool: AITool {
         case divide = "/"
     }
 
-    @AIParameter(description: "Operation")
+    @Parameter(description: "Operation")
     var operation: Operation = .plus
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         print("🧮 Calculating \(a) \(operation.rawValue) \(b)...")
         
         let result: Double
@@ -74,21 +74,21 @@ struct CalculatorTool: AITool {
             result = a / b
         }
         
-        return AIToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
+        return ToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 
-struct TimezoneTool: AITool {
+struct TimezoneTool: Tool {
     let name = "get_timezone"
     let description = "Get current time in specified timezone"
     let returnToolResponse = true // Return directly to user
     
-    @AIParameter(description: "Timezone identifier (e.g. America/New_York)")
+    @Parameter(description: "Timezone identifier (e.g. America/New_York)")
     var timezone: String = "UTC"
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         print("🕐 Getting time for timezone: \(timezone)...")
         
         let formatter = DateFormatter()
@@ -96,23 +96,23 @@ struct TimezoneTool: AITool {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss z"
         
         let timeString = formatter.string(from: Date())
-        return AIToolResult(content: "Current time in \(timezone): \(timeString)")
+        return ToolResult(content: "Current time in \(timezone): \(timeString)")
     }
 }
 
-struct FileSearchTool: AITool {
+struct FileSearchTool: Tool {
     let name = "search_files"
     let description = "Search for files in current directory"
     
-    @AIParameter(description: "File extension to search for")
+    @Parameter(description: "File extension to search for")
     var fileExtension: String = ""
     
-    @AIParameter(description: "Maximum number of results", .range(1...20))
+    @Parameter(description: "Maximum number of results", .range(1...20))
     var maxResults: Int = 10
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         print("🔍 Searching for .\(fileExtension) files...")
         
         let fileManager = FileManager.default
@@ -125,10 +125,10 @@ struct FileSearchTool: AITool {
                 .prefix(maxResults)
             
             if filteredFiles.isEmpty {
-                return AIToolResult(content: "No .\(fileExtension) files found in current directory")
+                return ToolResult(content: "No .\(fileExtension) files found in current directory")
             } else {
                 let fileList = filteredFiles.joined(separator: "\n• ")
-                return AIToolResult(content: "Found \(filteredFiles.count) .\(fileExtension) files:\n• \(fileList)")
+                return ToolResult(content: "Found \(filteredFiles.count) .\(fileExtension) files:\n• \(fileList)")
             }
         } catch {
             throw ToolError.executionFailed("Failed to read directory: \(error.localizedDescription)")
@@ -144,7 +144,7 @@ func runToolDemo() async {
     print("=" * 50)
     
     // Register tools
-    AIToolRegistry.registerAll(tools: [
+    ToolRegistry.registerAll(tools: [
         WeatherTool.self,
         CalculatorTool.self,
         TimezoneTool.self,
@@ -354,7 +354,7 @@ func executeInteractiveTool(name: String, jsonString: String) async {
 // MARK: - Anthropic Tools Demo
 
 /// Simple weather tool for Anthropic demo - clean and simple
-struct AnthropicWeatherTool: AITool {
+struct AnthropicWeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a location"
     
@@ -363,17 +363,17 @@ struct AnthropicWeatherTool: AITool {
         case fahrenheit
     }
 
-    @AIParameter(description: "City and state, e.g. San Francisco, CA")
+    @Parameter(description: "City and state, e.g. San Francisco, CA")
     var location: String = ""
     
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let result = "Weather in \(location): 72°\(unit == .celsius ? "C" : "F"), sunny"
-        return AIToolResult(content: result)
+        return ToolResult(content: result)
     }
 }
 
@@ -393,8 +393,8 @@ func runAnthropicToolsDemo() async {
     print("  - Parameters: \(weatherTool.inputSchema.properties.count)")
     print("  - Required: \(weatherTool.inputSchema.required)")
     
-    // Example 2: AITool execution flow
-    print("\n🚀 Example 2: AITool Execution Flow")
+    // Example 2: Tool execution flow
+    print("\n🚀 Example 2: Tool Execution Flow")
     print("----------------------------------")
     
     // Simulate Claude's tool use response

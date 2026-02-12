@@ -43,7 +43,7 @@ class CLIController {
     private let uiRenderer: TerminalUIRenderer
 
     /// Built-in tool types
-    private var builtInTools: [AITool.Type] = []
+    private var builtInTools: [Tool.Type] = []
 
     /// Whether the main loop should continue
     private var shouldContinue = true
@@ -427,16 +427,16 @@ class CLIController {
 
     // MARK: - LegacyAgent Setup
 
-    private func buildAgent(client: any ProviderClient, modelId: String) -> AIAgentActor {
+    private func buildAgent(client: any ProviderClient, modelId: String) -> Agent {
         let toolTypes = runtimeConfig.toolsEnabled ? builtInTools : []
-        let requestOptions = AIAgentActor.RequestOptions(
+        let requestOptions = Agent.RequestOptions(
             maxTokens: runtimeConfig.maxTokens,
             temperature: runtimeConfig.temperature,
             toolChoice: toolTypes.isEmpty ? nil : .auto,
             responseFormat: buildResponseFormat()
         )
 
-        let languageModel: any AILanguageModel
+        let languageModel: any LLM
         if runtimeConfig.reliabilityEnabled {
             let providers = buildFailoverProviders(primary: client)
             let executor = FailoverExecutor(providers: providers)
@@ -449,7 +449,7 @@ class CLIController {
             languageModel = ProviderLanguageModelAdapter(client: client, modelId: modelId)
         }
 
-        return AIAgentActor(
+        return Agent(
             model: languageModel,
             tools: toolTypes,
             instructions: buildSystemPrompt(),
