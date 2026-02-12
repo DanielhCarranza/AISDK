@@ -157,6 +157,35 @@ final class OpenAIClientAdapterTests: XCTestCase {
         // Verify we get an AsyncThrowingStream
         XCTAssertNotNil(stream)
     }
+
+    // MARK: - Reasoning Mapping Tests
+
+    func testUnifiedReasoningEffortMapsToReasoningEffort() async throws {
+        let captured = await captureOpenAIRequestBody(
+            modelId: "o1-preview",
+            reasoning: AIReasoningConfig.effort(.high)
+        )
+
+        XCTAssertEqual(captured["reasoning_effort"] as? String, "high")
+    }
+
+    func testUnifiedReasoningBudgetIsIgnored() async throws {
+        let captured = await captureOpenAIRequestBody(
+            modelId: "o1-preview",
+            reasoning: AIReasoningConfig(budgetTokens: 2048)
+        )
+
+        XCTAssertNil(captured["reasoning_effort"])
+    }
+
+    func testUnifiedReasoningIgnoredForNonReasoningModel() async throws {
+        let captured = await captureOpenAIRequestBody(
+            modelId: "gpt-4o",
+            reasoning: AIReasoningConfig.effort(.medium)
+        )
+
+        XCTAssertNil(captured["reasoning_effort"])
+    }
 }
 
 // MARK: - OpenAIResponseParsingTests
@@ -334,6 +363,89 @@ final class OpenAIResponseParsingTests: XCTestCase {
 
         XCTAssertNotNil(json)
     }
+}
+
+// MARK: - Helpers
+
+private func makeMockSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    return URLSession(configuration: configuration)
+}
+
+private func readRequestBody(_ request: URLRequest) -> Data {
+    if let body = request.httpBody {
+        return body
+    }
+    guard let stream = request.httpBodyStream else {
+        return Data()
+    }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    let bufferSize = 1024
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+    while stream.hasBytesAvailable {
+        let count = stream.read(&buffer, maxLength: bufferSize)
+        if count > 0 {
+            data.append(buffer, count: count)
+        } else {
+            break
+        }
+    }
+    return data
+}
+
+private func captureOpenAIRequestBody(modelId: String, reasoning: AIReasoningConfig) async -> [String: Any] {
+    MockURLProtocol.reset()
+    let session = makeMockSession()
+    let client = OpenAIClientAdapter(apiKey: "sk-test-key", session: session)
+
+    var capturedBody: [String: Any] = [:]
+    MockURLProtocol.requestHandler = { request in
+        let bodyData = readRequestBody(request)
+        if let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            capturedBody = json
+        }
+
+        let responseJSON = """
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "model": "\(modelId)",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "ok"
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2
+            }
+        }
+        """.data(using: .utf8) ?? Data()
+
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://api.openai.com/v1/chat/completions")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (response, responseJSON)
+    }
+
+    let providerRequest = ProviderRequest(
+        modelId: modelId,
+        messages: [AIMessage(role: .user, content: .text("Hello"))],
+        reasoning: reasoning
+    )
+
+    _ = try? await client.execute(request: providerRequest)
+    return capturedBody
 }
 
 // MARK: - OpenAIRequestEncodingTests

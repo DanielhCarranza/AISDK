@@ -155,8 +155,8 @@ public struct AITextRequest: @unchecked Sendable {
     /// Response format specification
     public let responseFormat: ResponseFormat?
 
-    /// Allowed providers for PHI protection
-    public let allowedProviders: Set<String>?
+    /// Reasoning/thinking configuration (provider-agnostic)
+    public let reasoning: AIReasoningConfig?
 
     /// Allowed providers for PHI protection
     public let allowedProviders: Set<String>?
@@ -230,6 +230,7 @@ public init(
     tools: [ToolSchema]? = nil,
     toolChoice: ToolChoice? = nil,
     responseFormat: ResponseFormat? = nil,
+    reasoning: AIReasoningConfig? = nil,
     allowedProviders: Set<String>? = nil,
     sensitivity: DataSensitivity = .standard,
     bufferPolicy: StreamBufferPolicy? = nil,

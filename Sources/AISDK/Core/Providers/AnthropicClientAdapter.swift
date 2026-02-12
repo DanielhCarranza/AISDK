@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - AnthropicClientAdapter
 
@@ -53,6 +54,7 @@ public actor AnthropicClientAdapter: ProviderClient {
     private static let defaultBaseURL = URL(string: "https://api.anthropic.com")!
     private static let messagesEndpoint = "v1/messages"
     private static let defaultAnthropicVersion = "2023-06-01"
+    private static let logger = Logger(subsystem: "AISDK", category: "AnthropicClientAdapter")
 
     // Known Claude models (Anthropic doesn't have a models endpoint)
     private static let knownModels = [
@@ -228,6 +230,10 @@ public actor AnthropicClientAdapter: ProviderClient {
 
     // MARK: - Private Methods
 
+    private static func supportsReasoning(for modelId: String) -> Bool {
+        modelId.contains("opus")
+    }
+
     private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) throws -> URLRequest {
         let endpoint = baseURL.appendingPathComponent(Self.messagesEndpoint)
         var httpRequest = URLRequest(url: endpoint)
@@ -244,15 +250,27 @@ public actor AnthropicClientAdapter: ProviderClient {
             httpRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         }
 
-        if let betaHeader = betaConfiguration.headerValue() {
-            httpRequest.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta")
-        }
-
         // Build request body
         let body = try buildRequestBody(from: request, streaming: streaming)
+        if let betaHeader = betaHeaderValue(for: request, body: body) {
+            httpRequest.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta")
+        }
         httpRequest.httpBody = try JSONEncoder().encode(body)
 
         return httpRequest
+    }
+
+    private func betaHeaderValue(for request: ProviderRequest, body: ACARequestBody) -> String? {
+        var effectiveConfig = betaConfiguration
+        if shouldAddThinkingBetaHeader(for: request, body: body) {
+            effectiveConfig = effectiveConfig.merging(with: BetaConfiguration(interleavedThinking: true))
+        }
+        return effectiveConfig.headerValue()
+    }
+
+    private func shouldAddThinkingBetaHeader(for request: ProviderRequest, body: ACARequestBody) -> Bool {
+        let hasUnified = request.reasoning?.effort != nil || request.reasoning?.budgetTokens != nil
+        return hasUnified && (body.thinking?.isEnabled ?? false)
     }
 
     private func buildRequestBody(from request: ProviderRequest, streaming: Bool) throws -> ACARequestBody {
@@ -349,10 +367,11 @@ public actor AnthropicClientAdapter: ProviderClient {
             )
         }
 
+        let maxTokens = request.maxTokens ?? 4096
         var body = ACARequestBody(
             model: request.modelId,
             messages: messages,
-            maxTokens: request.maxTokens ?? 4096 // Anthropic requires max_tokens
+            maxTokens: maxTokens // Anthropic requires max_tokens
         )
 
         // Optional parameters
@@ -362,12 +381,37 @@ public actor AnthropicClientAdapter: ProviderClient {
         body.stopSequences = request.stop
         body.stream = streaming
 
-        if betaConfiguration.extendedThinking, body.thinking == nil {
-            let proposedBudget = thinkingBudgetOverride ?? max(AnthropicThinkingConfigParam.minimumBudget, body.maxTokens / 4)
-            let maxAllowed = max(AnthropicThinkingConfigParam.minimumBudget, body.maxTokens - 1)
-            if proposedBudget >= AnthropicThinkingConfigParam.minimumBudget, body.maxTokens > AnthropicThinkingConfigParam.minimumBudget {
+        let hasUnified = request.reasoning?.effort != nil || request.reasoning?.budgetTokens != nil
+        if Self.supportsReasoning(for: request.modelId), hasUnified {
+            if maxTokens <= AnthropicThinkingConfigParam.minimumBudget {
+                Self.logger.warning("Skipping reasoning: max_tokens \(maxTokens) is too small for minimum thinking budget.")
+            } else if let budget = request.reasoning?.budgetTokens {
+                body.thinking = .enabled(budgetTokens: budget)
+            } else if let effort = request.reasoning?.effort {
+                let proposedBudget: Int
+                switch effort {
+                case .low:
+                    proposedBudget = AnthropicThinkingConfigParam.minimumBudget
+                case .medium:
+                    proposedBudget = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens / 4)
+                case .high:
+                    proposedBudget = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens / 2)
+                }
+                let maxAllowed = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens - 1)
                 body.thinking = .enabled(budgetTokens: min(proposedBudget, maxAllowed))
             }
+        }
+
+        if body.thinking == nil, !hasUnified, betaConfiguration.extendedThinking {
+            let proposedBudget = thinkingBudgetOverride ?? max(AnthropicThinkingConfigParam.minimumBudget, maxTokens / 4)
+            let maxAllowed = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens - 1)
+            if proposedBudget >= AnthropicThinkingConfigParam.minimumBudget, maxTokens > AnthropicThinkingConfigParam.minimumBudget {
+                body.thinking = .enabled(budgetTokens: min(proposedBudget, maxAllowed))
+            }
+        }
+
+        if let thinking = body.thinking {
+            try thinking.validate(maxTokens: maxTokens)
         }
 
         // Tool choice - handle before tools conversion

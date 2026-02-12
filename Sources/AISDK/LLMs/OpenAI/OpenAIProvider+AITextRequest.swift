@@ -118,13 +118,15 @@ extension OpenAIProvider {
             tools.append(.codeInterpreter)
         }
 
-        // Convert reasoning config
+        // Convert reasoning config (provider-specific overrides unified)
         let reasoning: ResponseReasoning?
         if let reasoningConfig = openAIOptions?.reasoning {
             reasoning = ResponseReasoning(
                 effort: reasoningConfig.effort?.rawValue,
                 summary: reasoningConfig.summary?.rawValue
             )
+        } else if let effort = request.reasoning?.effort {
+            reasoning = ResponseReasoning(effort: effort.rawValue, summary: nil)
         } else {
             reasoning = nil
         }

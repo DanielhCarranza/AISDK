@@ -11,12 +11,13 @@ final class AnthropicServiceRealAPITests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        
+        loadEnvironmentVariables()
+
         guard shouldUseRealAPI() else {
             // Skip real API tests if not configured
             return
         }
-        
+
         service = AnthropicService(
             apiKey: getAnthropicAPIKey(),
             betaConfiguration: .none
@@ -39,6 +40,25 @@ final class AnthropicServiceRealAPITests: XCTestCase {
         return ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] ??
                ProcessInfo.processInfo.environment["CLAUDE_API_KEY"] ??
                ""
+    }
+
+    private func loadEnvironmentVariables() {
+        let envPath = ".env"
+        guard let envContent = try? String(contentsOfFile: envPath) else {
+            return
+        }
+
+        for line in envContent.components(separatedBy: .newlines) {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            if !trimmedLine.isEmpty && !trimmedLine.hasPrefix("#") {
+                let parts = trimmedLine.components(separatedBy: "=")
+                if parts.count >= 2 {
+                    let key = parts[0].trimmingCharacters(in: .whitespaces)
+                    let value = parts[1...].joined(separator: "=").trimmingCharacters(in: .whitespaces)
+                    setenv(key, value, 0)
+                }
+            }
+        }
     }
     
     // MARK: - Authentication & Configuration Tests

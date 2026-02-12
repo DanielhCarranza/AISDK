@@ -83,6 +83,9 @@ struct CLIOptions {
     /// Video URL to attach to the next message
     var videoURL: String?
 
+    /// Reasoning effort level (all providers)
+    var reasoningEffort: String? = nil
+
     /// Show help and exit
     var showHelp: Bool = false
 
@@ -183,6 +186,19 @@ struct CLIOptions {
                 }
                 index = betaIndex - 1
 
+            case "--reasoning":
+                if index + 1 < args.count, !args[index + 1].hasPrefix("-") {
+                    let effort = args[index + 1].lowercased()
+                    if ["low", "medium", "high"].contains(effort) {
+                        options.reasoningEffort = effort
+                    } else {
+                        print(ANSIStyles.warning("Unknown reasoning effort '\(args[index + 1])'. Use: low, medium, high"))
+                    }
+                    index += 1
+                } else {
+                    print(ANSIStyles.warning("--reasoning requires an effort level: low, medium, high"))
+                }
+
             default:
                 if arg.hasPrefix("-") {
                     print(ANSIStyles.warning("Unknown option: \(arg)"))
@@ -220,6 +236,9 @@ class RuntimeConfig {
     var pendingVideoMimeType: String?
     var pendingVideoDisplayName: String?
 
+    // Unified reasoning (all providers)
+    var reasoningEffort: String?
+
     // OpenAI Responses API specific settings
     var webSearchEnabled: Bool = false
     var codeInterpreterEnabled: Bool = false
@@ -241,6 +260,7 @@ class RuntimeConfig {
         self.thinkingBudget = options.thinkingBudget
         self.betaFeatures = options.betaFeatures
         self.pendingVideoURL = options.videoURL
+        self.reasoningEffort = options.reasoningEffort
     }
 
     func clearPendingVideo() {

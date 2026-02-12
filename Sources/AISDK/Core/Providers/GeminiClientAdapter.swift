@@ -198,6 +198,10 @@ public actor GeminiClientAdapter: ProviderClient {
 
     // MARK: - Private Methods
 
+    private static func supportsReasoning(for modelId: String) -> Bool {
+        modelId.contains("2.5-pro") || modelId.contains("2.5-flash")
+    }
+
     private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) async throws -> URLRequest {
         let action = streaming ? "streamGenerateContent" : "generateContent"
         var endpoint = baseURL.appendingPathComponent("models/\(request.modelId):\(action)")
@@ -455,8 +459,12 @@ public actor GeminiClientAdapter: ProviderClient {
             }
         }
 
-        // Add thinking configuration if present in provider options
-        body.thinkingConfig = try buildThinkingConfig(from: request.providerOptions)
+        // Add thinking configuration if present in provider options or unified reasoning config
+        body.thinkingConfig = try buildThinkingConfig(
+            from: request.providerOptions,
+            reasoning: request.reasoning,
+            supportsReasoning: Self.supportsReasoning(for: request.modelId)
+        )
 
         return body
     }
@@ -465,14 +473,22 @@ public actor GeminiClientAdapter: ProviderClient {
     /// - Parameter options: Provider-specific options from the request
     /// - Returns: Thinking configuration if any thinking options are present, nil otherwise
     /// - Throws: ProviderError.invalidRequest if options have invalid types or values
-    private func buildThinkingConfig(from options: [String: ProviderJSONValue]?) throws -> GCAThinkingConfig? {
-        guard let options = options else { return nil }
+    private func buildThinkingConfig(
+        from options: [String: ProviderJSONValue]?,
+        reasoning: AIReasoningConfig?,
+        supportsReasoning: Bool
+    ) throws -> GCAThinkingConfig? {
+        guard supportsReasoning else {
+            return nil
+        }
 
         var config = GCAThinkingConfig()
         var hasConfig = false
+        var hasThinkingLevel = false
+        var hasThinkingBudget = false
 
         // Parse includeThoughts (boolean)
-        if let value = options["includeThoughts"] {
+        if let value = options?["includeThoughts"] {
             guard case .bool(let include) = value else {
                 throw ProviderError.invalidRequest("includeThoughts must be a boolean")
             }
@@ -481,7 +497,7 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         // Parse thinkingLevel (string enum)
-        if let value = options["thinkingLevel"] {
+        if let value = options?["thinkingLevel"] {
             guard case .string(let level) = value else {
                 throw ProviderError.invalidRequest("thinkingLevel must be a string")
             }
@@ -495,10 +511,11 @@ public actor GeminiClientAdapter: ProviderClient {
 
             config.thinkingLevel = level.lowercased()
             hasConfig = true
+            hasThinkingLevel = true
         }
 
         // Parse thinkingBudget (integer)
-        if let value = options["thinkingBudget"] {
+        if let value = options?["thinkingBudget"] {
             let budgetInt: Int
             switch value {
             case .int(let budget):
@@ -518,6 +535,19 @@ public actor GeminiClientAdapter: ProviderClient {
 
             config.thinkingBudget = budgetInt
             hasConfig = true
+            hasThinkingBudget = true
+        }
+
+        let hasUnified = reasoning?.effort != nil || reasoning?.budgetTokens != nil
+        if supportsReasoning, hasUnified {
+            if !hasThinkingLevel, let effort = reasoning?.effort {
+                config.thinkingLevel = effort.rawValue
+                hasConfig = true
+            }
+            if !hasThinkingBudget, let budget = reasoning?.budgetTokens {
+                config.thinkingBudget = budget
+                hasConfig = true
+            }
         }
 
         return hasConfig ? config : nil

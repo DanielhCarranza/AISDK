@@ -133,7 +133,15 @@ final class OpenRouterIntegrationTests: XCTestCase {
                 maxTokens: 1000
             )
 
-            let response = try await client.execute(request: request)
+            let response: ProviderResponse
+            do {
+                response = try await client.execute(request: request)
+            } catch let error as ProviderError {
+                if case .rateLimited = error {
+                    throw XCTSkip("OpenRouter rate limited this test run")
+                }
+                throw error
+            }
             let trimmed = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 print("⚠️  [\(model)] Empty content. Raw length: \(response.content.count). Finish: \(response.finishReason). Tool calls: \(response.toolCalls.count). Usage: \(response.usage?.totalTokens ?? 0)")
@@ -198,6 +206,9 @@ final class OpenRouterIntegrationTests: XCTestCase {
         do {
             response = try await client.execute(request: request)
         } catch let error as ProviderError {
+            if case .rateLimited = error {
+                throw XCTSkip("OpenRouter rate limited this test run")
+            }
             if case .invalidRequest(let message) = error,
                message.lowercased().contains("not found") {
                 throw XCTSkip("Model \(model) does not support tool calling: \(message)")
@@ -242,6 +253,8 @@ final class OpenRouterIntegrationTests: XCTestCase {
             response = try await client.execute(request: request)
         } catch let error as ProviderError {
             switch error {
+            case .rateLimited:
+                throw XCTSkip("OpenRouter rate limited this test run")
             case .invalidRequest(let message):
                 let lower = message.lowercased()
                 if lower.contains("not found") || lower.contains("tool") || lower.contains("unsupported") {

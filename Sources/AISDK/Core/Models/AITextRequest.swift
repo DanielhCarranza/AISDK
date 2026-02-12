@@ -42,6 +42,9 @@ public struct AITextRequest: @unchecked Sendable {
     /// Response format specification
     public let responseFormat: ResponseFormat?
 
+    /// Reasoning/thinking configuration (provider-agnostic)
+    public let reasoning: AIReasoningConfig?
+
     /// Allowed providers for PHI protection (nil allows all)
     public let allowedProviders: Set<String>?
 
@@ -74,6 +77,7 @@ public struct AITextRequest: @unchecked Sendable {
         tools: [ToolSchema]? = nil,
         toolChoice: ToolChoice? = nil,
         responseFormat: ResponseFormat? = nil,
+        reasoning: AIReasoningConfig? = nil,
         allowedProviders: Set<String>? = nil,
         sensitivity: DataSensitivity = .standard,
         bufferPolicy: StreamBufferPolicy? = nil,
@@ -90,6 +94,7 @@ public struct AITextRequest: @unchecked Sendable {
         self.tools = tools
         self.toolChoice = toolChoice
         self.responseFormat = responseFormat
+        self.reasoning = reasoning
         self.allowedProviders = allowedProviders
         self.sensitivity = sensitivity
         self.bufferPolicy = bufferPolicy
@@ -180,6 +185,7 @@ public extension AITextRequest {
             tools: tools,
             toolChoice: toolChoice,
             responseFormat: responseFormat,
+            reasoning: reasoning,
             allowedProviders: allowedProviders,
             sensitivity: newSensitivity,
             bufferPolicy: bufferPolicy,
@@ -201,6 +207,7 @@ public extension AITextRequest {
             tools: tools,
             toolChoice: toolChoice,
             responseFormat: responseFormat,
+            reasoning: reasoning,
             allowedProviders: providers,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
@@ -222,6 +229,7 @@ public extension AITextRequest {
             tools: tools,
             toolChoice: toolChoice,
             responseFormat: responseFormat,
+            reasoning: reasoning,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: policy,
@@ -243,11 +251,34 @@ public extension AITextRequest {
             tools: tools,
             toolChoice: toolChoice,
             responseFormat: responseFormat,
+            reasoning: reasoning,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
             metadata: metadata,
             conversationId: id,
+            providerOptions: providerOptions
+        )
+    }
+
+    /// Create a copy with updated reasoning configuration
+    func withReasoning(_ reasoning: AIReasoningConfig?) -> AITextRequest {
+        AITextRequest(
+            messages: messages,
+            model: model,
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP,
+            stop: stop,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseFormat: responseFormat,
+            reasoning: reasoning,
+            allowedProviders: allowedProviders,
+            sensitivity: sensitivity,
+            bufferPolicy: bufferPolicy,
+            metadata: metadata,
+            conversationId: conversationId,
             providerOptions: providerOptions
         )
     }
@@ -264,6 +295,7 @@ public extension AITextRequest {
             tools: tools,
             toolChoice: toolChoice,
             responseFormat: responseFormat,
+            reasoning: reasoning,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
