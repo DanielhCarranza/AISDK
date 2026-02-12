@@ -48,7 +48,7 @@ For conversations with tool support, use `AIAgentActor`:
 let agent = AIAgentActor(
     model: client,
     tools: [],
-    systemPrompt: "You are a helpful assistant."
+    instructions: "You are a helpful assistant."
 )
 
 let result = try await agent.execute(
