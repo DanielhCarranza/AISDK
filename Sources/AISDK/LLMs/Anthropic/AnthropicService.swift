@@ -299,6 +299,22 @@ public class AnthropicService {
     
     // MARK: - Headers Management
 
+    /// Check if the request body requires the extended cache TTL beta header.
+    /// Returns true if any system block or tool has cache_control with ttl "1h".
+    private func needsExtendedCacheTTL(_ body: AnthropicMessageRequestBody) -> Bool {
+        if let blocks = body.systemBlocks {
+            for block in blocks {
+                if block.cacheControl?.ttl == "1h" { return true }
+            }
+        }
+        if let tools = body.tools {
+            for tool in tools {
+                if tool.cacheControl?.ttl == "1h" { return true }
+            }
+        }
+        return false
+    }
+
     private func logDeprecationWarningIfNeeded(for modelName: String) {
         guard let model = AnthropicModels.findModel(modelName) else { return }
         guard model.isDeprecated else { return }
@@ -378,15 +394,20 @@ public class AnthropicService {
         }
         
         var enhancedRequest = body
-        let effectiveBeta = betaOverride.map { betaConfiguration.merging(with: $0) } ?? betaConfiguration
+        var effectiveBeta = betaOverride.map { betaConfiguration.merging(with: $0) } ?? betaConfiguration
 
         logDeprecationWarningIfNeeded(for: enhancedRequest.model)
-        
+
+        // Auto-enable extended cache TTL header when request uses 1h cache control
+        if needsExtendedCacheTTL(enhancedRequest) {
+            effectiveBeta.extendedCacheTTL = true
+        }
+
         // Apply beta feature configurations
         if effectiveBeta.tokenEfficientTools {
             enhancedRequest.enableTokenEfficientTools = true
         }
-        
+
         // Add thinking configuration for extended thinking
         if effectiveBeta.extendedThinking, enhancedRequest.thinking == nil {
             // Use 1/4 of max_tokens for thinking, with minimum of 1024
@@ -395,13 +416,13 @@ public class AnthropicService {
         }
 
         try enhancedRequest.validate()
-        
+
         let endpoint = "\(baseUrl)/messages"
-        
+
         guard let url = URL(string: endpoint) else {
             throw LLMError.invalidRequest("Invalid Anthropic API URL configuration")
         }
-        
+
         var lastError: Error?
         
 
@@ -477,22 +498,27 @@ public class AnthropicService {
         }
         
         var enhancedRequest = body
-        let effectiveBeta = betaOverride.map { betaConfiguration.merging(with: $0) } ?? betaConfiguration
+        var effectiveBeta = betaOverride.map { betaConfiguration.merging(with: $0) } ?? betaConfiguration
 
         logDeprecationWarningIfNeeded(for: enhancedRequest.model)
-        
+
+        // Auto-enable extended cache TTL header when request uses 1h cache control
+        if needsExtendedCacheTTL(enhancedRequest) {
+            effectiveBeta.extendedCacheTTL = true
+        }
+
         // Apply beta feature configurations
         if effectiveBeta.tokenEfficientTools {
             enhancedRequest.enableTokenEfficientTools = true
         }
-        
+
         // Add thinking configuration for extended thinking
         if effectiveBeta.extendedThinking, enhancedRequest.thinking == nil {
             // Use 1/4 of max_tokens for thinking, with minimum of 1024
             let thinkingBudget = max(1024, enhancedRequest.maxTokens / 4)
             enhancedRequest.thinking = .enabled(budgetTokens: thinkingBudget)
         }
-        
+
         enhancedRequest.stream = true
 
         try enhancedRequest.validate()
@@ -819,6 +845,7 @@ public class AnthropicService {
             stopSequences: originalRequest.stopSequences,
             stream: originalRequest.stream,
             system: originalRequest.system,
+            systemBlocks: originalRequest.systemBlocks,
             temperature: originalRequest.temperature,
             toolChoice: originalRequest.toolChoice,
             tools: originalRequest.tools,

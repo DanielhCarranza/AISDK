@@ -235,6 +235,9 @@ public struct ProviderRequest: Sendable {
     /// Reasoning/thinking configuration (provider-agnostic)
     public let reasoning: AIReasoningConfig?
 
+    /// Prompt/context caching configuration (provider-agnostic)
+    public let caching: AICacheConfig?
+
     /// Request timeout in seconds
     public let timeout: TimeInterval
 
@@ -260,6 +263,7 @@ public struct ProviderRequest: Sendable {
         builtInTools: [BuiltInTool]? = nil,
         responseFormat: ProviderResponseFormat? = nil,
         reasoning: AIReasoningConfig? = nil,
+        caching: AICacheConfig? = nil,
         timeout: TimeInterval = 120,
         providerOptions: [String: ProviderJSONValue]? = nil,
         traceContext: AITraceContext? = nil,
@@ -277,6 +281,7 @@ public struct ProviderRequest: Sendable {
         self.builtInTools = builtInTools
         self.responseFormat = responseFormat
         self.reasoning = reasoning
+        self.caching = caching
         self.timeout = timeout
         self.providerOptions = providerOptions
         self.traceContext = traceContext
@@ -701,6 +706,7 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: try responseFormat?.toProviderResponseFormat(),
             reasoning: reasoning,
+            caching: caching,
             timeout: 120,
             providerOptions: providerJSONOptions,
             traceContext: nil,

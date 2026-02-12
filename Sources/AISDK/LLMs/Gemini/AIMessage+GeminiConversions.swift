@@ -179,14 +179,15 @@ extension Array where Element == AIInputMessage {
 public func createGeminiRequest(
     messages: [AIInputMessage],
     generationConfig: GeminiGenerateContentRequestBody.GenerationConfig? = nil,
-    tools: [GeminiGenerateContentRequestBody.Tool]? = nil
+    tools: [GeminiGenerateContentRequestBody.Tool]? = nil,
+    cachedContent: String? = nil
 ) -> GeminiGenerateContentRequestBody {
     let geminiContents = messages.toGeminiContents()
     let systemInstruction = messages.extractSystemInstruction()
-    
+
     return GeminiGenerateContentRequestBody(
         contents: geminiContents,
-        cachedContent: nil,
+        cachedContent: cachedContent,
         generationConfig: generationConfig,
         safetySettings: nil,
         systemInstruction: systemInstruction,
@@ -198,11 +199,13 @@ public func createGeminiRequest(
 /// Helper to create GeminiGenerateContentRequestBody from single universal message
 public func createGeminiRequest(
     message: AIInputMessage,
-    generationConfig: GeminiGenerateContentRequestBody.GenerationConfig? = nil
+    generationConfig: GeminiGenerateContentRequestBody.GenerationConfig? = nil,
+    cachedContent: String? = nil
 ) -> GeminiGenerateContentRequestBody {
     return createGeminiRequest(
         messages: [message],
-        generationConfig: generationConfig
+        generationConfig: generationConfig,
+        cachedContent: cachedContent
     )
 }
 
