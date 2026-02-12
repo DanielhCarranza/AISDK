@@ -118,7 +118,7 @@ public actor GeminiClientAdapter: ProviderClient {
 
     public func execute(request: ProviderRequest) async throws -> ProviderResponse {
         let startTime = Date()
-        let httpRequest = try buildHTTPRequest(for: request, streaming: false)
+        let httpRequest = try await buildHTTPRequest(for: request, streaming: false)
 
         let (data, response) = try await performRequest(httpRequest, timeout: request.timeout)
 
@@ -198,7 +198,7 @@ public actor GeminiClientAdapter: ProviderClient {
 
     // MARK: - Private Methods
 
-    private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) throws -> URLRequest {
+    private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) async throws -> URLRequest {
         let action = streaming ? "streamGenerateContent" : "generateContent"
         var endpoint = baseURL.appendingPathComponent("models/\(request.modelId):\(action)")
 
@@ -218,13 +218,13 @@ public actor GeminiClientAdapter: ProviderClient {
         httpRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // Build request body
-        let body = try buildRequestBody(from: request)
+        let body = try await buildRequestBody(from: request)
         httpRequest.httpBody = try JSONEncoder().encode(body)
 
         return httpRequest
     }
 
-    private func buildRequestBody(from request: ProviderRequest) throws -> GCARequestBody {
+    private func buildRequestBody(from request: ProviderRequest) async throws -> GCARequestBody {
         // Extract system instruction if present
         var systemInstruction: GCAContent?
         var nonSystemMessages: [AIMessage] = []
@@ -248,7 +248,8 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         // Convert messages to Gemini format
-        let contents = try nonSystemMessages.map { message -> GCAContent in
+        var contents: [GCAContent] = []
+        for message in nonSystemMessages {
             let parts: [GCAPart]
 
             switch message.content {
@@ -268,42 +269,66 @@ public actor GeminiClientAdapter: ProviderClient {
                     parts = [.text(text)]
                 }
             case .parts(let contentParts):
-                parts = contentParts.compactMap { part -> GCAPart? in
+                var mappedParts: [GCAPart] = []
+                for part in contentParts {
                     switch part {
                     case .text(let text):
-                        return .text(text)
+                        mappedParts.append(.text(text))
                     case .image(let data, let mimeType):
-                        // Image with inline data
-                        return .inlineData(GCAInlineData(
+                        mappedParts.append(.inlineData(GCAInlineData(
                             mimeType: mimeType,
                             data: data.base64EncodedString()
-                        ))
+                        )))
                     case .imageURL(let urlString):
-                        // Check if this is a Gemini Files API URL
                         if urlString.hasPrefix("https://generativelanguage.googleapis.com") {
-                            // Detect MIME type from URL or default to image/jpeg
                             let mimeType = detectMimeType(from: urlString) ?? "image/jpeg"
-                            return .fileData(GCAFileData(
+                            mappedParts.append(.fileData(GCAFileData(
                                 mimeType: mimeType,
                                 fileUri: urlString
-                            ))
+                            )))
+                        } else if let url = URL(string: urlString) {
+                            // Download external image and send as inline data
+                            let (data, _) = try await URLSession.shared.data(from: url)
+                            let mimeType = detectMimeType(from: urlString) ?? "image/jpeg"
+                            mappedParts.append(.inlineData(GCAInlineData(
+                                mimeType: mimeType,
+                                data: data.base64EncodedString()
+                            )))
                         }
-                        // External URLs not directly supported
-                        return nil
                     case .audio(let data, let mimeType):
-                        // Audio with inline data
-                        return .inlineData(GCAInlineData(
+                        mappedParts.append(.inlineData(GCAInlineData(
                             mimeType: mimeType,
                             data: data.base64EncodedString()
-                        ))
+                        )))
                     case .file(let data, _, let mimeType):
-                        // File with inline data (filename not used for Gemini API)
-                        return .inlineData(GCAInlineData(
+                        mappedParts.append(.inlineData(GCAInlineData(
                             mimeType: mimeType,
                             data: data.base64EncodedString()
-                        ))
+                        )))
+                    case .video(let data, let mimeType):
+                        mappedParts.append(.inlineData(GCAInlineData(
+                            mimeType: mimeType,
+                            data: data.base64EncodedString()
+                        )))
+                    case .videoURL(let urlString):
+                        if urlString.hasPrefix("https://generativelanguage.googleapis.com") {
+                            let mimeType = detectMimeType(from: urlString) ?? "video/mp4"
+                            mappedParts.append(.fileData(GCAFileData(
+                                mimeType: mimeType,
+                                fileUri: urlString
+                            )))
+                        } else if let url = URL(string: urlString) {
+                            // Download external video and send as inline data
+                            let (data, _) = try await URLSession.shared.data(from: url)
+                            let mimeType = detectMimeType(from: urlString) ?? "video/mp4"
+                            mappedParts.append(.inlineData(GCAInlineData(
+                                mimeType: mimeType,
+                                data: data.base64EncodedString()
+                            )))
+                        }
                     }
                 }
+                parts = mappedParts
             }
 
             // Handle tool calls in assistant messages
@@ -337,7 +362,7 @@ public actor GeminiClientAdapter: ProviderClient {
                 role = "user" // Should not happen as we filter above
             }
 
-            return GCAContent(role: role, parts: finalParts)
+            contents.append(GCAContent(role: role, parts: finalParts))
         }
 
         var body = GCARequestBody(contents: contents)
@@ -745,7 +770,7 @@ public actor GeminiClientAdapter: ProviderClient {
         request: ProviderRequest,
         continuation: AsyncThrowingStream<ProviderStreamEvent, Error>.Continuation
     ) async throws {
-        let httpRequest = try buildHTTPRequest(for: request, streaming: true)
+        let httpRequest = try await buildHTTPRequest(for: request, streaming: true)
 
         let (bytes, response) = try await session.bytes(for: httpRequest)
 

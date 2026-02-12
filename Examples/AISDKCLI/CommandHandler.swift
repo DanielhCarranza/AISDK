@@ -158,6 +158,10 @@ class CommandHandler {
             handleContinue(argString)
             return .handled
 
+        case "video":
+            handleVideo(argString)
+            return .handled
+
         default:
             return .notRecognized(command)
         }
@@ -185,6 +189,10 @@ class CommandHandler {
         \(ANSIStyles.cyan("/format <mode>")) Set response format (text|json|schema|ui)
         \(ANSIStyles.cyan("/citations on|off")) Toggle citations rendering
         \(ANSIStyles.cyan("/reliable on|off")) Toggle reliability/failover mode
+        \(ANSIStyles.cyan("/video <url>"))         Attach video URL to next message
+        \(ANSIStyles.cyan("/video demo"))          Download and attach the demo video
+        \(ANSIStyles.cyan("/video /path/to.mp4"))  Attach a local video file
+        \(ANSIStyles.cyan("/video off"))           Remove pending video attachment
 
         \(ANSIStyles.bold("OpenAI Responses API Commands (--provider openai):"))
         \(ANSIStyles.cyan("/websearch on|off"))   Toggle web search tool
@@ -536,6 +544,111 @@ class CommandHandler {
             print(ANSIStyles.dim("Usage: /store on|off"))
         default:
             print(ANSIStyles.error("Unknown option. Use: /store on|off"))
+        }
+    }
+
+    private func handleVideo(_ url: String) {
+        guard let config = runtimeConfig else { return }
+
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty {
+            if let pendingPath = config.pendingVideoFilePath,
+               let pendingData = config.pendingVideoData,
+               let pendingMimeType = config.pendingVideoMimeType {
+                let info = VideoAttachmentInfo(
+                    name: config.pendingVideoDisplayName ?? URL(fileURLWithPath: pendingPath).lastPathComponent,
+                    sizeBytes: pendingData.count,
+                    mimeType: pendingMimeType,
+                    source: pendingPath
+                )
+                print(VideoAttachmentUtils.renderAttachmentBox(for: info))
+                print(ANSIStyles.dim("This video will be attached to your next message."))
+            } else if let pending = config.pendingVideoURL {
+                print(ANSIStyles.info("Pending video: \(pending)"))
+                print(ANSIStyles.dim("This video will be attached to your next message."))
+            } else {
+                print(ANSIStyles.info("No video attached"))
+            }
+            print(ANSIStyles.dim("Usage: /video <url>         — attach a video URL"))
+            print(ANSIStyles.dim("       /video demo          — download and attach the demo video"))
+            print(ANSIStyles.dim("       /video /path/to.mp4  — attach a local video file"))
+            print(ANSIStyles.dim("       /video off           — remove pending video"))
+            return
+        }
+
+        if trimmed.lowercased() == "off" || trimmed.lowercased() == "clear" {
+            config.clearPendingVideo()
+            print(ANSIStyles.success("Video attachment cleared"))
+            return
+        }
+
+        guard provider == .gemini else {
+            print(ANSIStyles.warning("Video is only supported with --provider gemini"))
+            return
+        }
+
+        if trimmed.lowercased() == "demo" {
+            attachDemoVideo()
+            return
+        }
+
+        let expandedPath = NSString(string: trimmed).expandingTildeInPath
+        if FileManager.default.fileExists(atPath: expandedPath) {
+            attachLocalVideo(at: expandedPath)
+            return
+        }
+
+        if let remoteURL = URL(string: trimmed),
+           let scheme = remoteURL.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            config.clearPendingVideo()
+            config.pendingVideoURL = trimmed
+            config.pendingVideoDisplayName = remoteURL.lastPathComponent.isEmpty ? trimmed : remoteURL.lastPathComponent
+            print(ANSIStyles.success("Video attached: \(trimmed)"))
+            print(ANSIStyles.dim("This video will be downloaded and played before sending."))
+            return
+        }
+
+        print(ANSIStyles.error("Video not found. Provide a valid URL or local file path."))
+    }
+
+    private func attachDemoVideo() {
+        guard let config = runtimeConfig else { return }
+        let demoURL = URL(string: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4")!
+        let destinationURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("aisdk-test-video.mp4")
+
+        do {
+            let info = try VideoAttachmentUtils.downloadVideo(from: demoURL, to: destinationURL)
+            let data = try Data(contentsOf: destinationURL)
+            config.clearPendingVideo()
+            config.pendingVideoFilePath = destinationURL.path
+            config.pendingVideoData = data
+            config.pendingVideoMimeType = info.mimeType
+            config.pendingVideoDisplayName = info.name
+            print(VideoAttachmentUtils.renderAttachmentBox(for: info))
+            print(ANSIStyles.dim("Demo video saved to \(destinationURL.path)"))
+            print(ANSIStyles.dim("This video will be sent with your next message."))
+        } catch {
+            print(ANSIStyles.error("Failed to download demo video: \(error.localizedDescription)"))
+        }
+    }
+
+    private func attachLocalVideo(at path: String) {
+        guard let config = runtimeConfig else { return }
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let info = VideoAttachmentUtils.videoInfo(forPath: path, sizeBytes: data.count)
+            config.clearPendingVideo()
+            config.pendingVideoFilePath = path
+            config.pendingVideoData = data
+            config.pendingVideoMimeType = info.mimeType
+            config.pendingVideoDisplayName = info.name
+            print(VideoAttachmentUtils.renderAttachmentBox(for: info))
+            print(ANSIStyles.dim("This video will be sent with your next message."))
+        } catch {
+            print(ANSIStyles.error("Failed to read video file: \(error.localizedDescription)"))
         }
     }
 

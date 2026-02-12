@@ -227,9 +227,9 @@ extension OpenAIProvider {
             return .inputImage(ResponseInputImage(imageUrl: "data:image/\(mediaType);base64,\(base64)"))
         case .imageURL(let url):
             return .inputImage(ResponseInputImage(imageUrl: url))
-        case .audio, .file:
-            // Audio and file content types are not directly supported by Responses API input
-            // Files could be uploaded via FileManager and referenced by ID
+        case .audio, .file, .video, .videoURL:
+            // Audio/video/file content types are not directly supported by Responses API input
+            // Use Gemini provider for video support
             return nil
         }
     }

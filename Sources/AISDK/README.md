@@ -10,6 +10,7 @@ AISDK is a powerful, modular Swift package for building AI-powered applications 
 - 💬 Complete chat management system
 - 🎙️ Native voice interactions (AVFoundation/Speech framework)
 - 👁️ LiveKit-powered vision features
+- 🎥 Video inputs for supported models (Gemini)
 - 🔬 Specialized research capabilities
 - 📱 Full multiplatform support (iOS 18+, macOS, watchOS, tvOS)
 
@@ -228,6 +229,7 @@ graph TB
 - Real-time video
 - Camera management
 - Agent interaction
+- Video inputs for Gemini models
 
 ### 🔬 Research Features
 - Specialized research agents

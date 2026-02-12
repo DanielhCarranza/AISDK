@@ -13,6 +13,7 @@ enum ProviderType: String, CaseIterable {
     case litellm
     case openai  // Direct OpenAI Responses API for testing
     case anthropic
+    case gemini  // Direct Google Gemini API (supports video)
 
     var displayName: String {
         switch self {
@@ -20,6 +21,7 @@ enum ProviderType: String, CaseIterable {
         case .litellm: return "LiteLLM"
         case .openai: return "OpenAI"
         case .anthropic: return "Anthropic"
+        case .gemini: return "Google Gemini"
         }
     }
 
@@ -29,6 +31,7 @@ enum ProviderType: String, CaseIterable {
         case .litellm: return "LITELLM_API_KEY"
         case .openai: return "OPENAI_API_KEY"
         case .anthropic: return "ANTHROPIC_API_KEY"
+        case .gemini: return "GOOGLE_API_KEY"
         }
     }
 }
@@ -76,6 +79,9 @@ struct CLIOptions {
 
     /// Enabled beta features (Anthropic)
     var betaFeatures: Set<String> = []
+
+    /// Video URL to attach to the next message
+    var videoURL: String?
 
     /// Show help and exit
     var showHelp: Bool = false
@@ -151,6 +157,12 @@ struct CLIOptions {
             case "--reliable":
                 options.reliabilityEnabled = true
 
+            case "--video":
+                if index + 1 < args.count {
+                    options.videoURL = args[index + 1]
+                    index += 1
+                }
+
             case "--help", "-h":
                 options.showHelp = true
 
@@ -201,6 +213,13 @@ class RuntimeConfig {
     var thinkingBudget: Int
     var betaFeatures: Set<String>
 
+    // Video attachment for next message
+    var pendingVideoURL: String?
+    var pendingVideoFilePath: String?
+    var pendingVideoData: Data?
+    var pendingVideoMimeType: String?
+    var pendingVideoDisplayName: String?
+
     // OpenAI Responses API specific settings
     var webSearchEnabled: Bool = false
     var codeInterpreterEnabled: Bool = false
@@ -221,6 +240,15 @@ class RuntimeConfig {
         self.thinkingEnabled = options.thinkingEnabled
         self.thinkingBudget = options.thinkingBudget
         self.betaFeatures = options.betaFeatures
+        self.pendingVideoURL = options.videoURL
+    }
+
+    func clearPendingVideo() {
+        pendingVideoURL = nil
+        pendingVideoFilePath = nil
+        pendingVideoData = nil
+        pendingVideoMimeType = nil
+        pendingVideoDisplayName = nil
     }
 }
 

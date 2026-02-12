@@ -238,8 +238,9 @@ public actor OpenAIClientAdapter: ProviderClient {
                         return .imageURL("data:\(mimeType);base64,\(base64)")
                     case .imageURL(let url):
                         return .imageURL(url)
-                    case .audio, .file:
-                        // Not directly supported, fall back to text description
+                    case .audio, .file, .video, .videoURL:
+                        // Video/audio not supported via OpenAI chat completions format
+                        // Use Gemini provider for video support
                         return .text("[Unsupported content type]")
                     }
                 }
