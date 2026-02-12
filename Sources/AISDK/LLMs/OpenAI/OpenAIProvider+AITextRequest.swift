@@ -102,20 +102,68 @@ extension OpenAIProvider {
         // Extract OpenAI-specific options
         let openAIOptions = request.providerOptions as? OpenAIRequestOptions
 
-        // Add built-in tools from provider options
-        if let webConfig = openAIOptions?.webSearch, webConfig.enabled {
-            tools.append(.webSearchPreview)
-        }
+        var builtInToolsByKind: [String: [ResponseTool]] = [:]
+        var builtInKindOrder: [String] = []
 
-        if let fileConfig = openAIOptions?.fileSearch, fileConfig.enabled {
-            // Add file search for each vector store
-            for vectorStoreId in fileConfig.vectorStoreIds {
-                tools.append(.fileSearch(vectorStoreId: vectorStoreId))
+        func insertBuiltInTools(kind: String, tools newTools: [ResponseTool], preferOrder: Bool) {
+            if builtInToolsByKind[kind] != nil {
+                builtInToolsByKind[kind] = newTools
+                if preferOrder, let index = builtInKindOrder.firstIndex(of: kind) {
+                    builtInKindOrder.remove(at: index)
+                    builtInKindOrder.append(kind)
+                }
+            } else {
+                builtInToolsByKind[kind] = newTools
+                builtInKindOrder.append(kind)
             }
         }
 
+        // Add built-in tools from provider options
+        if let webConfig = openAIOptions?.webSearch, webConfig.enabled {
+            insertBuiltInTools(kind: "webSearch", tools: [.webSearchPreview], preferOrder: false)
+        }
+
+        if let fileConfig = openAIOptions?.fileSearch, fileConfig.enabled {
+            let fileTools = fileConfig.vectorStoreIds.map { ResponseTool.fileSearch(vectorStoreId: $0) }
+            insertBuiltInTools(kind: "fileSearch", tools: fileTools, preferOrder: false)
+        }
+
         if let codeConfig = openAIOptions?.codeInterpreter, codeConfig.enabled {
-            tools.append(.codeInterpreter)
+            insertBuiltInTools(kind: "codeExecution", tools: [.codeInterpreter], preferOrder: false)
+        }
+
+        // Add built-in tools from core request, deduping by kind (core takes precedence)
+        if let builtInTools = request.builtInTools {
+            for tool in builtInTools {
+                switch tool {
+                case .webSearch, .webSearchDefault:
+                    insertBuiltInTools(kind: tool.kind, tools: [.webSearchPreview], preferOrder: true)
+                case .codeExecution, .codeExecutionDefault:
+                    insertBuiltInTools(kind: tool.kind, tools: [.codeInterpreter], preferOrder: true)
+                case .fileSearch(let config):
+                    guard !config.vectorStoreIds.isEmpty else {
+                        throw ProviderError.invalidRequest("fileSearch requires at least one vectorStoreId for OpenAI.")
+                    }
+                    let fileTools = config.vectorStoreIds.map { ResponseTool.fileSearch(vectorStoreId: $0) }
+                    insertBuiltInTools(kind: tool.kind, tools: fileTools, preferOrder: true)
+                case .imageGeneration(let config):
+                    insertBuiltInTools(
+                        kind: tool.kind,
+                        tools: [.imageGeneration(partialImages: config.partialImages)],
+                        preferOrder: true
+                    )
+                case .imageGenerationDefault:
+                    insertBuiltInTools(kind: tool.kind, tools: [.imageGeneration(partialImages: nil)], preferOrder: true)
+                case .urlContext:
+                    throw ProviderError.invalidRequest("urlContext is not supported by OpenAI.")
+                }
+            }
+        }
+
+        for kind in builtInKindOrder {
+            if let builtInTools = builtInToolsByKind[kind] {
+                tools.append(contentsOf: builtInTools)
+            }
         }
 
         // Convert reasoning config (provider-specific overrides unified)

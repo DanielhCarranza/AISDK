@@ -117,7 +117,7 @@ public class ResponseAgent {
     
     private let provider: OpenAIProvider
     private let tools: [Tool.Type]
-    private let builtInTools: [BuiltInTool]
+    private let builtInTools: [ResponseBuiltInTool]
     private let mcpServers: [MCPServerConfiguration]
     private let instructions: String?
     private let model: String
@@ -150,7 +150,7 @@ public class ResponseAgent {
     public init(
         provider: OpenAIProvider,
         tools: [Tool.Type] = [],
-        builtInTools: [BuiltInTool] = [.webSearchPreview, .codeInterpreter, .imageGeneration(), .fileSearch(vectorStoreId: "")],
+        builtInTools: [ResponseBuiltInTool] = [.webSearchPreview, .codeInterpreter, .imageGeneration(), .fileSearch(vectorStoreId: "")],
         mcpServers: [MCPServerConfiguration] = [],
         instructions: String? = nil,
         model: String = "gpt-4o"
@@ -911,7 +911,7 @@ extension ResponseLegacyChatMessage: Equatable {
 
 // MARK: - Built-in Tools Extension
 
-extension BuiltInTool {
+extension ResponseBuiltInTool {
     var name: String {
         switch self {
         case .webSearchPreview:

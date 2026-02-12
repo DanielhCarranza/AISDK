@@ -300,6 +300,25 @@ final class ProviderClientTests: XCTestCase {
             XCTFail("Expected toolCallStart event")
         }
 
+        // Test toolResult
+        let toolResultEvent = ProviderStreamEvent.toolResult(id: "tc1", result: "ok", metadata: nil).toAIStreamEvent()
+        if case .toolResult(let id, let result, _) = toolResultEvent {
+            XCTAssertEqual(id, "tc1")
+            XCTAssertEqual(result, "ok")
+        } else {
+            XCTFail("Expected toolResult event")
+        }
+
+        // Test source
+        let sourceEvent = ProviderStreamEvent.source(AISource(id: "src-1", url: "https://example.com", title: "Example"))
+            .toAIStreamEvent()
+        if case .source(let source) = sourceEvent {
+            XCTAssertEqual(source.url, "https://example.com")
+            XCTAssertEqual(source.title, "Example")
+        } else {
+            XCTFail("Expected source event")
+        }
+
         // Test finish with usage
         let usage = ProviderUsage(promptTokens: 10, completionTokens: 5)
         let finishEvent = ProviderStreamEvent.finish(reason: .stop, usage: usage).toAIStreamEvent()

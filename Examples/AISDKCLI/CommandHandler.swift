@@ -166,6 +166,10 @@ class CommandHandler {
             handleVideo(argString)
             return .handled
 
+        case "builtin":
+            handleBuiltIn(argString)
+            return .handled
+
         default:
             return .notRecognized(command)
         }
@@ -198,6 +202,12 @@ class CommandHandler {
         \(ANSIStyles.cyan("/video /path/to.mp4"))  Attach a local video file
         \(ANSIStyles.cyan("/video off"))           Remove pending video attachment
         \(ANSIStyles.cyan("/reasoning <level>")) Set reasoning effort (off|low|medium|high) - all providers
+
+        \(ANSIStyles.bold("Built-in Tools (provider-agnostic):"))
+        \(ANSIStyles.cyan("/builtin websearch on|off")) Toggle web search built-in tool
+        \(ANSIStyles.cyan("/builtin code on|off"))      Toggle code execution built-in tool
+        \(ANSIStyles.cyan("/builtin urlcontext on|off")) Toggle URL context built-in tool
+        \(ANSIStyles.cyan("/builtin list"))              Show active built-in tools
 
         \(ANSIStyles.bold("OpenAI Responses API Commands (--provider openai):"))
         \(ANSIStyles.cyan("/websearch on|off"))   Toggle web search tool
@@ -475,6 +485,62 @@ class CommandHandler {
         default:
             print(ANSIStyles.warning("Unknown option. Use: /reasoning off|low|medium|high"))
         }
+    }
+
+    // MARK: - Built-in Tools Commands
+
+    private func handleBuiltIn(_ arg: String) {
+        guard let config = runtimeConfig else { return }
+
+        let parts = arg.trimmingCharacters(in: .whitespaces)
+            .components(separatedBy: " ")
+        let subcommand = parts.first?.lowercased() ?? ""
+        let subarg = parts.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespaces)
+
+        switch subcommand {
+        case "websearch", "web-search":
+            toggleBuiltInTool(config: config, tool: .webSearchDefault, kind: "webSearch", arg: subarg, label: "Web search")
+        case "code", "codeexecution":
+            toggleBuiltInTool(config: config, tool: .codeExecutionDefault, kind: "codeExecution", arg: subarg, label: "Code execution")
+        case "urlcontext", "url-context":
+            toggleBuiltInTool(config: config, tool: .urlContext, kind: "urlContext", arg: subarg, label: "URL context")
+        case "list", "":
+            listBuiltInTools(config: config)
+        default:
+            print(ANSIStyles.error("Unknown subcommand '\(subcommand)'. Use: /builtin websearch|code|urlcontext|list"))
+        }
+    }
+
+    private func toggleBuiltInTool(config: RuntimeConfig, tool: BuiltInTool, kind: String, arg: String, label: String) {
+        switch arg.lowercased() {
+        case "on", "enable", "true":
+            if !config.activeBuiltInTools.contains(where: { $0.kind == kind }) {
+                config.activeBuiltInTools.append(tool)
+            }
+            print(ANSIStyles.success("\(label) enabled"))
+        case "off", "disable", "false":
+            config.activeBuiltInTools.removeAll { $0.kind == kind }
+            print(ANSIStyles.success("\(label) disabled"))
+        case "":
+            let isActive = config.activeBuiltInTools.contains(where: { $0.kind == kind })
+            print(ANSIStyles.info("\(label) is \(isActive ? "enabled" : "disabled")"))
+            print(ANSIStyles.dim("Usage: /builtin \(kind) on|off"))
+        default:
+            print(ANSIStyles.error("Use: /builtin \(kind) on|off"))
+        }
+    }
+
+    private func listBuiltInTools(config: RuntimeConfig) {
+        if config.activeBuiltInTools.isEmpty {
+            print(ANSIStyles.info("No built-in tools active"))
+        } else {
+            print(ANSIStyles.bold("Active built-in tools:"))
+            for tool in config.activeBuiltInTools {
+                print("  - \(tool.kind)")
+            }
+        }
+        print(ANSIStyles.dim("Available: websearch, code, urlcontext"))
+        print(ANSIStyles.dim("Usage: /builtin <tool> on|off"))
     }
 
     // MARK: - OpenAI Responses API Commands
