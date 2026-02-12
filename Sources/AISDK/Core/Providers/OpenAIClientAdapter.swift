@@ -272,6 +272,13 @@ public actor OpenAIClientAdapter: ProviderClient {
             stream: streaming
         )
 
+        if let builtInTools = request.builtInTools, !builtInTools.isEmpty {
+            throw ProviderError.invalidRequest(
+                "Built-in tools are not supported via OpenAI Chat Completions API. " +
+                    "Use the OpenAI Responses API (OpenAIProvider) instead."
+            )
+        }
+
         // Optional parameters — o-series models require max_completion_tokens instead of max_tokens
         if Self.supportsReasoning(for: request.modelId) {
             body.maxCompletionTokens = request.maxTokens

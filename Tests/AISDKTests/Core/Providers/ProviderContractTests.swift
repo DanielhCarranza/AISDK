@@ -399,7 +399,9 @@ final class ProviderContractTests: XCTestCase {
             .toolCallStart(id: "tc1", name: "search"),
             .toolCallDelta(id: "tc1", argumentsDelta: "{\"q\":"),
             .toolCallFinish(id: "tc1", name: "search", arguments: "{\"q\":\"test\"}"),
+            .toolResult(id: "tc1", result: "ok", metadata: nil),
             .reasoningDelta("thinking..."),
+            .source(AISource(id: "src-1", url: "https://example.com", title: "Example")),
             .usage(ProviderUsage(promptTokens: 10, completionTokens: 5)),
             .finish(reason: .stop, usage: ProviderUsage(promptTokens: 10, completionTokens: 5))
         ]

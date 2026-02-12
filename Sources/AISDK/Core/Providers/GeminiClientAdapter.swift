@@ -455,7 +455,31 @@ public actor GeminiClientAdapter: ProviderClient {
                 ))
             }
             if !functionDeclarations.isEmpty {
-                body.tools = [GCATool(functionDeclarations: functionDeclarations)]
+                if body.tools == nil { body.tools = [] }
+                body.tools?.append(.functions(functionDeclarations))
+            }
+        }
+
+        // Built-in tools
+        if let builtInTools = request.builtInTools, !builtInTools.isEmpty {
+            if body.tools == nil { body.tools = [] }
+            for tool in builtInTools {
+                switch tool {
+                case .webSearch, .webSearchDefault:
+                    body.tools?.append(.googleSearch)
+                case .codeExecution, .codeExecutionDefault:
+                    body.tools?.append(.codeExecution)
+                case .urlContext:
+                    body.tools?.append(.urlContext)
+                case .fileSearch:
+                    throw ProviderError.invalidRequest(
+                        "fileSearch is not supported by Gemini. Supported: webSearch, codeExecution, urlContext."
+                    )
+                case .imageGeneration, .imageGenerationDefault:
+                    throw ProviderError.invalidRequest(
+                        "imageGeneration is not supported by Gemini. Supported: webSearch, codeExecution, urlContext."
+                    )
+                }
             }
         }
 
@@ -746,6 +770,17 @@ public actor GeminiClientAdapter: ProviderClient {
                     textContent += text
                 }
 
+                if let executableCode = part.executableCode {
+                    if !textContent.isEmpty { textContent += "\n" }
+                    textContent += "```\(executableCode.language)\n\(executableCode.code)\n```"
+                }
+
+                if let executionResult = part.codeExecutionResult,
+                   let output = executionResult.output, !output.isEmpty {
+                    if !textContent.isEmpty { textContent += "\n" }
+                    textContent += output
+                }
+
                 if let fc = part.functionCall {
                     // Convert args dictionary to JSON string
                     let encoder = JSONEncoder()
@@ -822,6 +857,7 @@ public actor GeminiClientAdapter: ProviderClient {
         var modelVersion: String?
         var totalUsage: ProviderUsage?
         var lastFinishReason: ProviderFinishReason?
+        var lastCodeExecutionCallId: String?
         var decodeErrorCount = 0
         let maxDecodeErrors = 5
 
@@ -874,6 +910,37 @@ public actor GeminiClientAdapter: ProviderClient {
                                 continuation.yield(.textDelta(text))
                             }
 
+                            if let executableCode = part.executableCode {
+                                let callId = "call_code_execution_\(UUID().uuidString.prefix(8))"
+                                lastCodeExecutionCallId = callId
+                                continuation.yield(.toolCallStart(id: callId, name: "code_execution"))
+
+                                let argsDict: [String: String] = [
+                                    "language": executableCode.language,
+                                    "code": executableCode.code
+                                ]
+                                let argsData = try? JSONEncoder().encode(argsDict)
+                                let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                                continuation.yield(.toolCallDelta(id: callId, argumentsDelta: argsString))
+                                continuation.yield(.toolCallFinish(id: callId, name: "code_execution", arguments: argsString))
+                            }
+
+                            if let executionResult = part.codeExecutionResult {
+                                let outputText = executionResult.output ?? ""
+                                if !outputText.isEmpty {
+                                    continuation.yield(.textDelta(outputText))
+                                }
+
+                                let resultPayload: [String: String] = [
+                                    "outcome": executionResult.outcome,
+                                    "output": outputText
+                                ]
+                                let resultData = try? JSONEncoder().encode(resultPayload)
+                                let resultString = resultData.flatMap { String(data: $0, encoding: .utf8) } ?? outputText
+                                let toolResultId = lastCodeExecutionCallId ?? "call_code_execution_\(UUID().uuidString.prefix(8))"
+                                continuation.yield(.toolResult(id: toolResultId, result: resultString, metadata: nil))
+                            }
+
                             // Handle function calls
                             if let fc = part.functionCall {
                                 let callId = "call_\(fc.name)_\(UUID().uuidString.prefix(8))"
@@ -903,6 +970,15 @@ public actor GeminiClientAdapter: ProviderClient {
                     // Check for finish reason
                     if let finishReason = candidate.finishReason {
                         lastFinishReason = ProviderFinishReason(providerReason: finishReason)
+                    }
+
+                    if let groundingMetadata = candidate.groundingMetadata,
+                       let groundingChunks = groundingMetadata.groundingChunks {
+                        for (index, chunk) in groundingChunks.enumerated() {
+                            guard let web = chunk.web else { continue }
+                            let sourceId = web.uri ?? "source_\(index)"
+                            continuation.yield(.source(AISource(id: sourceId, url: web.uri, title: web.title)))
+                        }
                     }
                 }
 
@@ -974,7 +1050,7 @@ private struct GCARequestBody: Encodable {
     let contents: [GCAContent]
     var systemInstruction: GCAContent?
     var generationConfig: GCAGenerationConfig?
-    var tools: [GCATool]?
+    var tools: [GCAToolEntry]?
     var toolConfig: GCAToolConfig?
     var thinkingConfig: GCAThinkingConfig?
 
@@ -1063,6 +1139,8 @@ private enum GCAPart: Codable {
     case fileData(GCAFileData)          // For Files API references
     case functionCall(GCAFunctionCall)
     case functionResponse(GCAFunctionResponse)
+    case executableCode(GCAExecutableCode)
+    case codeExecutionResult(GCACodeExecutionResult)
 
     private enum CodingKeys: String, CodingKey {
         case text
@@ -1070,6 +1148,8 @@ private enum GCAPart: Codable {
         case fileData
         case functionCall
         case functionResponse
+        case executableCode = "executable_code"
+        case codeExecutionResult = "code_execution_result"
     }
 
     init(from decoder: Decoder) throws {
@@ -1085,6 +1165,13 @@ private enum GCAPart: Codable {
             self = .functionCall(functionCall)
         } else if let functionResponse = try container.decodeIfPresent(GCAFunctionResponse.self, forKey: .functionResponse) {
             self = .functionResponse(functionResponse)
+        } else if let executableCode = try container.decodeIfPresent(GCAExecutableCode.self, forKey: .executableCode) {
+            self = .executableCode(executableCode)
+        } else if let executionResult = try container.decodeIfPresent(
+            GCACodeExecutionResult.self,
+            forKey: .codeExecutionResult
+        ) {
+            self = .codeExecutionResult(executionResult)
         } else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unable to decode GCAPart")
@@ -1105,6 +1192,10 @@ private enum GCAPart: Codable {
             try container.encode(fc, forKey: .functionCall)
         case .functionResponse(let fr):
             try container.encode(fr, forKey: .functionResponse)
+        case .executableCode(let exec):
+            try container.encode(exec, forKey: .executableCode)
+        case .codeExecutionResult(let result):
+            try container.encode(result, forKey: .codeExecutionResult)
         }
     }
 }
@@ -1117,6 +1208,19 @@ private struct GCAResponsePart: Decodable {
     let fileData: GCAFileData?
     let functionCall: GCAFunctionCall?
     let functionResponse: GCAFunctionResponse?
+    let executableCode: GCAExecutableCode?
+    let codeExecutionResult: GCACodeExecutionResult?
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case thought
+        case inlineData
+        case fileData
+        case functionCall
+        case functionResponse
+        case executableCode = "executable_code"
+        case codeExecutionResult = "code_execution_result"
+    }
 }
 
 private struct GCAInlineData: Codable {
@@ -1145,6 +1249,16 @@ private struct GCAFunctionResponse: Codable {
     let response: [String: ProviderJSONValue]
 }
 
+private struct GCAExecutableCode: Codable {
+    let language: String
+    let code: String
+}
+
+private struct GCACodeExecutionResult: Codable {
+    let outcome: String
+    let output: String?
+}
+
 private struct GCAGenerationConfig: Codable {
     var maxOutputTokens: Int?
     var temperature: Double?
@@ -1155,9 +1269,29 @@ private struct GCAGenerationConfig: Codable {
     var responseSchema: ProviderJSONValue?
 }
 
-private struct GCATool: Codable {
-    let functionDeclarations: [GCAFunctionDeclaration]
+/// A Gemini tool entry. Either function declarations or a built-in tool.
+private enum GCAToolEntry: Encodable {
+    case functions([GCAFunctionDeclaration])
+    case googleSearch
+    case codeExecution
+    case urlContext
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .functions(let declarations):
+            try container.encode(["functionDeclarations": declarations])
+        case .googleSearch:
+            try container.encode(["google_search": EmptyObject()])
+        case .codeExecution:
+            try container.encode(["code_execution": EmptyObject()])
+        case .urlContext:
+            try container.encode(["url_context": EmptyObject()])
+        }
+    }
 }
+
+private struct EmptyObject: Codable {}
 
 private struct GCAFunctionDeclaration: Codable {
     let name: String
@@ -1188,6 +1322,7 @@ private struct GCACandidate: Decodable {
     let content: GCAResponseContent
     let finishReason: String?
     let safetyRatings: [GCASafetyRating]?
+    let groundingMetadata: GCAGroundingMetadata?
 }
 
 /// Response-specific content structure that uses GCAResponsePart for thought detection
@@ -1212,4 +1347,18 @@ private struct GCAUsageMetadata: Decodable {
 private struct GCAPromptFeedback: Decodable {
     let blockReason: String?
     let safetyRatings: [GCASafetyRating]?
+}
+
+private struct GCAGroundingMetadata: Decodable {
+    let webSearchQueries: [String]?
+    let groundingChunks: [GCAGroundingChunk]?
+}
+
+private struct GCAGroundingChunk: Decodable {
+    let web: GCAWebChunk?
+}
+
+private struct GCAWebChunk: Decodable {
+    let uri: String?
+    let title: String?
 }

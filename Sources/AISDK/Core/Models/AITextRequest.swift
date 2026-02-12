@@ -39,6 +39,10 @@ public struct AITextRequest: @unchecked Sendable {
     /// Tool choice behavior
     public let toolChoice: ToolChoice?
 
+    /// Built-in provider tools (web search, code execution, etc.)
+    /// These run server-side and don't need local execution.
+    public let builtInTools: [BuiltInTool]?
+
     /// Response format specification
     public let responseFormat: ResponseFormat?
 
@@ -76,6 +80,7 @@ public struct AITextRequest: @unchecked Sendable {
         stop: [String]? = nil,
         tools: [ToolSchema]? = nil,
         toolChoice: ToolChoice? = nil,
+        builtInTools: [BuiltInTool]? = nil,
         responseFormat: ResponseFormat? = nil,
         reasoning: AIReasoningConfig? = nil,
         allowedProviders: Set<String>? = nil,
@@ -93,6 +98,7 @@ public struct AITextRequest: @unchecked Sendable {
         self.stop = stop
         self.tools = tools
         self.toolChoice = toolChoice
+        self.builtInTools = builtInTools
         self.responseFormat = responseFormat
         self.reasoning = reasoning
         self.allowedProviders = allowedProviders
@@ -184,6 +190,7 @@ public extension AITextRequest {
             stop: stop,
             tools: tools,
             toolChoice: toolChoice,
+            builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
             allowedProviders: allowedProviders,
@@ -206,6 +213,7 @@ public extension AITextRequest {
             stop: stop,
             tools: tools,
             toolChoice: toolChoice,
+            builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
             allowedProviders: providers,
@@ -228,6 +236,7 @@ public extension AITextRequest {
             stop: stop,
             tools: tools,
             toolChoice: toolChoice,
+            builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
             allowedProviders: allowedProviders,
@@ -250,6 +259,7 @@ public extension AITextRequest {
             stop: stop,
             tools: tools,
             toolChoice: toolChoice,
+            builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
             allowedProviders: allowedProviders,
@@ -257,6 +267,29 @@ public extension AITextRequest {
             bufferPolicy: bufferPolicy,
             metadata: metadata,
             conversationId: id,
+            providerOptions: providerOptions
+        )
+    }
+
+    /// Create a copy with updated built-in tools
+    func withBuiltInTools(_ builtInTools: [BuiltInTool]?) -> AITextRequest {
+        AITextRequest(
+            messages: messages,
+            model: model,
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP,
+            stop: stop,
+            tools: tools,
+            toolChoice: toolChoice,
+            builtInTools: builtInTools,
+            responseFormat: responseFormat,
+            reasoning: reasoning,
+            allowedProviders: allowedProviders,
+            sensitivity: sensitivity,
+            bufferPolicy: bufferPolicy,
+            metadata: metadata,
+            conversationId: conversationId,
             providerOptions: providerOptions
         )
     }
@@ -272,6 +305,7 @@ public extension AITextRequest {
             stop: stop,
             tools: tools,
             toolChoice: toolChoice,
+            builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
             allowedProviders: allowedProviders,
@@ -294,6 +328,7 @@ public extension AITextRequest {
             stop: stop,
             tools: tools,
             toolChoice: toolChoice,
+            builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
             allowedProviders: allowedProviders,

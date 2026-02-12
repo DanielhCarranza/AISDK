@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AISDK
 
 /// Provider type selection
 enum ProviderType: String, CaseIterable {
@@ -85,6 +86,9 @@ struct CLIOptions {
 
     /// Reasoning effort level (all providers)
     var reasoningEffort: String? = nil
+
+    /// Built-in tool names to enable (comma-separated via --builtin-tools)
+    var builtInToolNames: [String] = []
 
     /// Show help and exit
     var showHelp: Bool = false
@@ -199,6 +203,16 @@ struct CLIOptions {
                     print(ANSIStyles.warning("--reasoning requires an effort level: low, medium, high"))
                 }
 
+            case "--builtin-tools":
+                if index + 1 < args.count, !args[index + 1].hasPrefix("-") {
+                    options.builtInToolNames = args[index + 1]
+                        .split(separator: ",")
+                        .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                    index += 1
+                } else {
+                    print(ANSIStyles.warning("--builtin-tools requires comma-separated names: websearch,code,urlcontext"))
+                }
+
             default:
                 if arg.hasPrefix("-") {
                     print(ANSIStyles.warning("Unknown option: \(arg)"))
@@ -239,6 +253,9 @@ class RuntimeConfig {
     // Unified reasoning (all providers)
     var reasoningEffort: String?
 
+    // Provider-agnostic built-in tools
+    var activeBuiltInTools: [BuiltInTool] = []
+
     // OpenAI Responses API specific settings
     var webSearchEnabled: Bool = false
     var codeInterpreterEnabled: Bool = false
@@ -261,6 +278,24 @@ class RuntimeConfig {
         self.betaFeatures = options.betaFeatures
         self.pendingVideoURL = options.videoURL
         self.reasoningEffort = options.reasoningEffort
+        self.activeBuiltInTools = Self.parseBuiltInToolNames(options.builtInToolNames)
+    }
+
+    static func parseBuiltInToolNames(_ names: [String]) -> [BuiltInTool] {
+        var tools: [BuiltInTool] = []
+        for name in names {
+            switch name {
+            case "websearch", "web-search", "web_search":
+                tools.append(.webSearchDefault)
+            case "code", "codeexecution", "code-execution", "code_execution":
+                tools.append(.codeExecutionDefault)
+            case "urlcontext", "url-context", "url_context":
+                tools.append(.urlContext)
+            default:
+                print(ANSIStyles.warning("Unknown built-in tool: '\(name)'. Available: websearch, code, urlcontext"))
+            }
+        }
+        return tools
     }
 
     func clearPendingVideo() {
