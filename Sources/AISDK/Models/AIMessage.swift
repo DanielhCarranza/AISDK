@@ -239,7 +239,8 @@ extension AIInputMessage {
     
     /// Create an assistant message with tool calls
     public static func assistant(_ text: String, toolCalls: [AIToolCall]) -> AIInputMessage {
-        return AIInputMessage(role: .assistant, content: [.text(text)], name: nil, toolCalls: toolCalls)
+        let content: [AIContentPart] = text.isEmpty ? [] : [.text(text)]
+        return AIInputMessage(role: .assistant, content: content, name: nil, toolCalls: toolCalls)
     }
     
     /// Create a system message

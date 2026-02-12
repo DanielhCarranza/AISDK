@@ -234,6 +234,7 @@ func printUsage() {
         --no-citations        Disable citations
         --reliable            Enable reliability/failover layer
         --video <input>       Attach a video URL, local path, or "demo" to the first message
+        --reasoning <level>   Reasoning effort: low, medium, high (all providers)
         --thinking [budget]   Enable Anthropic extended thinking (default budget: 10000)
         --beta <features>     Enable Anthropic beta features (space-separated)
         --help, -h            Show this help
@@ -252,6 +253,7 @@ func printUsage() {
         /citations on|off     Toggle citations rendering
         /reliable on|off      Toggle reliability mode
         /video <input>        Attach video URL, local path, or "demo" to next message
+        /reasoning <level>    Set reasoning effort (off|low|medium|high)
 
     \(ANSIStyles.bold("INPUT MODES:"))
         Single line           Press Enter to send

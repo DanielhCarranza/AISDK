@@ -618,11 +618,25 @@ class CLIController {
 
     private func buildAgent(client: any ProviderClient, modelId: String) -> Agent {
         let toolTypes = runtimeConfig.toolsEnabled ? builtInTools : []
+
+        let reasoning: AIReasoningConfig? = runtimeConfig.reasoningEffort.flatMap { effortString in
+            AIReasoningConfig.AIReasoningEffort(rawValue: effortString).map { .effort($0) }
+        }
+
+        // Anthropic requires temperature=1 when thinking/reasoning is enabled
+        let temperature: Double?
+        if reasoning != nil, options.provider == .anthropic {
+            temperature = 1.0
+        } else {
+            temperature = runtimeConfig.temperature
+        }
+
         let requestOptions = Agent.RequestOptions(
             maxTokens: runtimeConfig.maxTokens,
-            temperature: runtimeConfig.temperature,
+            temperature: temperature,
             toolChoice: toolTypes.isEmpty ? nil : .auto,
-            responseFormat: buildResponseFormat()
+            responseFormat: buildResponseFormat(),
+            reasoning: reasoning
         )
 
         let languageModel: any LLM

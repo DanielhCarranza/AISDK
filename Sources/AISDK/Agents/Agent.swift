@@ -56,6 +56,7 @@ public actor Agent {
         public var sensitivity: DataSensitivity
         public var bufferPolicy: StreamBufferPolicy?
         public var metadata: [String: String]?
+        public var reasoning: AIReasoningConfig?
 
         public init(
             maxTokens: Int? = nil,
@@ -67,7 +68,8 @@ public actor Agent {
             allowedProviders: Set<String>? = nil,
             sensitivity: DataSensitivity = .standard,
             bufferPolicy: StreamBufferPolicy? = nil,
-            metadata: [String: String]? = nil
+            metadata: [String: String]? = nil,
+            reasoning: AIReasoningConfig? = nil
         ) {
             self.maxTokens = maxTokens
             self.temperature = temperature
@@ -79,6 +81,7 @@ public actor Agent {
             self.sensitivity = sensitivity
             self.bufferPolicy = bufferPolicy
             self.metadata = metadata
+            self.reasoning = reasoning
         }
     }
 
@@ -403,6 +406,7 @@ public actor Agent {
                 tools: combinedToolSchemas,
                 toolChoice: combinedToolSchemas != nil ? requestOptions.toolChoice : nil,
                 responseFormat: requestOptions.responseFormat,
+                reasoning: requestOptions.reasoning,
                 allowedProviders: requestOptions.allowedProviders,
                 sensitivity: requestOptions.sensitivity,
                 bufferPolicy: requestOptions.bufferPolicy,
@@ -671,6 +675,7 @@ public actor Agent {
                 tools: combinedToolSchemas,
                 toolChoice: combinedToolSchemas != nil ? requestOptions.toolChoice : nil,
                 responseFormat: requestOptions.responseFormat,
+                reasoning: requestOptions.reasoning,
                 allowedProviders: requestOptions.allowedProviders,
                 sensitivity: requestOptions.sensitivity,
                 bufferPolicy: requestOptions.bufferPolicy,

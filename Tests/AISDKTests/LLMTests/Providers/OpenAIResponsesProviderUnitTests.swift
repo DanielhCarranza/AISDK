@@ -128,6 +128,43 @@ final class OpenAIResponsesProviderUnitTests: XCTestCase {
         XCTAssertEqual(responseRequest.model, provider.model.name)
     }
 
+    func testConvertToResponseRequest_UsesUnifiedReasoningWhenNoProviderOptions() throws {
+        let request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "o3",
+            reasoning: AIReasoningConfig.effort(.medium)
+        )
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertEqual(responseRequest.reasoning?.effort, AIReasoningConfig.AIReasoningEffort.medium.rawValue)
+    }
+
+    func testConvertToResponseRequest_ProviderOptionsOverrideUnifiedReasoning() throws {
+        var options = OpenAIRequestOptions()
+        options.reasoning = ReasoningConfig(effort: .high, summary: .auto)
+
+        var request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "o3",
+            reasoning: AIReasoningConfig.effort(.low)
+        )
+        request.providerOptions = options
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertEqual(responseRequest.reasoning?.effort, ReasoningConfig.ReasoningEffort.high.rawValue)
+    }
+
+    func testConvertToResponseRequest_ReasoningBudgetIsIgnored() throws {
+        let request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "o3",
+            reasoning: AIReasoningConfig(budgetTokens: 2048)
+        )
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertNil(responseRequest.reasoning)
+    }
+
     // MARK: - Response Conversion
 
     func testConvertToAITextResult_ExtractsTextAndToolCalls() {

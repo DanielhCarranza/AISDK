@@ -334,6 +334,7 @@ final class ProviderClientTests: XCTestCase {
     // MARK: - AITextRequest Conversion Tests
 
     func testAITextRequestToProviderRequest() throws {
+        let providerOptions: [String: ProviderJSONValue] = ["includeThoughts": .bool(true)]
         let request = AITextRequest(
             messages: [.user("Hello")],
             model: "gpt-4",
@@ -341,7 +342,9 @@ final class ProviderClientTests: XCTestCase {
             temperature: 0.7,
             topP: 0.9,
             stop: ["END"],
-            toolChoice: .auto
+            toolChoice: .auto,
+            reasoning: AIReasoningConfig.effort(.low),
+            providerOptions: providerOptions
         )
 
         let providerRequest = try request.toProviderRequest(modelId: "fallback-model", stream: true)
@@ -352,7 +355,9 @@ final class ProviderClientTests: XCTestCase {
         XCTAssertEqual(providerRequest.topP, 0.9)
         XCTAssertEqual(providerRequest.stop, ["END"])
         XCTAssertTrue(providerRequest.stream)
-        XCTAssertEqual(providerRequest.toolChoice, .auto)
+        XCTAssertEqual(providerRequest.toolChoice, .some(.auto))
+        XCTAssertEqual(providerRequest.reasoning, AIReasoningConfig.effort(.low))
+        XCTAssertEqual(providerRequest.providerOptions?["includeThoughts"], .bool(true))
     }
 
     func testAITextRequestToProviderRequestUsesFallbackModel() throws {

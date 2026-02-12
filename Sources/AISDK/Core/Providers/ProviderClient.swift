@@ -229,6 +229,9 @@ public struct ProviderRequest: Sendable {
     /// Response format specification
     public let responseFormat: ProviderResponseFormat?
 
+    /// Reasoning/thinking configuration (provider-agnostic)
+    public let reasoning: AIReasoningConfig?
+
     /// Request timeout in seconds
     public let timeout: TimeInterval
 
@@ -252,6 +255,7 @@ public struct ProviderRequest: Sendable {
         tools: [ProviderJSONValue]? = nil,
         toolChoice: ProviderToolChoice? = nil,
         responseFormat: ProviderResponseFormat? = nil,
+        reasoning: AIReasoningConfig? = nil,
         timeout: TimeInterval = 120,
         providerOptions: [String: ProviderJSONValue]? = nil,
         traceContext: AITraceContext? = nil,
@@ -267,6 +271,7 @@ public struct ProviderRequest: Sendable {
         self.tools = tools
         self.toolChoice = toolChoice
         self.responseFormat = responseFormat
+        self.reasoning = reasoning
         self.timeout = timeout
         self.providerOptions = providerOptions
         self.traceContext = traceContext
@@ -667,7 +672,8 @@ public extension AITextRequest {
     ///   - stream: Whether to enable streaming
     /// - Throws: `ResponseFormatConversionError` if JSON schema encoding fails
     func toProviderRequest(modelId: String, stream: Bool = false) throws -> ProviderRequest {
-        ProviderRequest(
+        let providerJSONOptions = providerOptions as? [String: ProviderJSONValue]
+        return ProviderRequest(
             modelId: model ?? modelId,
             messages: messages,
             maxTokens: maxTokens,
@@ -678,8 +684,9 @@ public extension AITextRequest {
             tools: try tools?.map { try $0.toProviderJSONValue() },
             toolChoice: toolChoice?.toProviderToolChoice(),
             responseFormat: try responseFormat?.toProviderResponseFormat(),
+            reasoning: reasoning,
             timeout: 120,
-            providerOptions: nil,
+            providerOptions: providerJSONOptions,
             traceContext: nil,
             metadata: metadata
         )

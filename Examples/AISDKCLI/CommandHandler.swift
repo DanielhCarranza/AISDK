@@ -134,6 +134,10 @@ class CommandHandler {
             handleReliable(argString)
             return .handled
 
+        case "reasoning":
+            handleReasoning(argString)
+            return .handled
+
         // OpenAI Responses API specific commands
         case "websearch":
             handleWebSearch(argString)
@@ -193,6 +197,7 @@ class CommandHandler {
         \(ANSIStyles.cyan("/video demo"))          Download and attach the demo video
         \(ANSIStyles.cyan("/video /path/to.mp4"))  Attach a local video file
         \(ANSIStyles.cyan("/video off"))           Remove pending video attachment
+        \(ANSIStyles.cyan("/reasoning <level>")) Set reasoning effort (off|low|medium|high) - all providers
 
         \(ANSIStyles.bold("OpenAI Responses API Commands (--provider openai):"))
         \(ANSIStyles.cyan("/websearch on|off"))   Toggle web search tool
@@ -369,6 +374,7 @@ class CommandHandler {
         │ Format:       \((config.responseFormat.rawValue).padding(toLength: 22, withPad: " ", startingAt: 0))│
         │ Citations:    \((config.citationsEnabled ? "ON" : "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
         │ Reliable:     \((config.reliabilityEnabled ? "ON" : "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
+        │ Reasoning:    \((config.reasoningEffort ?? "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
         └──────────────────────────────────────┘
 
         """)
@@ -443,6 +449,31 @@ class CommandHandler {
             print(ANSIStyles.dim("Usage: /reliable on|off"))
         default:
             print(ANSIStyles.error("Unknown option. Use: /reliable on|off"))
+        }
+    }
+
+    private func handleReasoning(_ arg: String) {
+        guard let config = runtimeConfig else { return }
+
+        switch arg.lowercased().trimmingCharacters(in: .whitespaces) {
+        case "off", "disable", "none":
+            config.reasoningEffort = nil
+            print(ANSIStyles.success("Reasoning disabled"))
+        case "low":
+            config.reasoningEffort = "low"
+            print(ANSIStyles.success("Reasoning effort: low"))
+        case "medium":
+            config.reasoningEffort = "medium"
+            print(ANSIStyles.success("Reasoning effort: medium"))
+        case "high":
+            config.reasoningEffort = "high"
+            print(ANSIStyles.success("Reasoning effort: high"))
+        case "status", "":
+            let current = config.reasoningEffort ?? "off"
+            print(ANSIStyles.info("Reasoning effort: \(current)"))
+            print(ANSIStyles.dim("Usage: /reasoning off|low|medium|high"))
+        default:
+            print(ANSIStyles.warning("Unknown option. Use: /reasoning off|low|medium|high"))
         }
     }
 
