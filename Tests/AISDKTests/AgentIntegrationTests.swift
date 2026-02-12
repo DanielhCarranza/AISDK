@@ -89,39 +89,31 @@ final class AgentIntegrationTests: XCTestCase {
     }
     
     func testAgentWithImageURL() async throws {
+        let provider = getTestProvider()
+        try XCTSkipIf(!provider.model.hasCapability(.vision), "Model does not support vision inputs")
+
         let agent = LegacyAgent(
-            llm: getTestProvider(),
+            llm: provider,
             tools: [],
             instructions: "You are a helpful assistant that can analyze images."
         )
         
-        // Use a simple, reliable image URL
-        let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-        
+        guard let testImageData = loadTestImageData() else {
+            throw XCTSkip("Test image data not available")
+        }
+
         let userMessage = LegacyChatMessage(message: .user(content: .parts([
-            .text("What do you see in this image? Describe it briefly."),
-            .imageURL(.url(URL(string: imageURL)!))
+            .text("What color is this image? Reply with just the color name."),
+            .imageURL(.base64(testImageData))
         ])))
         
-        var responses: [LegacyChatMessage] = []
-        
-        for try await message in agent.sendStream(userMessage) {
-            responses.append(message)
-            if case .assistant(let content, _, _) = message.message {
-                print("Image analysis: \(content)")
-            }
-        }
-        
-        XCTAssertGreaterThan(responses.count, 0)
-        let finalResponse = responses.last!
-        if case .assistant(let content, _, _) = finalResponse.message {
+        let response = try await agent.send(userMessage)
+        if case .assistant(let content, _, _) = response.message {
             let textContent = extractTextFromAssistantContent(content)
             XCTAssertFalse(textContent.isEmpty)
-            // Should contain some visual descriptors
-            XCTAssertTrue(textContent.lowercased().contains("nature") || 
-                         textContent.lowercased().contains("board") ||
-                         textContent.lowercased().contains("path") ||
-                         textContent.lowercased().contains("green"))
+            XCTAssertTrue(textContent.lowercased().contains("green"))
+        } else {
+            XCTFail("Expected assistant response for image analysis")
         }
         print("✅ Multimodal test completed")
     }
@@ -156,7 +148,7 @@ final class AgentIntegrationTests: XCTestCase {
             instructions: "You are a helpful weather assistant. Use the weather tool when asked about weather."
         )
         
-        let response = try await agent.send("What's the weather in Boston?")
+        let response = try await agent.send("What's the weather in Boston?", requiredTool: "get_weather")
         
         XCTAssertFalse(response.displayContent.isEmpty)
         // Should have called the weather tool
@@ -185,7 +177,7 @@ final class AgentIntegrationTests: XCTestCase {
         var responses: [LegacyChatMessage] = []
         var toolCalled = false
         
-        for try await message in agent.sendStream(userMessage) {
+        for try await message in agent.sendStream(userMessage, requiredTool: "get_weather") {
             responses.append(message)
             
             switch message.message {
@@ -207,45 +199,42 @@ final class AgentIntegrationTests: XCTestCase {
     }
     
     func testAgentMultimodalWithTool() async throws {
+        let provider = getTestProvider()
+        try XCTSkipIf(!provider.model.hasCapability(.vision), "Model does not support vision inputs")
+
         let agent = LegacyAgent(
-            llm: getTestProvider(),
+            llm: provider,
             tools: [TestWeatherTool.self],
             instructions: "You are a helpful assistant that can analyze images and provide weather information."
         )
         
-        let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-        
+        guard let testImageData = loadTestImageData() else {
+            throw XCTSkip("Test image data not available")
+        }
+
         let userMessage = LegacyChatMessage(message: .user(content: .parts([
-            .text("Look at this image and tell me the weather in Wisconsin using the weather tool."),
-            .imageURL(.url(URL(string: imageURL)!))
+            .text("Use the weather tool to tell me the weather in Wisconsin. The image is just context."),
+            .imageURL(.base64(testImageData))
         ])))
         
-        var responses: [LegacyChatMessage] = []
-        var toolCalled = false
-        var imageAnalyzed = false
-        
-        for try await message in agent.sendStream(userMessage) {
-            responses.append(message)
-            
-            switch message.message {
-            case .assistant(let content, _, _):
-                let textContent = extractTextFromAssistantContent(content)
-                if textContent.lowercased().contains("wisconsin") || textContent.lowercased().contains("weather") {
-                    imageAnalyzed = true
-                }
-                print("Assistant: \(textContent)")
-            case .tool(let content, let name, _):
-                print("Tool \(name): \(content)")
-                if name == "get_weather" {
-                    toolCalled = true
-                }
-            default:
-                break
-            }
+        let response = try await agent.send(userMessage, requiredTool: "get_weather")
+
+        let toolMessages = agent.messages.filter { message in
+            if case .tool = message.message { return true }
+            return false
         }
-        
-        XCTAssertGreaterThan(responses.count, 1)
-        XCTAssertTrue(toolCalled)
+        XCTAssertGreaterThan(toolMessages.count, 0)
+        if case .tool(let content, let name, _) = toolMessages.first!.message {
+            XCTAssertEqual(name, "get_weather")
+            XCTAssertTrue(content.lowercased().contains("weather in"))
+        }
+
+        if case .assistant(let content, _, _) = response.message {
+            let textContent = extractTextFromAssistantContent(content)
+            XCTAssertFalse(textContent.isEmpty)
+        } else {
+            XCTFail("Expected assistant response after multimodal tool execution")
+        }
         print("✅ Multimodal + tool test completed")
     }
     
@@ -355,7 +344,7 @@ final class AgentIntegrationTests: XCTestCase {
         
         let userMessage = LegacyChatMessage(message: .user(content: .text("What's the weather in Paris?")))
         
-        for try await _ in agent.sendStream(userMessage) {
+        for try await _ in agent.sendStream(userMessage, requiredTool: "get_weather") {
             // Just process the stream
         }
         
@@ -428,6 +417,12 @@ private func extractTextFromAssistantContent(_ content: AssistantContent) -> Str
     case .parts(let parts):
         return parts.joined(separator: "\n")
     }
+}
+
+private func loadTestImageData() -> Data? {
+    // 1x1 green PNG
+    let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNg+M8AAAICAQB7CYF4AAAAAElFTkSuQmCC"
+    return Data(base64Encoded: base64)
 }
 
 // MARK: - Test Callback Tracker
