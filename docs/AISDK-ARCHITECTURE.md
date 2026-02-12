@@ -83,8 +83,8 @@ graph TB
     end
 
     subgraph "Core AISDK - 66 files"
-        AGENT[Agent System<br/>Agent.swift]
-        TOOLS[Tool Framework<br/>Tool.swift]
+        AGENT[AIAgentActor<br/>AIAgentActor.swift]
+        TOOLS[AITool Framework<br/>AITool.swift]
         MSG[Message System<br/>AIMessage.swift]
         MODELS[Model Registry<br/>LLMModelProtocol.swift]
     end
@@ -117,29 +117,26 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant App
-    participant Agent
-    participant LLM as LLM Provider
-    participant Tool
+    participant Agent as AIAgentActor
+    participant LLM as AILanguageModel
+    participant Tool as AITool
     participant API as External API
 
-    App->>Agent: send("What's the weather?")
-    Agent->>Agent: setState(.thinking)
-    Agent->>LLM: sendChatCompletion(request)
+    App->>Agent: execute(messages: [.user("What's the weather?")])
+    Agent->>LLM: generateText(request)
     LLM->>API: POST /v1/chat/completions
     API-->>LLM: Response with tool_calls
-    LLM-->>Agent: ChatCompletionResponse
+    LLM-->>Agent: AITextResult
 
-    Agent->>Agent: setState(.executingTool)
     Agent->>Tool: execute()
     Tool-->>Agent: AIToolResult
 
-    Agent->>LLM: sendChatCompletion(with tool result)
+    Agent->>LLM: generateText(with tool result)
     LLM->>API: POST /v1/chat/completions
     API-->>LLM: Final response
-    LLM-->>Agent: ChatCompletionResponse
+    LLM-->>Agent: AITextResult
 
-    Agent->>Agent: setState(.idle)
-    Agent-->>App: ChatMessage
+    Agent-->>App: AIAgentResult
 ```
 
 ### Agent State Machine
@@ -147,7 +144,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> idle
-    idle --> thinking: send() / sendStream()
+    idle --> thinking: execute() / streamExecute()
     thinking --> responding: Received content
     thinking --> executingTool: AITool call detected
     executingTool --> thinking: AITool executed, get final response
@@ -194,15 +191,15 @@ let openai = OpenAIProvider(apiKey: "sk-...")
 **Example: Streaming Chat**
 
 ```swift
-let request = ChatCompletionRequest(
-    model: "gpt-4o",
-    messages: [Message.user(content: .text("Hello!"))],
-    stream: true
+let client = OpenRouterClient(apiKey: "sk-...")
+let request = ProviderRequest(
+    modelId: "openai/gpt-4o",
+    messages: [.user("Hello!")]
 )
 
-for try await chunk in openai.sendChatCompletionStream(request: request) {
-    if let content = chunk.choices.first?.delta.content {
-        print(content, terminator: "")
+for try await event in client.stream(request: request) {
+    if case .textDelta(let text) = event {
+        print(text, terminator: "")
     }
 }
 ```
@@ -521,79 +518,61 @@ public protocol RenderableTool: AITool {
 
 ## 7. Agent System
 
-### Agent Class
+### AIAgentActor
 
-**File:** `Sources/AISDK/Agents/Agent.swift`
+**File:** `Sources/AISDK/Agents/AIAgentActor.swift`
 
-The Agent orchestrates LLM interactions with automatic tool execution.
+The `AIAgentActor` orchestrates LLM interactions with automatic tool execution using Swift actors for thread safety.
 
 ```swift
-// Initialize with provider
-let agent = Agent(
-    llm: openai,
+// Initialize with provider (non-throwing)
+let client = OpenRouterClient(apiKey: "sk-...")
+let agent = AIAgentActor(
+    model: client,
     tools: [WeatherTool.self, CalculatorTool.self],
-    messages: [],
     instructions: "You are a helpful assistant."
 )
-
-// State change callback for UI
-agent.onStateChange = { state in
-    switch state {
-    case .idle: print("Ready")
-    case .thinking: print("Processing...")
-    case .responding: print("Generating response...")
-    case .executingTool(let name): print("Running \(name)...")
-    case .error(let error): print("Error: \(error)")
-    }
-}
 ```
 
-### Synchronous Send
+### Non-Streaming Execution
 
 ```swift
 // Wait for complete response
-let response = try await agent.send("What's the weather in Tokyo?")
-print(response.message)  // Full response with tool results
+let result = try await agent.execute(messages: [.user("What's the weather in Tokyo?")])
+print(result.text)  // Full response with tool results
 ```
 
-### Streaming Send
+### Streaming Execution
 
 ```swift
 // Stream responses for real-time UI updates
-let userMessage = ChatMessage(message: .user(content: .text("Tell me about...")))
-
-for try await message in agent.sendStream(userMessage) {
-    if message.isPending {
-        // Partial response - update UI
-        updateUI(message.displayContent)
-    } else {
-        // Final response
-        showFinalMessage(message)
+for try await event in agent.streamExecute(messages: [.user("Tell me about...")]) {
+    switch event {
+    case .textDelta(let text):
+        appendToUI(text)
+    case .toolCallStart(_, let name):
+        showToolIndicator(name)
+    case .finish:
+        hideLoadingIndicator()
+    default:
+        break
     }
 }
 ```
 
-### Agent Callbacks
-
-**File:** `Sources/AISDK/Agents/AgentCallbacks.swift`
+### Observable State
 
 ```swift
-public enum CallbackResult {
-    case cancel
-    case replace(Message)
-    case `continue`
-}
+// SwiftUI binding via @Observable
+struct ChatView: View {
+    let agent: AIAgentActor
 
-public protocol AgentCallbacks: AnyObject {
-    func onMessageReceived(message: Message) async -> CallbackResult
-    func onBeforeLLMRequest(messages: [Message]) async -> CallbackResult
-    func onStreamChunk(chunk: Message) async -> CallbackResult
-    func onBeforeToolExecution(name: String, arguments: String) async -> CallbackResult
-    func onAfterToolExecution(name: String, result: String) async -> CallbackResult
+    var body: some View {
+        if agent.observableState.isProcessing {
+            ProgressView()
+        }
+    }
 }
-
-// Register callbacks
-agent.addCallbacks(myCallbackHandler)
 ```
 
 ---
@@ -743,27 +722,27 @@ let gemini = GeminiProvider(
 ### Chat Completion
 
 ```swift
-// Build request
-let request = ChatCompletionRequest(
-    model: "gpt-4o",
+// Build request using ProviderRequest
+let request = ProviderRequest(
+    modelId: "openai/gpt-4o",
     messages: [
-        Message.system(content: .text("You are helpful")),
-        Message.user(content: .text("Hello!"))
+        .system("You are helpful"),
+        .user("Hello!")
     ],
     temperature: 0.7,
-    maxTokens: 1000,
-    tools: [WeatherTool.jsonSchema()],
-    toolChoice: .auto,
-    parallelToolCalls: true
+    maxTokens: 1000
 )
 
 // Non-streaming
-let response = try await openai.sendChatCompletion(request: request)
-let content = response.choices.first?.message.content
+let client = OpenRouterClient(apiKey: "sk-...")
+let response = try await client.execute(request: request)
+let content = response.content
 
 // Streaming
-for try await chunk in openai.sendChatCompletionStream(request: request) {
-    print(chunk.choices.first?.delta.content ?? "", terminator: "")
+for try await event in client.stream(request: request) {
+    if case .textDelta(let text) = event {
+        print(text, terminator: "")
+    }
 }
 ```
 
@@ -796,30 +775,33 @@ let fruits: FruitList = try await openai.generateObject(request: request)
 ### Agent Usage
 
 ```swift
-// Create agent
-let agent = Agent(
-    llm: openai,
+// Create agent (non-throwing)
+let client = OpenRouterClient(apiKey: "sk-...")
+let agent = AIAgentActor(
+    model: client,
     tools: [WeatherTool.self, SearchTool.self],
     instructions: "You are a helpful assistant."
 )
 
-// Simple send
-let response = try await agent.send("What's the weather in NYC?")
+// Non-streaming execution
+let result = try await agent.execute(messages: [.user("What's the weather in NYC?")])
 
 // Streaming with tool execution
-for try await message in agent.sendStream(userMessage) {
-    updateUI(message)
+for try await event in agent.streamExecute(messages: [.user("What's the weather?")]) {
+    switch event {
+    case .textDelta(let text): print(text, terminator: "")
+    case .toolCallStart(_, let name): print("[Using \(name)]")
+    case .finish: print()
+    default: break
+    }
 }
-
-// Conversation management
-agent.setMessages(previousMessages)
 ```
 
 ### Error Handling
 
 ```swift
 do {
-    let response = try await agent.send("...")
+    let result = try await agent.execute(messages: [.user("...")])
 } catch let error as LLMError {
     switch error {
     case .authenticationError:
@@ -1378,7 +1360,7 @@ The modern, actor-based agent implementation:
 let agent = AIAgentActor(
     model: openRouterModel,
     tools: [weatherTool, calculatorTool],
-    systemPrompt: "You are a helpful assistant"
+    instructions: "You are a helpful assistant"
 )
 
 // Execute (non-streaming)
@@ -1437,7 +1419,7 @@ struct ChatView: View {
 #### Agents/ (9 files)
 | File | Purpose |
 |------|---------|
-| `Agent.swift` | Main agent class with LLM orchestration |
+| `Agent.swift` | Legacy agent class (see `AIAgentActor.swift` for v2) |
 | `AgentState.swift` | State enum (idle, thinking, responding, executingTool, error) |
 | `AgentCallbacks.swift` | Callback protocol for lifecycle hooks |
 | `ResponseAgent.swift` | Specialized agent for OpenAI Responses API |

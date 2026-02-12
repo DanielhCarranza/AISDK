@@ -327,7 +327,7 @@ class FormGeneratorViewModel: ObservableObject {
         self.agent = AIAgentActor(
             model: OpenRouterClient(),
             tools: [],
-            systemPrompt: catalog.generatePrompt()
+            instructions: catalog.generatePrompt()
         )
     }
 
