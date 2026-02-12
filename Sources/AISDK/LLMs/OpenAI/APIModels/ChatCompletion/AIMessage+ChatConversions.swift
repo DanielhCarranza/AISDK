@@ -2,7 +2,7 @@
 //  AIMessage+ChatConversions.swift
 //  AISDK
 //
-//  Conversion extensions from Universal Message System to OpenAI Chat Completions API
+//  Conversion extensions from Universal LegacyMessage System to OpenAI Chat Completions API
 //
 
 import Foundation
@@ -10,8 +10,8 @@ import Foundation
 // MARK: - OpenAI Chat Completions API Conversions
 
 extension AIInputMessage {
-    /// Convert universal message to Chat Completions Message
-    func toChatCompletionMessage() -> Message {
+    /// Convert universal message to Chat Completions LegacyMessage
+    func toChatCompletionMessage() -> LegacyMessage {
         switch role {
         case .user:
             if content.count == 1, case .text(let text) = content.first {
@@ -103,7 +103,7 @@ extension AIToolCall {
 
 extension Array where Element == AIInputMessage {
     /// Convert array of universal messages to Chat Completions Messages
-    func toChatCompletionMessages() -> [Message] {
+    func toChatCompletionMessages() -> [LegacyMessage] {
         return map { $0.toChatCompletionMessage() }
     }
 }

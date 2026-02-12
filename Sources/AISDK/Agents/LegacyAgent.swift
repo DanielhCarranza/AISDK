@@ -1,5 +1,5 @@
 //
-//  Agent.swift
+//  LegacyAgent.swift
 //  HealthCompanion
 //
 //  Created by Abhigael Mendez Carranza on 03/01/25.
@@ -9,21 +9,21 @@ import Foundation
 
 /// A class that manages interactions with an AI language model and coordinates tool execution
 /// Handles both synchronous and streaming conversations, and manages the execution of tools
-public class Agent {
+public class LegacyAgent {
     // MARK: - Properties
     
     private let model: LLMModelProtocol
-    public let llm: LLM
+    public let llm: LegacyLLM
     private var tools: [AITool.Type]
-    public var state: AgentState = .idle
+    public var state: LegacyAgentState = .idle
     
-    public var messages: [ChatMessage] = []
+    public var messages: [LegacyChatMessage] = []
 
     private let instructions: String?
-    private var callbacks: [AgentCallbacks] = []
+    private var callbacks: [LegacyAgentCallbacks] = []
     
     /// Callback for state changes, useful for UI updates
-    public var onStateChange: ((AgentState) -> Void)?
+    public var onStateChange: ((LegacyAgentState) -> Void)?
     
     // Add property to track accumulated metadata during streaming
     private var currentStreamMetadata: [ToolMetadata] = []
@@ -32,14 +32,14 @@ public class Agent {
     
     /// Provider-centric initializer - recommended approach
     /// - Parameters:
-    ///   - llm: The LLM provider to use (e.g., OpenAIProvider(), AnthropicService())
+    ///   - llm: The LegacyLLM provider to use (e.g., OpenAIProvider(), AnthropicService())
     ///   - tools: Array of available tools (default: empty)
     ///   - messages: Initial conversation history (default: empty)
     ///   - instructions: Optional system instructions for the agent's behavior
     public init(
-        llm: LLM,
+        llm: LegacyLLM,
         tools: [AITool.Type] = [],
-        messages: [ChatMessage] = [],
+        messages: [LegacyChatMessage] = [],
         instructions: String? = nil
     ) {
         self.llm = llm
@@ -60,7 +60,7 @@ public class Agent {
         
         // Add system message if instructions are provided
         if let instructions = instructions {
-            let systemMessage = ChatMessage(message: .system(content: .text(instructions)))
+            let systemMessage = LegacyChatMessage(message: .system(content: .text(instructions)))
             self.messages.append(systemMessage)
         }
     }
@@ -75,7 +75,7 @@ public class Agent {
     init(
         model: LLMModel,
         tools: [AITool.Type] = [],
-        messages: [ChatMessage] = [], 
+        messages: [LegacyChatMessage] = [], 
         instructions: String? = nil
     ) {
         self.tools = tools
@@ -88,18 +88,18 @@ public class Agent {
         // Register tools with AIToolRegistry
         AIToolRegistry.registerAll(tools: tools)
         
-        // Initialize appropriate LLM based on model
+        // Initialize appropriate LegacyLLM based on model
         self.llm = OpenAIProvider(apiKey: model.apiKey ?? " ")
         
         // Add system message if instructions are provided
         if let instructions = instructions {
-            let systemMessage = ChatMessage(message: .system(content: .text(instructions)))
+            let systemMessage = LegacyChatMessage(message: .system(content: .text(instructions)))
             self.messages.append(systemMessage)
         }
     }
     
-    // Helper method to convert ChatMessages to Messages for API calls
-    private func convertToAPIMessages() -> [Message] {
+    // Helper method to convert LegacyChatMessages to Messages for API calls
+    private func convertToAPIMessages() -> [LegacyMessage] {
         return messages.map { $0.message }
     }
     
@@ -110,10 +110,10 @@ public class Agent {
     /// - Parameter content: The user's message
     /// - Returns: The agent's response message
     /// - Throws: Various errors related to API calls or tool execution
-    public func send(_ content: String) async throws -> ChatMessage {
+    public func send(_ content: String) async throws -> LegacyChatMessage {
         setState(.thinking)
         
-        let userMessage = ChatMessage(message: .user(content: .text(content)))
+        let userMessage = LegacyChatMessage(message: .user(content: .text(content)))
         
         // Execute message received callback
         let receivedResult = await executeCallbacks { await $0.onMessageReceived(message: userMessage.message) }
@@ -122,7 +122,7 @@ public class Agent {
             setState(.idle)
             throw AgentError.operationCancelled
         case .replace(let message):
-            let chatMessage = ChatMessage(message: message)
+            let chatMessage = LegacyChatMessage(message: message)
             messages.append(chatMessage)
             return chatMessage
         case .continue:
@@ -138,14 +138,14 @@ public class Agent {
             parallelToolCalls: true
         )
         
-        // Execute before LLM request callback
+        // Execute before LegacyLLM request callback
         let beforeLLMResult = await executeCallbacks { await $0.onBeforeLLMRequest(messages: convertToAPIMessages()) }
         if case .cancel = beforeLLMResult {
             setState(.idle)
             throw AgentError.operationCancelled
         }
         
-        // Get response from LLM
+        // Get response from LegacyLLM
         let response = try await llm.sendChatCompletion(request: request)
         
         guard let choice = response.choices.first else {
@@ -160,7 +160,7 @@ public class Agent {
         
         // Add assistant's response to conversation
         if let content = choice.message.content {
-            let assistantMessage = ChatMessage(message: .assistant(content: .text(content)))
+            let assistantMessage = LegacyChatMessage(message: .assistant(content: .text(content)))
             messages.append(assistantMessage)
             setState(.idle)
             return assistantMessage
@@ -174,7 +174,7 @@ public class Agent {
     /// Useful for real-time UI updates and handling tool executions
     /// - Parameter content: The user's message
     /// - Returns: An async stream of response messages
-    public func sendStream(_ message: ChatMessage, requiredTool: String? = nil) -> AsyncThrowingStream<ChatMessage, Error> {
+    public func sendStream(_ message: LegacyChatMessage, requiredTool: String? = nil) -> AsyncThrowingStream<LegacyChatMessage, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 // Reset metadata at start of new stream
@@ -188,7 +188,7 @@ public class Agent {
                     continuation.finish(throwing: AgentError.operationCancelled)
                     return
                 case .replace(let newMessage):
-                    let chatMessage = ChatMessage(message: newMessage)
+                    let chatMessage = LegacyChatMessage(message: newMessage)
                     messages.append(chatMessage)
                     continuation.yield(chatMessage)
                     continuation.finish()
@@ -268,7 +268,7 @@ public class Agent {
                                     setState(.executingTool(toolCall.1 ?? "unknown"))
                                     
                                     // First, create and add the assistant message with tool calls
-                                    let assistantMessage = ChatMessage(message: .assistant(content: .text(""), toolCalls: [
+                                    let assistantMessage = LegacyChatMessage(message: .assistant(content: .text(""), toolCalls: [
                                         ChatCompletionResponse.ToolCall(
                                             id: toolCall.0 ?? "",
                                             type: "function",
@@ -301,7 +301,7 @@ public class Agent {
                                           !toolType.init().returnToolResponse else {
                                         // Add an assistant message with the tool response and metadata
                                         if case .tool(let content, _, _) = toolResponse.message {
-                                            let finalMessage = ChatMessage(message: .assistant(content: .text(content)))
+                                            let finalMessage = LegacyChatMessage(message: .assistant(content: .text(content)))
                                             finalMessage.metadata = currentStreamMetadata.last
                                             messages.append(finalMessage)
                                             continuation.yield(finalMessage)
@@ -332,7 +332,7 @@ public class Agent {
                                                 if !content.isEmpty {
                                                     setState(.responding)
                                                     // Create or update streaming message
-                                                    let streamingMessage = ChatMessage(message: .assistant(content: .text(finalResponseContent)))
+                                                    let streamingMessage = LegacyChatMessage(message: .assistant(content: .text(finalResponseContent)))
                                                     streamingMessage.isPending = true
                                                     streamingMessage.metadata = toolResponse.metadata
                                                     
@@ -350,7 +350,7 @@ public class Agent {
                                     
                                     // When streaming is complete, attach accumulated metadata to final message
                                     if !finalResponseContent.isEmpty {
-                                        let finalMessage = ChatMessage(message: .assistant(content: .text(finalResponseContent)))
+                                        let finalMessage = LegacyChatMessage(message: .assistant(content: .text(finalResponseContent)))
                                         finalMessage.metadata = toolResponse.metadata
                                         messages.append(finalMessage)
                                     }
@@ -374,7 +374,7 @@ public class Agent {
                                 if !content.isEmpty {
                                     setState(.responding)
                                     // Create or update streaming message
-                                    let streamingMessage = ChatMessage(message: .assistant(content: .text(responseContent)))
+                                    let streamingMessage = LegacyChatMessage(message: .assistant(content: .text(responseContent)))
                                     streamingMessage.isPending = true
                                     
                                     // Update existing message or add new one
@@ -391,7 +391,7 @@ public class Agent {
                     
                     // Only add non-empty final messages
                     if !responseContent.isEmpty {
-                        let finalMessage = ChatMessage(message: .assistant(content: .text(responseContent)))
+                        let finalMessage = LegacyChatMessage(message: .assistant(content: .text(responseContent)))
                         finalMessage.metadata = currentStreamMetadata.last
                         messages.append(finalMessage)
                     }
@@ -411,7 +411,7 @@ public class Agent {
     
     /// Updates the agent's message history
     /// - Parameter messages: The new message history to use
-    public func setMessages(_ messages: [ChatMessage]) {
+    public func setMessages(_ messages: [LegacyChatMessage]) {
         self.messages = messages
         
         // Reset metadata tracker when setting new messages
@@ -425,20 +425,20 @@ public class Agent {
     // MARK: - Private Methods
     
     /// Updates the agent's state and notifies observers
-    private func setState(_ newState: AgentState) {
+    private func setState(_ newState: LegacyAgentState) {
         state = newState
         onStateChange?(newState)
     }
     
-    /// Handles the execution of one or more tool calls from the LLM
+    /// Handles the execution of one or more tool calls from the LegacyLLM
     /// - Parameter toolCalls: Array of tool calls to execute
     /// - Returns: The final response message after tool execution
     /// - Throws: Errors related to tool execution or invalid responses
-    private func handleToolCalls(_ toolCalls: [ChatCompletionResponse.ToolCall]) async throws -> ChatMessage {
+    private func handleToolCalls(_ toolCalls: [ChatCompletionResponse.ToolCall]) async throws -> LegacyChatMessage {
         var toolResponses: [String] = []
         
         // First, add the assistant's message with the tool calls
-        messages.append(ChatMessage(message: .assistant(content: .text(""), toolCalls: toolCalls)))
+        messages.append(LegacyChatMessage(message: .assistant(content: .text(""), toolCalls: toolCalls)))
         
         for toolCall in toolCalls {
             guard let function = toolCall.function else {
@@ -491,7 +491,7 @@ public class Agent {
                 let result = try await tool.execute()
                 
                 // Add tool response to messages and update metadata tracker
-                let message = ChatMessage(message: .tool(content: result.content, name: function.name, toolCallId: toolCall.id))
+                let message = LegacyChatMessage(message: .tool(content: result.content, name: function.name, toolCallId: toolCall.id))
                 message.metadata = result.metadata
                 messages.append(message)
                 
@@ -507,7 +507,7 @@ public class Agent {
                 // If tool requests direct response, return immediately
                 if tool.returnToolResponse {
                     setState(.idle)
-                    let finalMessage = ChatMessage(message: .assistant(content: .text(result.content)))
+                    let finalMessage = LegacyChatMessage(message: .assistant(content: .text(result.content)))
                     return finalMessage
                 }
                 
@@ -546,7 +546,7 @@ public class Agent {
                 throw AgentError.invalidToolResponse
             }
             
-            let assistantMessage = ChatMessage(message: .assistant(content: .text(content)))
+            let assistantMessage = LegacyChatMessage(message: .assistant(content: .text(content)))
             messages.append(assistantMessage)
             setState(.idle)
             
@@ -563,7 +563,7 @@ public class Agent {
     ///   - toolCallId: Unique identifier for this tool call
     /// - Returns: A tuple containing the message and optional metadata
     /// - Throws: Errors if tool execution fails
-    private func executeToolCall(name: String, arguments: String, toolCallId: String) async throws -> (ChatMessage, ToolMetadata?) {
+    private func executeToolCall(name: String, arguments: String, toolCallId: String) async throws -> (LegacyChatMessage, ToolMetadata?) {
         // Use AIToolRegistry instead of direct array search
         guard let toolType = AIToolRegistry.toolType(forName: name) else {
             let error = AgentError.toolExecutionFailed("Tool not found: \(name)")
@@ -599,7 +599,7 @@ public class Agent {
             let result = try await tool.execute()
             
             // Create message
-            let message = ChatMessage(message: .tool(content: result.content, name: name, toolCallId: toolCallId))
+            let message = LegacyChatMessage(message: .tool(content: result.content, name: name, toolCallId: toolCallId))
             message.metadata = result.metadata
             
             // Update metadata in callbacks
@@ -628,20 +628,20 @@ public class Agent {
     
     /// Registers a callback handler
     /// - Parameter callback: The callback handler to register
-    public func addCallbacks(_ callback: AgentCallbacks) {
+    public func addCallbacks(_ callback: LegacyAgentCallbacks) {
         callbacks.append(callback)
     }
     
     /// Removes a callback handler
     /// - Parameter callback: The callback handler to remove
-    public func removeCallbacks(_ callback: AgentCallbacks) {
+    public func removeCallbacks(_ callback: LegacyAgentCallbacks) {
         callbacks.removeAll { $0 === callback }
     }
     
     /// Executes a callback operation
     /// - Parameter operation: The callback operation to execute
     /// - Returns: The result of the callback operation
-    private func executeCallbacks(_ operation: (AgentCallbacks) async -> CallbackResult) async -> CallbackResult {
+    private func executeCallbacks(_ operation: (LegacyAgentCallbacks) async -> CallbackResult) async -> CallbackResult {
         for callback in callbacks {
             let result = await operation(callback)
             switch result {

@@ -71,7 +71,7 @@ public class CancellationToken {
 
 /// Enhanced background task result
 public struct BackgroundTaskResult {
-    public let response: ResponseChatMessage
+    public let response: ResponseLegacyChatMessage
     public let taskId: String
     public let duration: TimeInterval
     public let reasoning: [ReasoningStep]?
@@ -185,17 +185,17 @@ public class ResponseAgent {
     /// - Parameters:
     ///   - message: The input message (supports multimodal content)
     ///   - streaming: Enable streaming responses (default: false)
-    /// - Returns: AsyncThrowingStream of ResponseChatMessage responses
+    /// - Returns: AsyncThrowingStream of ResponseLegacyChatMessage responses
     public func send(
         _ message: AIInputMessage,
         streaming: Bool = false
-    ) -> AsyncThrowingStream<ResponseChatMessage, Error> {
+    ) -> AsyncThrowingStream<ResponseLegacyChatMessage, Error> {
         
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     // Validate agent state
-                    try validateAgentState()
+                    try validateLegacyAgentState()
                     
                     // Add user message to conversation
                     messages.append(message)
@@ -223,11 +223,11 @@ public class ResponseAgent {
     /// - Parameters:
     ///   - text: The text message to send
     ///   - streaming: Enable streaming responses (default: false)
-    /// - Returns: AsyncThrowingStream of ResponseChatMessage responses
+    /// - Returns: AsyncThrowingStream of ResponseLegacyChatMessage responses
     public func send(
         _ text: String,
         streaming: Bool = false
-    ) -> AsyncThrowingStream<ResponseChatMessage, Error> {
+    ) -> AsyncThrowingStream<ResponseLegacyChatMessage, Error> {
         return send(.user(text), streaming: streaming)
     }
     
@@ -235,11 +235,11 @@ public class ResponseAgent {
     /// - Parameters:
     ///   - contentParts: Array of content parts (text, images, etc.)
     ///   - streaming: Enable streaming responses (default: false)
-    /// - Returns: AsyncThrowingStream of ResponseChatMessage responses
+    /// - Returns: AsyncThrowingStream of ResponseLegacyChatMessage responses
     public func send(
         _ contentParts: [AIContentPart],
         streaming: Bool = false
-    ) -> AsyncThrowingStream<ResponseChatMessage, Error> {
+    ) -> AsyncThrowingStream<ResponseLegacyChatMessage, Error> {
         return send(.user(contentParts), streaming: streaming)
     }
     
@@ -255,7 +255,7 @@ public class ResponseAgent {
         configuration: BackgroundTaskConfiguration = .default
     ) async throws -> BackgroundTaskResult {
         
-        try validateAgentState()
+        try validateLegacyAgentState()
         
         // Check cancellation before starting
         if configuration.cancellationToken?.isCancelled == true {
@@ -409,7 +409,7 @@ public class ResponseAgent {
     // MARK: - Private Methods
     
     /// Validate agent state before processing
-    private func validateAgentState() throws {
+    private func validateLegacyAgentState() throws {
         switch state {
         case .processing, .backgroundProcessing:
             throw ResponseAgentError.agentBusy
@@ -444,7 +444,7 @@ public class ResponseAgent {
     /// Process streaming response with enhanced state tracking
     private func processStreamingResponse(
         _ message: AIInputMessage,
-        continuation: AsyncThrowingStream<ResponseChatMessage, Error>.Continuation
+        continuation: AsyncThrowingStream<ResponseLegacyChatMessage, Error>.Continuation
     ) async throws {
         
         setState(.initializing)
@@ -464,9 +464,9 @@ public class ResponseAgent {
                 setState(.streamingResponse(contentType: .text))
                 
                 // Create streaming message
-                let responseChatMessage = ResponseChatMessage(message: .assistant(responseContent))
-                responseChatMessage.isPending = true
-                continuation.yield(responseChatMessage)
+                let responseLegacyChatMessage = ResponseLegacyChatMessage(message: .assistant(responseContent))
+                responseLegacyChatMessage.isPending = true
+                continuation.yield(responseLegacyChatMessage)
             }
             
             // Check for reasoning
@@ -483,7 +483,7 @@ public class ResponseAgent {
         
         // Finalize response
         if !responseContent.isEmpty {
-            let finalMessage = ResponseChatMessage(message: .assistant(responseContent))
+            let finalMessage = ResponseLegacyChatMessage(message: .assistant(responseContent))
             messages.append(.assistant(responseContent))
             continuation.yield(finalMessage)
         }
@@ -495,7 +495,7 @@ public class ResponseAgent {
     /// Process non-streaming response with enhanced state tracking
     private func processNonStreamingResponse(
         _ message: AIInputMessage,
-        continuation: AsyncThrowingStream<ResponseChatMessage, Error>.Continuation
+        continuation: AsyncThrowingStream<ResponseLegacyChatMessage, Error>.Continuation
     ) async throws {
         
         setState(.initializing)
@@ -517,7 +517,7 @@ public class ResponseAgent {
                 )
                 
                 // Send tool result
-                let toolMessage = ResponseChatMessage(
+                let toolMessage = ResponseLegacyChatMessage(
                     message: .tool(result.response, callId: functionCall.id, name: functionCall.name),
                     metadata: result.metadata
                 )
@@ -598,8 +598,8 @@ public class ResponseAgent {
         return (response: result.content, metadata: result.metadata)
     }
     
-    /// Convert ResponseObject to ResponseChatMessage
-    private func convertToChat(_ response: ResponseObject) throws -> ResponseChatMessage {
+    /// Convert ResponseObject to ResponseLegacyChatMessage
+    private func convertToChat(_ response: ResponseObject) throws -> ResponseLegacyChatMessage {
         
         // Store response ID for conversation continuation
         lastResponseId = response.id
@@ -612,13 +612,13 @@ public class ResponseAgent {
             messages.append(.assistant(textContent))
         }
         
-        // Create ResponseChatMessage
-        let responseChatMessage = ResponseChatMessage(
+        // Create ResponseLegacyChatMessage
+        let responseLegacyChatMessage = ResponseLegacyChatMessage(
             message: .assistant(textContent),
             metadata: extractMetadata(from: response)
         )
         
-        return responseChatMessage
+        return responseLegacyChatMessage
     }
     
     /// Extract metadata from ResponseObject
@@ -871,10 +871,10 @@ public enum ResponseAgentState: Equatable {
     }
 }
 
-// MARK: - ResponseChatMessage
+// MARK: - ResponseLegacyChatMessage
 
 /// ResponseAgent-specific message class
-public class ResponseChatMessage: Identifiable {
+public class ResponseLegacyChatMessage: Identifiable {
     public let id: UUID
     public let timestamp: Date
     public let message: AIInputMessage
@@ -896,15 +896,15 @@ public class ResponseChatMessage: Identifiable {
     }
     
     /// Creates a pending message for streaming
-    public static func pending(message: AIInputMessage) -> ResponseChatMessage {
-        let chatMessage = ResponseChatMessage(message: message)
+    public static func pending(message: AIInputMessage) -> ResponseLegacyChatMessage {
+        let chatMessage = ResponseLegacyChatMessage(message: message)
         chatMessage.isPending = true
         return chatMessage
     }
 }
 
-extension ResponseChatMessage: Equatable {
-    public static func == (lhs: ResponseChatMessage, rhs: ResponseChatMessage) -> Bool {
+extension ResponseLegacyChatMessage: Equatable {
+    public static func == (lhs: ResponseLegacyChatMessage, rhs: ResponseLegacyChatMessage) -> Bool {
         return lhs.id == rhs.id
     }
 }

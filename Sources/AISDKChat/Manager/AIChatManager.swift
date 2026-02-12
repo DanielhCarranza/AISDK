@@ -18,7 +18,7 @@ class AIChatManager: Observable {
     var chatSessions: [ChatSession] = []
 
     /// List of all messages in the current session
-    var messages: [ChatMessage] = []
+    var messages: [LegacyChatMessage] = []
     
     /// Currently active chat session
     var currentSession: ChatSession?
@@ -29,10 +29,10 @@ class AIChatManager: Observable {
     /// Are we loading the current session?
     var isLoadingSession = false
     
-    // MARK: - AI Agent State
+    // MARK: - AI LegacyAgent State
     
-    /// Agent internal state
-    var state: AgentState = .idle
+    /// LegacyAgent internal state
+    var state: LegacyAgentState = .idle
     
     /// Is the AI currently streaming partial messages?
     var isStreaming: Bool = false
@@ -57,7 +57,7 @@ class AIChatManager: Observable {
     
     // Setup tracking - new properties
     private var isSetupComplete = false
-    private var agent: Agent!
+    private var agent: LegacyAgent!
     
     private let metadataTracker = MetadataTracker()
     private let documentManager = DocumentManager()
@@ -85,7 +85,7 @@ class AIChatManager: Observable {
 
         // Initialize agent with selected prompt and our new health tools
         do {
-            self.agent = try Agent(
+            self.agent = try LegacyAgent(
                 model: AgenticModels.gpt4,
                 tools: [
                     SearchMedicalEvidenceTool.self,
@@ -122,7 +122,7 @@ class AIChatManager: Observable {
             isSetupComplete = true
             
         } catch {
-            print("❌ Failed to initialize Agent: \(error)")
+            print("❌ Failed to initialize LegacyAgent: \(error)")
             // Reset loading states in case of error
             isLoading = false
             isLoadingSession = false
@@ -339,12 +339,12 @@ class AIChatManager: Observable {
         // First system message - AI instructions
         let systemPrompt = String(localized: "SYSTEM_PROMPT_AI_COMPANION")
         
-        let systemMsg = ChatMessage(message: .system(content: .text(systemPrompt)))
+        let systemMsg = LegacyChatMessage(message: .system(content: .text(systemPrompt)))
         newSession.messages.append(systemMsg)
         
         // Second system message - Health Profile
         if let healthProfile = try? await healthProfile.getHealthProfileMarkdown() {
-            let healthProfileMsg = ChatMessage(message: .system(content: .text(healthProfile)))
+            let healthProfileMsg = LegacyChatMessage(message: .system(content: .text(healthProfile)))
             newSession.messages.append(healthProfileMsg)
         }
         
@@ -358,7 +358,7 @@ class AIChatManager: Observable {
             initialMessage = String(localized: "COMPANION_INTRO_MESSAGE")
         }
         
-        let assistantMsg = ChatMessage(message: .assistant(content: .text(initialMessage)))
+        let assistantMsg = LegacyChatMessage(message: .assistant(content: .text(initialMessage)))
         newSession.messages.append(assistantMsg)
         
         // Clear any existing cached session since we're creating new
@@ -384,8 +384,8 @@ class AIChatManager: Observable {
         suggestedQuestions = []
         
         // Create user message with parts
-        let userMessage = Message.user(content: .parts(parts))
-        let chatMessage = ChatMessage(message: userMessage)
+        let userMessage = LegacyMessage.user(content: .parts(parts))
+        let chatMessage = LegacyChatMessage(message: userMessage)
 
         // Add attachments to the message
         if !attachments.isEmpty {
@@ -457,7 +457,7 @@ class AIChatManager: Observable {
     /// Called for partial tokens
     /// DO NOT STORE anything here
     @MainActor
-    private func handleStreamedMessage(_ message: ChatMessage) {
+    private func handleStreamedMessage(_ message: LegacyChatMessage) {
         guard var currentSession = currentSession else { return }
         
         switch message.message {
@@ -492,7 +492,7 @@ class AIChatManager: Observable {
 
     
     /// Adds a new message to the current session and updates storage
-    func storeMessage(_ message: ChatMessage) {        
+    func storeMessage(_ message: LegacyChatMessage) {        
         // Append to local messages array if not already appended
         if !messages.contains(where: { $0.id == message.id }) {
             messages.append(message)
@@ -503,7 +503,7 @@ class AIChatManager: Observable {
             currentSession.messages = messages
             
             
-            // Check if it's a user message by examining the wrapped Message enum
+            // Check if it's a user message by examining the wrapped LegacyMessage enum
             let isUserMessage = if case .user = message.message { true } else { false }
             
             // If this is an unsaved session and it's a user message, save it
@@ -585,7 +585,7 @@ class AIChatManager: Observable {
             ]
         )
         
-        // Use the agent's LLM provider
+        // Use the agent's LegacyLLM provider
         let response = try await agent.llm.sendChatCompletion(request: request)
         return response.choices.first?.message.content ?? "New Chat"
     }
@@ -705,8 +705,8 @@ class AIChatManager: Observable {
             var contextMessages = currentSession?.messages.map(\.message) ?? []
             
             // Filter and reformat messages to ensure proper sequence
-            var formattedMessages: [Message] = []
-            var lastAssistantMessage: Message? = nil
+            var formattedMessages: [LegacyMessage] = []
+            var lastAssistantMessage: LegacyMessage? = nil
             
             for message in contextMessages {
                 switch message {

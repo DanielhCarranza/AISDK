@@ -10,7 +10,7 @@ import Foundation
 
 // MARK: - AIAgent Protocol
 
-/// Unified protocol for AI agents that coordinate LLM calls with tool execution.
+/// Unified protocol for AI agents that coordinate LegacyLLM calls with tool execution.
 /// This protocol provides a consistent interface for agent implementations across
 /// different backing implementations.
 public protocol AIAgent: Sendable {
@@ -64,19 +64,19 @@ public extension AIAgent {
 
 /// Represents the current state of an AI agent
 public enum AIAgentState: Sendable, Equatable {
-    /// Agent is idle and ready for input
+    /// LegacyAgent is idle and ready for input
     case idle
 
-    /// Agent is thinking/processing
+    /// LegacyAgent is thinking/processing
     case thinking
 
-    /// Agent is executing a tool
+    /// LegacyAgent is executing a tool
     case executingTool(name: String)
 
-    /// Agent is generating a response
+    /// LegacyAgent is generating a response
     case responding
 
-    /// Agent encountered an error
+    /// LegacyAgent encountered an error
     case error(String)
 
     /// Whether the agent is currently processing
@@ -151,7 +151,7 @@ public struct AIAgentResponse: Sendable {
 public enum AIAgentEvent: Sendable {
     // MARK: - State Events
 
-    /// Agent state changed
+    /// LegacyAgent state changed
     case stateChange(AIAgentState)
 
     // MARK: - Message Events

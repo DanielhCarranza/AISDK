@@ -221,7 +221,7 @@ private final class SlowStreamingMockModel: AILanguageModel, @unchecked Sendable
 
 final class ConcurrencyStressTests: XCTestCase {
 
-    // MARK: - Test 1: 100 Concurrent Agent Executions
+    // MARK: - Test 1: 100 Concurrent LegacyAgent Executions
 
     /// Tests that 100 concurrent agent executions complete correctly
     /// without data races, deadlocks, or corrupted state.
@@ -620,7 +620,7 @@ final class ConcurrencyStressTests: XCTestCase {
                     let model = StressTestMockModel()
                     let agent = AIAgentActor(model: model, tools: [])
                     do {
-                        _ = try await agent.execute(messages: [.user("Agent \(i)")])
+                        _ = try await agent.execute(messages: [.user("LegacyAgent \(i)")])
                         metrics.recordCompletion()
                     } catch {
                         metrics.recordError(error)

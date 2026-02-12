@@ -8,8 +8,8 @@
 import Foundation
 @testable import AISDK
 
-/// Mock LLM provider for testing without making real API calls
-public class MockLLMProvider: LLM {
+/// Mock LegacyLLM provider for testing without making real API calls
+public class MockLLMProvider: LegacyLLM {
     
     // MARK: - Configuration
     
@@ -33,7 +33,7 @@ public class MockLLMProvider: LLM {
         setupDefaultResponses()
     }
     
-    // MARK: - LLM Protocol Implementation
+    // MARK: - LegacyLLM Protocol Implementation
     
     public func sendChatCompletion(request: ChatCompletionRequest) async throws -> ChatCompletionResponse {
         lastRequest = request
@@ -166,7 +166,7 @@ public class MockLLMProvider: LLM {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: responseContent,
                         toolCalls: nil,
@@ -229,7 +229,7 @@ extension MockLLMProvider {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: nil,
                         toolCalls: [
@@ -269,7 +269,7 @@ extension MockLLMProvider {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: jsonContent,
                         toolCalls: nil,

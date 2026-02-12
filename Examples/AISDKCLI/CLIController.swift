@@ -269,7 +269,7 @@ class CLIController {
         }
     }
 
-    // MARK: - Message Processing
+    // MARK: - LegacyMessage Processing
 
     private func processMessage(_ input: String) async {
         guard let client = client, let model = runtimeConfig.currentModel else {
@@ -425,7 +425,7 @@ class CLIController {
         print("")
     }
 
-    // MARK: - Agent Setup
+    // MARK: - LegacyAgent Setup
 
     private func buildAgent(client: any ProviderClient, modelId: String) -> AIAgentActor {
         let toolTypes = runtimeConfig.toolsEnabled ? builtInTools : []

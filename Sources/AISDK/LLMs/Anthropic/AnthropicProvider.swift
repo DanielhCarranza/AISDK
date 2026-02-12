@@ -22,7 +22,7 @@ import Alamofire
  * - The 'strict' parameter for function calling is ignored
  */
 
-public class AnthropicProvider: LLM {
+public class AnthropicProvider: LegacyLLM {
         
     // MARK: - Properties
     
@@ -52,7 +52,7 @@ public class AnthropicProvider: LLM {
     /// let request = ChatCompletionRequest(
     ///   model: "claude-sonnet-4-5-20250929",
     ///   messages: [
-    ///       ChatMessage(role: "user", content: .string("Hello!"))
+    ///       LegacyChatMessage(role: "user", content: .string("Hello!"))
     ///   ]
     /// )
     /// let response = try await client.createChatCompletion(request: request)
@@ -148,7 +148,7 @@ public class AnthropicProvider: LLM {
     /// let request = ChatCompletionRequest(
     ///   model: "claude-sonnet-4-5-20250929",
     ///   messages: [
-    ///       ChatMessage(role: "user", content: .string("Hello!"))
+    ///       LegacyChatMessage(role: "user", content: .string("Hello!"))
     ///   ],
     ///   stream: true
     /// )

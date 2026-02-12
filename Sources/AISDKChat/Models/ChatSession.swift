@@ -13,7 +13,7 @@ struct ChatSession: Identifiable, Codable, Equatable {
     var createdAt: Date
     var lastModified: Date
     var title: String
-    var messages: [ChatMessage]
+    var messages: [LegacyChatMessage]
     
     init(title: String = "New Chat") {
         self.createdAt = Date()
@@ -22,7 +22,7 @@ struct ChatSession: Identifiable, Codable, Equatable {
         self.messages = []
     }
     
-    // Custom Codable implementation for ChatMessage
+    // Custom Codable implementation for LegacyChatMessage
     enum CodingKeys: String, CodingKey {
         case createdAt, lastModified, title, messages
     }
@@ -36,7 +36,7 @@ struct ChatSession: Identifiable, Codable, Equatable {
         title = try container.decode(String.self, forKey: .title)
         
         // Make messages optional with empty array as default
-        messages = try container.decodeIfPresent([ChatMessage].self, forKey: .messages) ?? []
+        messages = try container.decodeIfPresent([LegacyChatMessage].self, forKey: .messages) ?? []
     }
     
     func encode(to encoder: Encoder) throws {

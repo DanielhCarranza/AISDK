@@ -160,7 +160,7 @@ public actor AIAgentActor {
     // MARK: - Mutable State (actor-isolated)
 
     /// Current state of the agent
-    private var currentState: AgentState = .idle
+    private var currentState: LegacyAgentState = .idle
 
     /// History of step results
     private var stepHistory: [AIStepResult] = []
@@ -254,7 +254,7 @@ public actor AIAgentActor {
     }
 
     /// Get the current state of the agent
-    public var state: AgentState {
+    public var state: LegacyAgentState {
         currentState
     }
 
@@ -1182,7 +1182,7 @@ public actor AIAgentActor {
 
     /// Set observable state
     /// Note: Uses fire-and-forget to avoid blocking in CLI environments without a RunLoop
-    private func setObservableState(_ agentState: AgentState) async {
+    private func setObservableState(_ agentState: LegacyAgentState) async {
         Task { @MainActor in
             observableState.state = agentState
         }
@@ -1190,7 +1190,7 @@ public actor AIAgentActor {
 
     /// Set observable error state
     /// Note: Uses fire-and-forget to avoid blocking in CLI environments without a RunLoop
-    private func setObservableError(state agentState: AgentState, error: AISDKErrorV2) async {
+    private func setObservableError(state agentState: LegacyAgentState, error: AISDKErrorV2) async {
         Task { @MainActor in
             observableState.state = agentState
             observableState.error = error
@@ -1235,7 +1235,7 @@ public struct AIAgentResult: Sendable {
 /// All properties are MainActor-isolated for safe UI access.
 ///
 /// In addition to SwiftUI's `@Observable` integration, this class provides an
-/// `AsyncStream<AgentState>` via the `stateStream` property for reactive programming
+/// `AsyncStream<LegacyAgentState>` via the `stateStream` property for reactive programming
 /// patterns outside of SwiftUI contexts.
 ///
 /// ## Usage
@@ -1256,7 +1256,7 @@ public struct AIAgentResult: Sendable {
 @Observable
 public final class ObservableAgentState: @unchecked Sendable {
     /// Current state of the agent
-    @MainActor public internal(set) var state: AgentState = .idle {
+    @MainActor public internal(set) var state: LegacyAgentState = .idle {
         didSet {
             // Broadcast state change to all subscribers
             broadcastState(state)
@@ -1278,7 +1278,7 @@ public final class ObservableAgentState: @unchecked Sendable {
     private let subscribersLock = NSLock()
 
     /// Active stream continuations for state updates
-    private var subscribers: [UUID: AsyncStream<AgentState>.Continuation] = [:]
+    private var subscribers: [UUID: AsyncStream<LegacyAgentState>.Continuation] = [:]
 
     public init() {}
 
@@ -1293,26 +1293,26 @@ public final class ObservableAgentState: @unchecked Sendable {
     /// Multiple subscribers can listen concurrently, each receiving their own
     /// copy of state updates.
     ///
-    /// - Returns: An `AsyncStream<AgentState>` that yields state changes
+    /// - Returns: An `AsyncStream<LegacyAgentState>` that yields state changes
     ///
     /// ## Example
     /// ```swift
     /// for await state in observableState.stateStream {
     ///     switch state {
     ///     case .idle:
-    ///         print("Agent is idle")
+    ///         print("LegacyAgent is idle")
     ///     case .thinking:
-    ///         print("Agent is thinking...")
+    ///         print("LegacyAgent is thinking...")
     ///     case .executingTool(let name):
     ///         print("Executing tool: \(name)")
     ///     case .responding:
-    ///         print("Agent is responding")
+    ///         print("LegacyAgent is responding")
     ///     case .error(let error):
     ///         print("Error: \(error.detailedDescription)")
     ///     }
     /// }
     /// ```
-    public var stateStream: AsyncStream<AgentState> {
+    public var stateStream: AsyncStream<LegacyAgentState> {
         let subscriberId = UUID()
 
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
@@ -1340,7 +1340,7 @@ public final class ObservableAgentState: @unchecked Sendable {
     }
 
     /// Broadcast state change to all active subscribers
-    private func broadcastState(_ newState: AgentState) {
+    private func broadcastState(_ newState: LegacyAgentState) {
         // Snapshot to array under lock to avoid iterator invalidation
         subscribersLock.lock()
         let activeSubscribers = Array(subscribers.values)

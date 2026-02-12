@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AgentState: Equatable {
+public enum LegacyAgentState: Equatable {
     case idle
     case thinking
     case executingTool(String)
@@ -35,7 +35,7 @@ public enum AgentState: Equatable {
     
     // MARK: - Equatable
     
-    public static func == (lhs: AgentState, rhs: AgentState) -> Bool {
+    public static func == (lhs: LegacyAgentState, rhs: LegacyAgentState) -> Bool {
         switch (lhs, rhs) {
         case (.idle, .idle),
              (.thinking, .thinking),

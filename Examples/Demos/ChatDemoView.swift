@@ -16,12 +16,12 @@ struct ChatDemoView: View {
     @State private var isStreaming = false
     @State private var selectedProvider: ProviderType = .openAI
     
-    // LLM instances
+    // LegacyLLM instances
     let openAIClient = OpenAIProvider(apiKey: AgenticModels.gpt4.apiKey ?? " ")
     let claudeClient = ClaudeProvider(apiKey: AgenticModels.claude.apiKey ?? " ") // Use AgenticModels for API key
     
     // Computed property to get the current provider
-    private var currentProvider: LLM {
+    private var currentProvider: LegacyLLM {
         switch selectedProvider {
         case .openAI:
             return openAIClient
@@ -338,9 +338,9 @@ struct ChatDemoView: View {
                     .disabled(isStreaming)
                 }
                 
-                Button("Weather Tool Agent Test") {
+                Button("Weather Tool LegacyAgent Test") {
                     Task {
-                        textOutput = "Starting Weather Tool Agent Test...\n"
+                        textOutput = "Starting Weather Tool LegacyAgent Test...\n"
                         
                         do {
                             // Define the simple weather tool
@@ -369,14 +369,14 @@ struct ChatDemoView: View {
                             }
                             
                             // Initialize an agent with just the weather tool
-                            let agent = try Agent(
+                            let agent = try LegacyAgent(
                                 model: AgenticModels.gpt4,
                                 tools: [WeatherToolForAgent.self],
                                 instructions: "You are a helpful assistant that provides weather information."
                             )
                             
                             // Create test message
-                            let userMessage = ChatMessage(message: .user(content: .text("What's the weather in Boston today?")))
+                            let userMessage = LegacyChatMessage(message: .user(content: .text("What's the weather in Boston today?")))
                             
                             // Test with specific function requirement
                             textOutput += "🧪 TEST: Specific weather function\n"

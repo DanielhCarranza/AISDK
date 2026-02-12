@@ -214,7 +214,7 @@ public enum ResponseOutputItem: Codable {
 
 // MARK: - Output Item Types
 
-/// Message output item
+/// LegacyMessage output item
 public struct ResponseOutputMessage: Codable {
     public let id: String
     public let type: String = "message"

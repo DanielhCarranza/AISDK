@@ -2,7 +2,7 @@
 //  AIMessage+ResponseConversions.swift
 //  AISDK
 //
-//  Conversion extensions from Universal Message System to OpenAI Responses API
+//  Conversion extensions from Universal LegacyMessage System to OpenAI Responses API
 //
 
 import Foundation

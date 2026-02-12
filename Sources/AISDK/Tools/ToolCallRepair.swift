@@ -3,7 +3,7 @@
 //  AISDK
 //
 //  Tool call repair mechanism for handling failed tool calls
-//  Uses hybrid strategy: local validation + LLM-assisted repair
+//  Uses hybrid strategy: local validation + LegacyLLM-assisted repair
 //
 //  Based on Vercel AI SDK 6.x patterns for robust tool execution
 //
@@ -14,7 +14,7 @@ import Foundation
 
 /// Tool call repair mechanism for handling and recovering from failed tool calls
 ///
-/// Provides multiple repair strategies from strict (no repair) to LLM-assisted repair
+/// Provides multiple repair strategies from strict (no repair) to LegacyLLM-assisted repair
 /// where the model is asked to correct malformed arguments.
 ///
 /// ## Strategies

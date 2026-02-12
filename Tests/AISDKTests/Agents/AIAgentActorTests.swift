@@ -152,7 +152,7 @@ final class AIAgentActorTests: XCTestCase {
     func test_observable_state_updates_during_execution() async throws {
         // Given
         let model = MockLanguageModel()
-        var stateChanges: [AgentState] = []
+        var stateChanges: [LegacyAgentState] = []
         var isProcessingChanges: [Bool] = []
 
         model.generateTextHandler = { _ in
@@ -221,16 +221,16 @@ final class AIAgentActorTests: XCTestCase {
         let agent = AIAgentActor(model: model)
 
         // When - Execute calls sequentially (they should be queued)
-        async let result1 = agent.execute(messages: [.user("Message 1")])
+        async let result1 = agent.execute(messages: [.user("LegacyMessage 1")])
 
         // Small delay to ensure first request is queued
         try await Task.sleep(nanoseconds: 10_000_000) // 10ms
 
-        async let result2 = agent.execute(messages: [.user("Message 2")])
+        async let result2 = agent.execute(messages: [.user("LegacyMessage 2")])
 
         try await Task.sleep(nanoseconds: 10_000_000) // 10ms
 
-        async let result3 = agent.execute(messages: [.user("Message 3")])
+        async let result3 = agent.execute(messages: [.user("LegacyMessage 3")])
 
         // Wait for all results
         _ = try await (result1, result2, result3)
@@ -781,7 +781,7 @@ final class ObservableAgentStateTests: XCTestCase {
         observableState.state = .thinking
 
         // When
-        var receivedStates: [AgentState] = []
+        var receivedStates: [LegacyAgentState] = []
         let task = Task {
             for await state in observableState.stateStream {
                 receivedStates.append(state)
@@ -804,7 +804,7 @@ final class ObservableAgentStateTests: XCTestCase {
     func test_stateStream_emits_state_changes() async throws {
         // Given
         let observableState = ObservableAgentState()
-        var receivedStates: [AgentState] = []
+        var receivedStates: [LegacyAgentState] = []
 
         let task = Task {
             for await state in observableState.stateStream {
@@ -839,8 +839,8 @@ final class ObservableAgentStateTests: XCTestCase {
     func test_stateStream_supports_multiple_subscribers() async throws {
         // Given
         let observableState = ObservableAgentState()
-        var subscriber1States: [AgentState] = []
-        var subscriber2States: [AgentState] = []
+        var subscriber1States: [LegacyAgentState] = []
+        var subscriber2States: [LegacyAgentState] = []
 
         // When - Create two subscribers
         let task1 = Task {
@@ -917,7 +917,7 @@ final class ObservableAgentStateTests: XCTestCase {
         let streamTerminated = expectation(description: "Stream should terminate")
 
         // Create observableState in a scope so it can be deallocated
-        var stream: AsyncStream<AgentState>?
+        var stream: AsyncStream<LegacyAgentState>?
         autoreleasepool {
             let observableState = ObservableAgentState()
             stream = observableState.stateStream
@@ -980,13 +980,13 @@ final class ObservableAgentStateTests: XCTestCase {
 
         // Thread-safe state collection actor
         actor StateCollector {
-            var states: [AgentState] = []
+            var states: [LegacyAgentState] = []
 
-            func append(_ state: AgentState) {
+            func append(_ state: LegacyAgentState) {
                 states.append(state)
             }
 
-            func getStates() -> [AgentState] {
+            func getStates() -> [LegacyAgentState] {
                 return states
             }
 
@@ -1434,14 +1434,14 @@ final class AIAgentActorStreamingTests: XCTestCase {
 
         // When - Execute two streams concurrently
         async let stream1: () = {
-            for try await _ in agent.streamExecute(messages: [.user("Message 1")]) {}
+            for try await _ in agent.streamExecute(messages: [.user("LegacyMessage 1")]) {}
         }()
 
         // Small delay to ensure first is queued first
         try await Task.sleep(nanoseconds: 5_000_000) // 5ms
 
         async let stream2: () = {
-            for try await _ in agent.streamExecute(messages: [.user("Message 2")]) {}
+            for try await _ in agent.streamExecute(messages: [.user("LegacyMessage 2")]) {}
         }()
 
         // Wait for both
@@ -1496,7 +1496,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
         XCTAssertLessThan(receivedCount, 100)
     }
 
-    // MARK: - Message History Tests
+    // MARK: - LegacyMessage History Tests
 
     func test_streamExecute_updates_message_history() async throws {
         // Given
@@ -1881,7 +1881,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
         }
     }
 
-    // MARK: - Tool Results in Message History Tests
+    // MARK: - Tool Results in LegacyMessage History Tests
 
     func test_tool_results_added_to_message_history() async throws {
         // Given

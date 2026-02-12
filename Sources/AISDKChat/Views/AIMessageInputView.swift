@@ -250,7 +250,7 @@ struct AIMessageInputView: View {
                         .controlSize(.small)
                 } else {
                     Image(systemName: "arrow.up.circle.fill")
-                        .accessibilityLabel("Send Message")
+                        .accessibilityLabel("Send LegacyMessage")
                         .font(.title2)
                 }
             }
@@ -348,7 +348,7 @@ struct AIMessageInputView: View {
                         let url = try await chat.uploadImage(imageData.data)
                         print("📷 Uploaded image to: \(url)")
                         
-                        // Images are added both to the message parts (for LLM) and as attachments
+                        // Images are added both to the message parts (for LegacyLLM) and as attachments
                         parts.append(.imageURL(.url(url)))
                         
                         let attachment = Attachment(
@@ -399,7 +399,7 @@ struct AIMessageInputView: View {
                     // If we have medical records, append a hidden assistant message
                     if !selectedMedicalRecords.isEmpty {
                         let hiddenContent = "Medical records have been attached to this conversation. I'll use this information to provide more personalized assistance."
-                        let hiddenMessage = ChatMessage(message: .assistant(content: .text(hiddenContent)), hidden: true)
+                        let hiddenMessage = LegacyChatMessage(message: .assistant(content: .text(hiddenContent)), hidden: true)
                         chat.storeMessage(hiddenMessage)
                     }
                 }
