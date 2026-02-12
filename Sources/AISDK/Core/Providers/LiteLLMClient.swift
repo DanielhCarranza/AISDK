@@ -224,7 +224,7 @@ public actor LiteLLMClient: ProviderClient {
                         return .imageURL("data:\(mimeType);base64,\(base64)")
                     case .imageURL(let url):
                         return .imageURL(url)
-                    case .audio, .file:
+                    case .audio, .file, .video, .videoURL:
                         // Not directly supported, fall back to text description
                         return .text("[Unsupported content type]")
                     }

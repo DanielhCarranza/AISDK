@@ -168,6 +168,26 @@ func validateAPIKeys(for provider: ProviderType) -> Bool {
             return false
         }
         return true
+
+    case .gemini:
+        guard let key = ProcessInfo.processInfo.environment["GOOGLE_API_KEY"],
+              !key.isEmpty else {
+            print(ANSIStyles.error("GOOGLE_API_KEY not found!"))
+            print("""
+
+            Please set your API key using one of these methods:
+
+            \(ANSIStyles.dim("1. Environment variable:"))
+               export GOOGLE_API_KEY=your_key_here
+
+            \(ANSIStyles.dim("2. Create a .env file:"))
+               echo "GOOGLE_API_KEY=your_key_here" > .env
+
+            Get your API key at: \(ANSIStyles.cyan("https://aistudio.google.com/apikey"))
+            """)
+            return false
+        }
+        return true
     }
 }
 
@@ -201,7 +221,7 @@ func printUsage() {
         swift run AISDKCLI [OPTIONS]
 
     \(ANSIStyles.bold("OPTIONS:"))
-        --provider <type>     Provider: openrouter (default), litellm, openai, or anthropic
+        --provider <type>     Provider: openrouter (default), litellm, openai, anthropic, or gemini
         --model <id>          Pre-select a model (skip interactive selection)
         --system <prompt>     Set custom system prompt
         --temperature <num>   Temperature (0.0-2.0, default: 0.7)
@@ -213,6 +233,7 @@ func printUsage() {
         --citations           Enable citations (default on)
         --no-citations        Disable citations
         --reliable            Enable reliability/failover layer
+        --video <input>       Attach a video URL, local path, or "demo" to the first message
         --thinking [budget]   Enable Anthropic extended thinking (default budget: 10000)
         --beta <features>     Enable Anthropic beta features (space-separated)
         --help, -h            Show this help
@@ -230,6 +251,7 @@ func printUsage() {
         /format <mode>        Set response format (text|json|schema|ui)
         /citations on|off     Toggle citations rendering
         /reliable on|off      Toggle reliability mode
+        /video <input>        Attach video URL, local path, or "demo" to next message
 
     \(ANSIStyles.bold("INPUT MODES:"))
         Single line           Press Enter to send
@@ -240,6 +262,7 @@ func printUsage() {
         OPENROUTER_API_KEY    Required for OpenRouter provider
         OPENAI_API_KEY        Required for OpenAI provider (Responses API testing)
         ANTHROPIC_API_KEY     Required for Anthropic provider
+        GOOGLE_API_KEY        Required for Gemini provider
         LITELLM_BASE_URL      LiteLLM server URL (default: http://localhost:4000)
         LITELLM_API_KEY       Optional API key for LiteLLM
         TAVILY_API_KEY        Required for web_search tool
@@ -257,5 +280,7 @@ func printUsage() {
         swift run AISDKCLI --provider openai --model gpt-4o-mini
         swift run AISDKCLI --model anthropic/claude-3-5-sonnet
         swift run AISDKCLI --system "You are a Python expert"
+        swift run AISDKCLI --provider gemini --video demo
+        swift run AISDKCLI --video https://example.com/clip.mp4
     """)
 }

@@ -339,6 +339,14 @@ extension AIInputMessage {
             return false
         }
     }
+
+    /// Check if this message contains any video
+    public var hasVideo: Bool {
+        return content.contains { contentPart in
+            if case .video = contentPart { return true }
+            return false
+        }
+    }
     
     /// Get all images from this message
     public var images: [AIImageContent] {
@@ -365,6 +373,16 @@ extension AIInputMessage {
         return content.compactMap { contentPart in
             if case .file(let fileContent) = contentPart {
                 return fileContent
+            }
+            return nil
+        }
+    }
+
+    /// Get all videos from this message
+    public var videos: [AIVideoContent] {
+        return content.compactMap { contentPart in
+            if case .video(let videoContent) = contentPart {
+                return videoContent
             }
             return nil
         }

@@ -49,6 +49,12 @@ class SessionManager {
         trimHistoryIfNeeded()
     }
 
+    /// Add a user message with multimodal content parts
+    func addUserMessage(parts: [AIMessage.ContentPart]) {
+        messages.append(AIMessage(role: .user, content: .parts(parts)))
+        trimHistoryIfNeeded()
+    }
+
     /// Add an assistant message
     func addAssistantMessage(
         _ content: String,

@@ -60,7 +60,7 @@ let geminiResponse = try await geminiProvider.sendMessage(message)
 - **AIImageContent**: Images with data/URL support and quality settings
 - **AIAudioContent**: Audio with format detection and optional transcripts
 - **AIFileContent**: Files with type detection and MIME type handling
-- **AIVideoContent**: Video support (future-ready extension)
+- **AIVideoContent**: Video content parts (Gemini-only support)
 
 #### Provider Compatibility Matrix
 - **OpenAI**: ✅ Chat Completions & Response API full support

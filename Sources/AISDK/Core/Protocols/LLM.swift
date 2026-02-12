@@ -81,6 +81,8 @@ public struct AIMessage: Sendable, Codable {
         case imageURL(String)
         case audio(Data, mimeType: String)
         case file(Data, filename: String, mimeType: String)
+        case video(Data, mimeType: String)
+        case videoURL(String)
     }
 
     // MARK: - ToolCall
@@ -164,6 +166,13 @@ extension AIMessage.ContentPart: Codable {
             let filename = try container.decode(String.self, forKey: .filename)
             let mimeType = try container.decode(String.self, forKey: .mimeType)
             self = .file(data, filename: filename, mimeType: mimeType)
+        case "video":
+            let data = try container.decode(Data.self, forKey: .data)
+            let mimeType = try container.decode(String.self, forKey: .mimeType)
+            self = .video(data, mimeType: mimeType)
+        case "videoURL":
+            let url = try container.decode(String.self, forKey: .url)
+            self = .videoURL(url)
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown content part type")
         }
@@ -192,6 +201,13 @@ extension AIMessage.ContentPart: Codable {
             try container.encode(data, forKey: .data)
             try container.encode(filename, forKey: .filename)
             try container.encode(mimeType, forKey: .mimeType)
+        case .video(let data, let mimeType):
+            try container.encode("video", forKey: .type)
+            try container.encode(data, forKey: .data)
+            try container.encode(mimeType, forKey: .mimeType)
+        case .videoURL(let url):
+            try container.encode("videoURL", forKey: .type)
+            try container.encode(url, forKey: .url)
         }
     }
 }

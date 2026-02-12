@@ -66,6 +66,9 @@ public struct TokenEstimator: Sendable, Equatable {
                     tokenCount += 100
                 case .file:
                     tokenCount += 100
+                case .video, .videoURL:
+                    // Video tokens vary significantly; use conservative estimate
+                    tokenCount += 400
                 }
             }
         }
