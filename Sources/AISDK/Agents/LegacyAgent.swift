@@ -110,13 +110,20 @@ public class LegacyAgent {
     /// - Parameter content: The user's message
     /// - Returns: The agent's response message
     /// - Throws: Various errors related to API calls or tool execution
-    public func send(_ content: String) async throws -> LegacyChatMessage {
+    public func send(_ content: String, requiredTool: String? = nil) async throws -> LegacyChatMessage {
+        let userMessage = LegacyChatMessage(message: .user(content: .text(content)))
+        return try await send(userMessage, requiredTool: requiredTool)
+    }
+
+    /// Sends a prepared message (e.g. multimodal) to the agent and waits for a complete response
+    /// - Parameter message: The message to send
+    /// - Returns: The agent's response message
+    /// - Throws: Various errors related to API calls or tool execution
+    public func send(_ message: LegacyChatMessage, requiredTool: String? = nil) async throws -> LegacyChatMessage {
         setState(.thinking)
         
-        let userMessage = LegacyChatMessage(message: .user(content: .text(content)))
-        
         // Execute message received callback
-        let receivedResult = await executeCallbacks { await $0.onMessageReceived(message: userMessage.message) }
+        let receivedResult = await executeCallbacks { await $0.onMessageReceived(message: message.message) }
         switch receivedResult {
         case .cancel:
             setState(.idle)
@@ -126,15 +133,24 @@ public class LegacyAgent {
             messages.append(chatMessage)
             return chatMessage
         case .continue:
-            messages.append(userMessage)
+            messages.append(message)
         }
         
         // Create chat completion request using converted messages
+        let toolChoice: ToolChoice?
+        if let requiredTool = requiredTool, !requiredTool.isEmpty {
+            toolChoice = .function(ToolChoice.FunctionChoice(name: requiredTool))
+        } else if model.hasCapability(.tools) || model.hasCapability(.functionCalling) {
+            toolChoice = .auto
+        } else {
+            toolChoice = nil
+        }
+
         let request = ChatCompletionRequest(
             model: model.name,
             messages: convertToAPIMessages(),
             tools: tools.map { $0.jsonSchema() },
-            toolChoice: (model.hasCapability(.tools) || model.hasCapability(.functionCalling)) ? .auto : nil,
+            toolChoice: toolChoice,
             parallelToolCalls: true
         )
         
@@ -570,8 +586,16 @@ public class LegacyAgent {
             setState(.error(error))
             throw error
         }
-        
+
         do {
+            let beforeToolResult = await executeCallbacks {
+                await $0.onBeforeToolExecution(name: name, arguments: arguments)
+            }
+            if case .cancel = beforeToolResult {
+                setState(.idle)
+                throw AgentError.operationCancelled
+            }
+
             var tool = toolType.init()
             let argumentsData = arguments.data(using: .utf8) ?? Data()
             

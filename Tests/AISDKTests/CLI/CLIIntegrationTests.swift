@@ -28,7 +28,7 @@ final class CLIIntegrationTests: XCTestCase {
         ], input: input, timeout: 120)
 
         XCTAssertTrue(result.succeeded, "CLI should exit successfully: \(result.errorOutput)")
-        let outputUpper = result.output.uppercased()
+        let outputUpper = stripANSI(result.output).uppercased()
         XCTAssertTrue(outputUpper.contains("BANANA"), "Expected response to contain BANANA")
     }
 
@@ -44,8 +44,10 @@ final class CLIIntegrationTests: XCTestCase {
         ], input: input, timeout: 180)
 
         XCTAssertTrue(result.succeeded, "CLI should exit successfully: \(result.errorOutput)")
-        let promptCount = result.output.components(separatedBy: "You>").count
+        let strippedOutput = stripANSI(result.output)
+        let promptCount = max(0, strippedOutput.components(separatedBy: "You>").count - 1)
         XCTAssertTrue(promptCount >= 3, "Expected multiple prompts for multi-turn input")
+        XCTAssertTrue(strippedOutput.uppercased().contains("PINEAPPLE"), "Expected response to mention PINEAPPLE")
     }
 
     // MARK: - Helpers
@@ -62,5 +64,14 @@ final class CLIIntegrationTests: XCTestCase {
         }
 
         throw XCTSkip("OPENROUTER_API_KEY or LITELLM_BASE_URL not set")
+    }
+
+    private func stripANSI(_ text: String) -> String {
+        let pattern = "\\u001B\\[[0-9;]*[A-Za-z]"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
     }
 }

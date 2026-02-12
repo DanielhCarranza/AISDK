@@ -87,11 +87,33 @@ struct CLITestRunner {
             }
         }
 
+        // Auto-discover pre-built binary to avoid re-entrant SwiftPM conflicts
+        // when tests are already running under `swift test`.
+        if let binary = findBuiltBinary() {
+            return (binary, arguments, nil)
+        }
+
         let projectDir = env["AISDK_PROJECT_DIR"].map { URL(fileURLWithPath: $0) } ?? defaultProjectDirectory()
         let swiftURL = URL(fileURLWithPath: "/usr/bin/swift")
         let swiftArguments = ["run", "AISDKCLI"] + arguments
 
         return (swiftURL, swiftArguments, projectDir)
+    }
+
+    private static func findBuiltBinary() -> URL? {
+        // When running under `swift test`, the test bundle and CLI binary share the
+        // same build products directory. Locate AISDKCLI as a sibling of the test bundle.
+        guard let testBundlePath = Bundle.allBundles
+            .first(where: { $0.bundlePath.hasSuffix(".xctest") })?
+            .bundlePath else {
+            return nil
+        }
+        let buildDir = URL(fileURLWithPath: testBundlePath).deletingLastPathComponent()
+        let candidate = buildDir.appendingPathComponent("AISDKCLI")
+        guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
+            return nil
+        }
+        return candidate
     }
 
     private static func defaultProjectDirectory() -> URL {
