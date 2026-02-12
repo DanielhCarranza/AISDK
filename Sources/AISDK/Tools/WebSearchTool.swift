@@ -89,15 +89,15 @@ public struct TavilyWebSearchClient: WebSearchClient, Sendable {
         )
         request.httpBody = try JSONEncoder().encode(body)
 
-        // Debug: Log request start
         let startTime = Date()
-        FileHandle.standardError.write("[WebSearch] Starting request to \(requestURL) for query: \"\(query)\"\n".data(using: .utf8)!)
+        if shouldLogDebug {
+            FileHandle.standardError.write("[WebSearch] Starting request to \(requestURL)\n".data(using: .utf8)!)
+        }
 
         let (data, response) = try await session.data(for: request)
 
-        // Debug: Log response received
         let elapsed = Date().timeIntervalSince(startTime)
-        if let http = response as? HTTPURLResponse {
+        if shouldLogDebug, let http = response as? HTTPURLResponse {
             FileHandle.standardError.write("[WebSearch] Response received in \(String(format: "%.2f", elapsed))s - Status: \(http.statusCode)\n".data(using: .utf8)!)
         }
 
@@ -113,6 +113,10 @@ public struct TavilyWebSearchClient: WebSearchClient, Sendable {
                 publishedDate: result.publishedDate
             )
         }
+    }
+
+    private var shouldLogDebug: Bool {
+        ProcessInfo.processInfo.environment["AISDK_WEBSEARCH_DEBUG"] == "1"
     }
 
     private func resolveAPIKey() throws -> String {
@@ -188,8 +192,8 @@ public enum WebSearchError: Error, LocalizedError, Sendable {
             return "Missing TAVILY_API_KEY for web search."
         case .invalidResponse:
             return "Invalid response from web search provider."
-        case .httpError(let statusCode, let body):
-            return "Web search failed with HTTP \(statusCode): \(body)"
+        case .httpError(let statusCode, _):
+            return "Web search failed with HTTP \(statusCode)."
         }
     }
 }

@@ -386,7 +386,7 @@ private extension AIAgentAdapter {
                         return .imageURL(.url(url), detail: .auto)
                     }
                     return nil
-                case .audio, .file:
+                case .audio, .file, .video, .videoURL:
                     // Not directly supported in legacy format
                     return nil
                 }
@@ -541,4 +541,3 @@ public extension AIAgentAdapter {
         )
     }
 }
-

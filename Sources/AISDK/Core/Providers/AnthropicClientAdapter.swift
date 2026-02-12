@@ -315,6 +315,10 @@ public actor AnthropicClientAdapter: ProviderClient {
                         throw ProviderError.invalidRequest("Anthropic does not support audio content")
                     case .file:
                         throw ProviderError.invalidRequest("Anthropic does not support file content in this format")
+                    case .video:
+                        throw ProviderError.invalidRequest("Anthropic does not support video content")
+                    case .videoURL:
+                        throw ProviderError.invalidRequest("Anthropic does not support video URLs")
                     }
                 }
             }

@@ -330,7 +330,7 @@ extension OpenAIProvider {
                     return .inputImage(ResponseInputImage(imageUrl: "data:image/\(mediaType);base64,\(base64)"))
                 case .imageURL(let url):
                     return .inputImage(ResponseInputImage(imageUrl: url))
-                case .audio, .file:
+                case .audio, .file, .video, .videoURL:
                     // Audio and file content types are not directly supported
                     return nil
                 }
@@ -368,6 +368,10 @@ extension OpenAIProvider {
                         totalChars += 200 // Base overhead for audio
                     case .file:
                         totalChars += 100 // Base overhead for files
+                    case .video:
+                        totalChars += 1000 // Base overhead for video
+                    case .videoURL:
+                        totalChars += 1000 // Base overhead for video
                     }
                 }
             }
@@ -401,4 +405,3 @@ extension OpenAIProvider {
         }
     }
 }
-

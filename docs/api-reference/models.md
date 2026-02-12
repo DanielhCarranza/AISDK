@@ -53,7 +53,9 @@ public enum ContentPart: Sendable, Equatable {
     case image(Data, mimeType: String)
     case imageURL(String)
     case audio(Data, mimeType: String)
-    case file(Data, mimeType: String, name: String)
+    case file(Data, filename: String, mimeType: String)
+    case video(Data, mimeType: String)
+    case videoURL(String)
 }
 ```
 
@@ -100,6 +102,12 @@ let imageMsg = AIMessage.user(parts: [
     .imageURL("https://example.com/photo.jpg")
 ])
 
+// Video message
+let videoMsg = AIMessage.user(parts: [
+    .text("Summarize this clip"),
+    .videoURL("https://example.com/clip.mp4")
+])
+
 // System prompt
 let systemMsg = AIMessage.system("You are a helpful assistant.")
 
@@ -109,6 +117,8 @@ let toolResult = AIMessage.tool(
     content: "{\"temperature\": 72, \"condition\": \"sunny\"}"
 )
 ```
+
+Note: Video content parts are only supported by Gemini models; other providers ignore `.video`/`.videoURL`.
 
 ---
 

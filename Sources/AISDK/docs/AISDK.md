@@ -26,6 +26,7 @@ AISDK is a powerful Swift package that provides a unified interface for integrat
 - 🛠️ **Advanced Tool System**: Define tools that can render SwiftUI views
 - 🎙️ **Native Voice Mode**: Built with AVFoundation and Speech framework
 - 👁️ **Vision Mode**: LiveKit-powered real-time video interactions
+- 🎥 **Video Inputs**: Send video content to supported models (Gemini)
 - 🔬 **Research Mode**: Specialized agents for complex analysis
 - 💬 **Complete Chat System**: Session management, attachments, and UI components
 - 🔌 **Flexible Storage**: Protocol-based storage with documentation for adapters

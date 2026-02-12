@@ -209,6 +209,33 @@ let request = ProviderRequest(
 let response = try await client.execute(request: request)
 ```
 
+Send videos along with text (Gemini models only):
+
+```swift
+let client = GeminiClientAdapter(apiKey: "your-gemini-key")
+
+let videoMsg = AIMessage.user(content: .parts([
+    .text("Describe the key moments in this clip."),
+    .videoURL("https://example.com/clip.mp4")
+]))
+
+let request = ProviderRequest(
+    modelId: "gemini-2.5-flash",
+    messages: [videoMsg]
+)
+
+let response = try await client.execute(request: request)
+
+// Inline video data
+let data = try Data(contentsOf: URL(fileURLWithPath: "/path/to/video.mp4"))
+let localVideoMsg = AIMessage.user(content: .parts([
+    .text("Describe this local video."),
+    .video(data, mimeType: "video/mp4")
+]))
+```
+
+Note: Only Gemini models currently support video parts. OpenAI, Anthropic, and OpenRouter ignore `.video`/`.videoURL`.
+
 ### JSON Mode & Structured Outputs
 
 Get structured JSON responses using the `generateObject` method on an `AILanguageModel`:

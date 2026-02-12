@@ -431,7 +431,7 @@ private extension AIMessage.Content {
                         return .imageURL(.url(url), detail: .auto)
                     }
                     return nil
-                case .file, .audio:
+                case .file, .audio, .video, .videoURL:
                     // Not supported in legacy format
                     return nil
                 }
