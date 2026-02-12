@@ -31,6 +31,17 @@
 - If you touch UI in `AISDKChat`/`AISDKVision`, include screenshots or screen recordings.
 - Update relevant docs in `docs/` or `Sources/AISDK/docs/` when behavior changes.
 
+## Versioning
+- Follow [Semantic Versioning](https://semver.org/) (semver.org).
+- Tag format: `X.Y.Z` or `X.Y.Z-prerelease` (no `v` prefix -- SPM requires bare semver).
+- CHANGELOG follows [Keep a Changelog](https://keepachangelog.com/) format.
+- `release/1.x` branch: v1 maintenance only. `aisdk-2.0-modernization`: active v2 development.
+
+## CI/CD
+- CI runs `swift build` + `swift test` (macOS) and `xcodebuild build` (iOS Simulator) on PRs.
+- Integration tests auto-skip in CI when API keys are absent (uses `XCTSkip`).
+- Pushing a semver tag triggers the release workflow (build, test, create GitHub Release).
+
 ## Security & Configuration
 - Never commit `.env` files or API keys; keep secrets local and documented in `Tests/env.example`.
 
