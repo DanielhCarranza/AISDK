@@ -2,7 +2,7 @@
 //  AIToolTests.swift
 //  AISDKTests
 //
-//  Tests for the instance-based AITool protocol and registry.
+//  Tests for the instance-based Tool protocol and registry.
 //
 
 import XCTest
@@ -10,21 +10,21 @@ import XCTest
 
 // MARK: - Test Tools
 
-private struct EchoTool: AITool {
+private struct EchoTool: Tool {
     let name = "echo"
     let description = "Echoes back the input message"
 
-    @AIParameter(description: "LegacyMessage to echo")
+    @Parameter(description: "LegacyMessage to echo")
     var message: String = ""
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
-        AIToolResult(content: "Echo: \(message)")
+    func execute() async throws -> ToolResult {
+        ToolResult(content: "Echo: \(message)")
     }
 }
 
-private struct MetadataTool: AITool {
+private struct MetadataTool: Tool {
     struct TestMetadata: ToolMetadata, Equatable {
         let computedValue: Int
         let timestamp: String
@@ -33,21 +33,21 @@ private struct MetadataTool: AITool {
     let name = "metadata_tool"
     let description = "Returns metadata with computed value"
 
-    @AIParameter(description: "Input value")
+    @Parameter(description: "Input value")
     var value: Int = 0
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let metadata = TestMetadata(
             computedValue: value * 2,
             timestamp: "2024-01-01T00:00:00Z"
         )
-        return AIToolResult(content: "Value: \(value)", metadata: metadata)
+        return ToolResult(content: "Value: \(value)", metadata: metadata)
     }
 }
 
-private struct EnumTool: AITool {
+private struct EnumTool: Tool {
     enum Unit: String, Codable, CaseIterable {
         case celsius
         case fahrenheit
@@ -56,13 +56,13 @@ private struct EnumTool: AITool {
     let name = "enum_tool"
     let description = "Uses enum parameters"
 
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: Unit = .celsius
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
-        AIToolResult(content: "Unit: \(unit.rawValue)")
+    func execute() async throws -> ToolResult {
+        ToolResult(content: "Unit: \(unit.rawValue)")
     }
 }
 
@@ -71,7 +71,7 @@ private struct EnumTool: AITool {
 final class AIToolTests: XCTestCase {
 
     func testAIToolResultContentOnly() {
-        let result = AIToolResult(content: "Test content")
+        let result = ToolResult(content: "Test content")
         XCTAssertEqual(result.content, "Test content")
         XCTAssertNil(result.metadata)
         XCTAssertNil(result.artifacts)
@@ -79,7 +79,7 @@ final class AIToolTests: XCTestCase {
 
     func testAIToolResultWithMetadata() {
         let metadata = MetadataTool.TestMetadata(computedValue: 42, timestamp: "now")
-        let result = AIToolResult(content: "Test", metadata: metadata)
+        let result = ToolResult(content: "Test", metadata: metadata)
         XCTAssertEqual(result.content, "Test")
         XCTAssertEqual(result.metadata as? MetadataTool.TestMetadata, metadata)
     }
@@ -97,7 +97,7 @@ final class AIToolTests: XCTestCase {
     }
 
     func testRegistryExecuteByName() async throws {
-        let registry = AIToolRegistry()
+        let registry = ToolRegistry()
         registry.register(EchoTool.self)
 
         let result = try await registry.execute(
@@ -109,7 +109,7 @@ final class AIToolTests: XCTestCase {
     }
 
     func testRegistryExecuteDecodesSnakeCase() async throws {
-        let registry = AIToolRegistry()
+        let registry = ToolRegistry()
         registry.register(EchoTool.self)
 
         let result = try await registry.execute(
@@ -121,7 +121,7 @@ final class AIToolTests: XCTestCase {
     }
 
     func testRegistryIsThreadSafe() async throws {
-        let registry = AIToolRegistry()
+        let registry = ToolRegistry()
 
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<50 {

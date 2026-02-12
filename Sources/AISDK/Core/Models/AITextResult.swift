@@ -14,7 +14,7 @@ public struct AITextResult: Sendable, Equatable {
     public let text: String
 
     /// Tool calls made by the model
-    public let toolCalls: [AIToolCallResult]
+    public let toolCalls: [ToolCallResult]
 
     /// Token usage information
     public let usage: AIUsage
@@ -37,7 +37,7 @@ public struct AITextResult: Sendable, Equatable {
 
     public init(
         text: String,
-        toolCalls: [AIToolCallResult] = [],
+        toolCalls: [ToolCallResult] = [],
         usage: AIUsage = .zero,
         finishReason: AIFinishReason = .stop,
         requestId: String? = nil,

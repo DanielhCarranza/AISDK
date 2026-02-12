@@ -138,7 +138,7 @@ public struct AIStreamMetadata: Sendable {
 // Note: AIStepResult is defined in AIStepResult.swift
 
 /// Tool call result data
-public struct AIToolCallResult: Sendable, Codable, Equatable {
+public struct ToolCallResult: Sendable, Codable, Equatable {
     public let id: String
     public let name: String
     public let arguments: String

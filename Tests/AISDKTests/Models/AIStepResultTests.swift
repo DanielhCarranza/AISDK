@@ -28,7 +28,7 @@ struct AIStepResultTests {
     @Test("Creates result with all parameters")
     func testFullInit() {
         let toolCalls = [
-            AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"NYC\"}")
+            ToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"NYC\"}")
         ]
         let toolResults = [
             AIToolResultData(id: "call-1", result: "{\"temp\":72}", metadata: nil)
@@ -79,8 +79,8 @@ struct AIStepResultTests {
     @Test("Tool calls are preserved")
     func testToolCallsPreserved() {
         let toolCalls = [
-            AIToolCallResult(id: "call-1", name: "search", arguments: "{\"query\":\"weather\"}"),
-            AIToolCallResult(id: "call-2", name: "fetch", arguments: "{\"url\":\"example.com\"}")
+            ToolCallResult(id: "call-1", name: "search", arguments: "{\"query\":\"weather\"}"),
+            ToolCallResult(id: "call-2", name: "fetch", arguments: "{\"url\":\"example.com\"}")
         ]
 
         let result = AIStepResult(
@@ -117,7 +117,7 @@ struct AIStepResultTests {
     @Test("Tool calls match their results")
     func testToolCallsMatchResults() {
         let toolCalls = [
-            AIToolCallResult(id: "call-abc", name: "get_weather", arguments: "{}")
+            ToolCallResult(id: "call-abc", name: "get_weather", arguments: "{}")
         ]
         let toolResults = [
             AIToolResultData(id: "call-abc", result: "72F", metadata: nil)
@@ -161,7 +161,7 @@ struct AIStepResultTests {
         let withTools = AIStepResult(
             stepIndex: 0,
             text: "With tools",
-            toolCalls: [AIToolCallResult(id: "1", name: "test", arguments: "{}")]
+            toolCalls: [ToolCallResult(id: "1", name: "test", arguments: "{}")]
         )
 
         #expect(withoutTools.hasToolCalls == false)
@@ -208,7 +208,7 @@ struct AIStepResultTests {
     @Test("Step result encodes correctly")
     func testStepResultEncoding() throws {
         let toolCalls = [
-            AIToolCallResult(id: "call-1", name: "test", arguments: "{}")
+            ToolCallResult(id: "call-1", name: "test", arguments: "{}")
         ]
         let usage = AIUsage(promptTokens: 10, completionTokens: 5)
         let result = AIStepResult(
@@ -257,7 +257,7 @@ struct AIStepResultTests {
         let original = AIStepResult(
             stepIndex: 3,
             text: "Round trip test",
-            toolCalls: [AIToolCallResult(id: "id-1", name: "tool", arguments: "{\"key\":\"value\"}")],
+            toolCalls: [ToolCallResult(id: "id-1", name: "tool", arguments: "{\"key\":\"value\"}")],
             toolResults: [],
             usage: AIUsage(promptTokens: 50, completionTokens: 25),
             finishReason: .toolCalls
@@ -289,7 +289,7 @@ struct AIStepResultTests {
         let original = AIStepResult(
             stepIndex: 1,
             text: "Got weather data",
-            toolCalls: [AIToolCallResult(id: "result-1", name: "get_weather", arguments: "{}")],
+            toolCalls: [ToolCallResult(id: "result-1", name: "get_weather", arguments: "{}")],
             toolResults: toolResults,
             usage: AIUsage(promptTokens: 30, completionTokens: 15),
             finishReason: .stop

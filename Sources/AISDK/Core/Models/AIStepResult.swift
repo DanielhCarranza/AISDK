@@ -21,7 +21,7 @@ import Foundation
 /// let stepResult = AIStepResult(
 ///     stepIndex: 0,
 ///     text: "Let me search for that information.",
-///     toolCalls: [AIToolCallResult(id: "call-1", name: "search", arguments: "{}")],
+///     toolCalls: [ToolCallResult(id: "call-1", name: "search", arguments: "{}")],
 ///     usage: AIUsage(promptTokens: 100, completionTokens: 50)
 /// )
 ///
@@ -40,7 +40,7 @@ public struct AIStepResult: Sendable, Codable, Equatable {
     public let text: String
 
     /// Tool calls made by the model during this step
-    public let toolCalls: [AIToolCallResult]
+    public let toolCalls: [ToolCallResult]
 
     /// Results from executing tools during this step
     public let toolResults: [AIToolResultData]
@@ -54,7 +54,7 @@ public struct AIStepResult: Sendable, Codable, Equatable {
     public init(
         stepIndex: Int,
         text: String,
-        toolCalls: [AIToolCallResult] = [],
+        toolCalls: [ToolCallResult] = [],
         toolResults: [AIToolResultData] = [],
         usage: AIUsage = .zero,
         finishReason: AIFinishReason = .stop
@@ -123,7 +123,7 @@ extension AIStepResult {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.stepIndex = try container.decode(Int.self, forKey: .stepIndex)
         self.text = try container.decode(String.self, forKey: .text)
-        self.toolCalls = try container.decodeIfPresent([AIToolCallResult].self, forKey: .toolCalls) ?? []
+        self.toolCalls = try container.decodeIfPresent([ToolCallResult].self, forKey: .toolCalls) ?? []
         self.toolResults = try container.decodeIfPresent([AIToolResultData].self, forKey: .toolResults) ?? []
         self.usage = try container.decodeIfPresent(AIUsage.self, forKey: .usage) ?? .zero
 

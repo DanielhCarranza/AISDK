@@ -1,8 +1,8 @@
 //
-//  MockAILanguageModelTests.swift
+//  MockLLMTests.swift
 //  AISDKTests
 //
-//  Tests for MockAILanguageModel
+//  Tests for MockLLM
 //
 
 import XCTest
@@ -31,12 +31,12 @@ struct SimpleTestSchema: SchemaBuilding {
 
 // MARK: - Tests
 
-final class MockAILanguageModelTests: XCTestCase {
+final class MockLLMTests: XCTestCase {
 
     // MARK: - Basic Response Tests
 
     func test_withResponse_returnsConfiguredText() async throws {
-        let mock = MockAILanguageModel.withResponse("Hello, world!")
+        let mock = MockLLM.withResponse("Hello, world!")
 
         let request = AITextRequest(messages: [.user("Hi")])
         let result = try await mock.generateText(request: request)
@@ -47,7 +47,7 @@ final class MockAILanguageModelTests: XCTestCase {
     }
 
     func test_withResponse_tracksRequest() async throws {
-        let mock = MockAILanguageModel.withResponse("Test")
+        let mock = MockLLM.withResponse("Test")
 
         let messages = [AIMessage.user("What is 2+2?")]
         let request = AITextRequest(messages: messages, model: "test-model")
@@ -60,7 +60,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Tool Call Tests
 
     func test_withToolCall_returnsToolCall() async throws {
-        let mock = MockAILanguageModel.withToolCall("get_weather", arguments: "{\"location\":\"Tokyo\"}")
+        let mock = MockLLM.withToolCall("get_weather", arguments: "{\"location\":\"Tokyo\"}")
 
         let request = AITextRequest(messages: [.user("What's the weather?")])
         let result = try await mock.generateText(request: request)
@@ -72,7 +72,7 @@ final class MockAILanguageModelTests: XCTestCase {
     }
 
     func test_withToolCalls_returnsMultipleToolCalls() async throws {
-        let mock = MockAILanguageModel.withToolCalls([
+        let mock = MockLLM.withToolCalls([
             (name: "search", arguments: "{\"query\":\"swift\"}"),
             (name: "calculate", arguments: "{\"expression\":\"2+2\"}")
         ])
@@ -88,7 +88,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Streaming Tests
 
     func test_streamText_emitsEvents() async throws {
-        let mock = MockAILanguageModel.withResponse("Hello world")
+        let mock = MockLLM.withResponse("Hello world")
 
         let request = AITextRequest(messages: [.user("Hi")])
         var events: [AIStreamEvent] = []
@@ -111,7 +111,7 @@ final class MockAILanguageModelTests: XCTestCase {
             .textCompletion("Custom event"),
             .finish(finishReason: .stop, usage: .zero)
         ]
-        let mock = MockAILanguageModel.withStreamEvents(customEvents)
+        let mock = MockLLM.withStreamEvents(customEvents)
 
         let request = AITextRequest(messages: [.user("Hi")])
         var events: [AIStreamEvent] = []
@@ -137,7 +137,7 @@ final class MockAILanguageModelTests: XCTestCase {
 
     func test_failing_throwsConfiguredError() async throws {
         let expectedError = AISDKError.custom("Test error")
-        let mock = MockAILanguageModel.failing(with: expectedError)
+        let mock = MockLLM.failing(with: expectedError)
 
         let request = AITextRequest(messages: [.user("Hi")])
 
@@ -155,7 +155,7 @@ final class MockAILanguageModelTests: XCTestCase {
 
     func test_failing_streamReturnsError() async throws {
         let expectedError = AISDKError.httpError(500, "Server error")
-        let mock = MockAILanguageModel.failing(with: expectedError)
+        let mock = MockLLM.failing(with: expectedError)
 
         let request = AITextRequest(messages: [.user("Hi")])
 
@@ -179,7 +179,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Delay Tests
 
     func test_withSlowResponse_delays() async throws {
-        let mock = MockAILanguageModel.withSlowResponse(delay: .milliseconds(100), response: "Delayed")
+        let mock = MockLLM.withSlowResponse(delay: .milliseconds(100), response: "Delayed")
 
         let request = AITextRequest(messages: [.user("Hi")])
 
@@ -195,7 +195,7 @@ final class MockAILanguageModelTests: XCTestCase {
 
     func test_generateObject_parsesJSONResponse() async throws {
         // Set up mock with raw JSON response
-        let mock = MockAILanguageModel()
+        let mock = MockLLM()
         mock.responseText = "{\"name\":\"test\",\"count\":42}"
 
         // Use SimpleTestSchema which conforms to JSONSchemaModel
@@ -214,7 +214,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Sequential Mock Tests
 
     func test_withSequence_returnsDifferentResponses() async throws {
-        let mock = MockAILanguageModel.withSequence(["First", "Second", "Third"])
+        let mock = MockLLM.withSequence(["First", "Second", "Third"])
 
         let request = AITextRequest(messages: [.user("Hi")])
 
@@ -228,7 +228,7 @@ final class MockAILanguageModelTests: XCTestCase {
     }
 
     func test_withSequence_repeatsLastWhenExhausted() async throws {
-        let mock = MockAILanguageModel.withSequence(["First", "Second"])
+        let mock = MockLLM.withSequence(["First", "Second"])
 
         let request = AITextRequest(messages: [.user("Hi")])
 
@@ -244,7 +244,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Provider Configuration Tests
 
     func test_withProvider_setsProviderID() async throws {
-        let mock = MockAILanguageModel.withProvider("custom-provider")
+        let mock = MockLLM.withProvider("custom-provider")
 
         let request = AITextRequest(messages: [.user("Hi")])
         let result = try await mock.generateText(request: request)
@@ -256,7 +256,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Reset Tests
 
     func test_reset_clearsTrackingState() async throws {
-        let mock = MockAILanguageModel.withResponse("Test")
+        let mock = MockLLM.withResponse("Test")
 
         let request = AITextRequest(messages: [.user("Hi")])
         _ = try await mock.generateText(request: request)
@@ -273,7 +273,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Concurrent Request Tests
 
     func test_concurrentRequests_trackCorrectly() async throws {
-        let mock = MockAILanguageModel.withResponse("Test")
+        let mock = MockLLM.withResponse("Test")
 
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<10 {
@@ -290,7 +290,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - streamObject Tests
 
     func test_streamObject_emitsEvents() async throws {
-        let mock = MockAILanguageModel()
+        let mock = MockLLM()
         mock.responseText = "{\"name\":\"stream-test\",\"count\":99}"
 
         let request = AIObjectRequest<SimpleTestOutput>(
@@ -311,7 +311,7 @@ final class MockAILanguageModelTests: XCTestCase {
     }
 
     func test_streamObject_reassemblesJSON() async throws {
-        let mock = MockAILanguageModel()
+        let mock = MockLLM()
         let expectedJSON = "{\"name\":\"reassembly-test\",\"count\":123}"
         mock.responseText = expectedJSON
 
@@ -334,7 +334,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Empty Sequence Tests
 
     func test_withSequence_emptyReturnsEmptyString() async throws {
-        let mock = MockAILanguageModel.withSequence([])
+        let mock = MockLLM.withSequence([])
 
         let request = AITextRequest(messages: [.user("Hi")])
         let result = try await mock.generateText(request: request)
@@ -347,7 +347,7 @@ final class MockAILanguageModelTests: XCTestCase {
 
     func test_failing_streamEmitsErrorEvent() async throws {
         let expectedError = AISDKError.custom("Stream error")
-        let mock = MockAILanguageModel.failing(with: expectedError)
+        let mock = MockLLM.failing(with: expectedError)
 
         let request = AITextRequest(messages: [.user("Hi")])
 
@@ -367,7 +367,7 @@ final class MockAILanguageModelTests: XCTestCase {
 
     func test_failing_streamObjectEmitsErrorEvent() async throws {
         let expectedError = AISDKError.custom("Object stream error")
-        let mock = MockAILanguageModel.failing(with: expectedError)
+        let mock = MockLLM.failing(with: expectedError)
 
         let request = AIObjectRequest<SimpleTestOutput>(
             messages: [.user("Generate output")],
@@ -391,7 +391,7 @@ final class MockAILanguageModelTests: XCTestCase {
     // MARK: - Tool Call Stream Tests
 
     func test_withToolCall_streamDoesNotEmitEmptyTextCompletion() async throws {
-        let mock = MockAILanguageModel.withToolCall("get_weather", arguments: "{}")
+        let mock = MockLLM.withToolCall("get_weather", arguments: "{}")
 
         let request = AITextRequest(messages: [.user("Get weather")])
 
@@ -417,7 +417,7 @@ final class MockAILanguageModelTests: XCTestCase {
             .textCompletion("Hello"),
             .finish(finishReason: .stop, usage: .zero)
         ]
-        let mock = MockAILanguageModel.withStreamEvents(customEvents)
+        let mock = MockLLM.withStreamEvents(customEvents)
 
         let request = AITextRequest(messages: [.user("Hi")])
 

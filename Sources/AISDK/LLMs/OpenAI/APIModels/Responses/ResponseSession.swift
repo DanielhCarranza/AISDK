@@ -203,8 +203,8 @@ public protocol ToolConvertible {
     func toResponseTool() -> ResponseTool
 }
 
-/// Make existing AITool protocol conform to ToolConvertible
-extension AITool {
+/// Make existing Tool protocol conform to ToolConvertible
+extension Tool {
     public func toResponseTool() -> ResponseTool {
         // Convert Tool instance to ToolFunction and wrap in ResponseTool.function
         let schema = Self.jsonSchema()

@@ -1,5 +1,5 @@
 //
-//  AILanguageModel.swift
+//  LLM.swift
 //  AISDK
 //
 //  Core protocol for unified AI language model interface
@@ -8,9 +8,9 @@
 
 import Foundation
 
-// MARK: - AIMessage (Unified Message Type for AILanguageModel)
+// MARK: - AIMessage (Unified Message Type for LLM)
 
-/// Unified message type for the AILanguageModel protocol
+/// Unified message type for the LLM protocol
 /// This bridges between the new unified interface and existing message types
 public struct AIMessage: Sendable, Codable {
     /// The role of the message sender
@@ -225,12 +225,12 @@ public extension AIMessage {
     }
 }
 
-// MARK: - AILanguageModel Protocol
+// MARK: - LLM Protocol
 
 /// Unified protocol for all AI language model providers
 /// This protocol provides a consistent interface across different LegacyLLM providers
 /// and supports both synchronous and streaming operations.
-public protocol AILanguageModel: Sendable {
+public protocol LLM: Sendable {
     /// The provider name (e.g., "openai", "anthropic", "google")
     var provider: String { get }
 
@@ -263,7 +263,7 @@ public protocol AILanguageModel: Sendable {
 
 // MARK: - Default Implementations
 
-public extension AILanguageModel {
+public extension LLM {
     /// Default implementation for streaming object generation
     /// Collects stream events and attempts to parse the final result
     func generateObject<T: Codable & Sendable>(request: AIObjectRequest<T>) async throws -> AIObjectResult<T> {

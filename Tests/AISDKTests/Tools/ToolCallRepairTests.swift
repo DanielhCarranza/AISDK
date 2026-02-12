@@ -79,8 +79,8 @@ final class ToolCallRepairTests: XCTestCase {
     // MARK: - Repair Result Tests
 
     func test_repairResult_equality_repaired() {
-        let call1 = AIToolCallResult(id: "1", name: "test", arguments: "{}")
-        let call2 = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let call1 = ToolCallResult(id: "1", name: "test", arguments: "{}")
+        let call2 = ToolCallResult(id: "1", name: "test", arguments: "{}")
         XCTAssertEqual(ToolCallRepair.RepairResult.repaired(call1), .repaired(call2))
     }
 
@@ -125,9 +125,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_repair_returns_corrected_arguments() async throws {
         // Mock model that returns corrected JSON
-        let mock = MockAILanguageModel.withResponse(#"{"query": "corrected search"}"#)
+        let mock = MockLLM.withResponse(#"{"query": "corrected search"}"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "call-1",
             name: "search",
             arguments: #"{"qury": "typo"}"#  // Has typo
@@ -148,9 +148,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_repair_accepts_generic_error() async throws {
         // Mock model that returns corrected JSON
-        let mock = MockAILanguageModel.withResponse(#"{"query": "fixed"}"#)
+        let mock = MockLLM.withResponse(#"{"query": "fixed"}"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "call-1",
             name: "search",
             arguments: #"{"broken": true}"#
@@ -171,9 +171,9 @@ final class ToolCallRepairTests: XCTestCase {
     func test_repair_returns_nil_for_same_arguments() async throws {
         // Mock model that returns the same arguments (no fix)
         let sameArgs = #"{"query": "test"}"#
-        let mock = MockAILanguageModel.withResponse(sameArgs)
+        let mock = MockLLM.withResponse(sameArgs)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "call-1",
             name: "search",
             arguments: sameArgs
@@ -191,9 +191,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_repair_returns_nil_for_invalid_json_response() async throws {
         // Mock model that returns invalid JSON
-        let mock = MockAILanguageModel.withResponse("not valid json at all")
+        let mock = MockLLM.withResponse("not valid json at all")
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "call-1",
             name: "search",
             arguments: #"{"query": "test"}"#
@@ -211,9 +211,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_repair_returns_nil_for_json_array_response() async throws {
         // Mock model that returns a JSON array (invalid for tool arguments)
-        let mock = MockAILanguageModel.withResponse(#"["item1", "item2"]"#)
+        let mock = MockLLM.withResponse(#"["item1", "item2"]"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "call-1",
             name: "search",
             arguments: #"{"query": "test"}"#
@@ -231,13 +231,13 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_repair_handles_markdown_code_block_response() async throws {
         // Mock model that returns JSON in markdown code block
-        let mock = MockAILanguageModel.withResponse("""
+        let mock = MockLLM.withResponse("""
         ```json
         {"query": "fixed"}
         ```
         """)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "call-1",
             name: "search",
             arguments: #"{"qury": "broken"}"#
@@ -255,9 +255,9 @@ final class ToolCallRepairTests: XCTestCase {
     }
 
     func test_repair_preserves_request_context() async throws {
-        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+        let mock = MockLLM.withResponse(#"{"fixed": true}"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "1",
             name: "test",
             arguments: #"{"broken": true}"#
@@ -287,9 +287,9 @@ final class ToolCallRepairTests: XCTestCase {
     // MARK: - attemptRepair Tests
 
     func test_attemptRepair_strict_returns_notAttempted() async throws {
-        let mock = MockAILanguageModel.withResponse("{}")
+        let mock = MockLLM.withResponse("{}")
 
-        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let originalCall = ToolCallResult(id: "1", name: "test", arguments: "{}")
         let error = ToolError.invalidParameters("test")
 
         let result = try await ToolCallRepair.attemptRepair(
@@ -304,9 +304,9 @@ final class ToolCallRepairTests: XCTestCase {
     }
 
     func test_attemptRepair_autoRepairOnce_returns_repaired() async throws {
-        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+        let mock = MockLLM.withResponse(#"{"fixed": true}"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "1",
             name: "test",
             arguments: #"{"broken": true}"#
@@ -329,9 +329,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_attemptRepair_autoRepairOnce_returns_failed_when_repair_fails() async throws {
         // Model returns invalid JSON
-        let mock = MockAILanguageModel.withResponse("invalid json")
+        let mock = MockLLM.withResponse("invalid json")
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "1",
             name: "test",
             arguments: #"{"broken": true}"#
@@ -357,15 +357,15 @@ final class ToolCallRepairTests: XCTestCase {
 
         let customStrategy = ToolCallRepair.Strategy.custom { call, _, _ in
             handlerCalled = true
-            return AIToolCallResult(
+            return ToolCallResult(
                 id: call.id,
                 name: call.name,
                 arguments: #"{"custom": "fixed"}"#
             )
         }
 
-        let mock = MockAILanguageModel.withResponse("{}")
-        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let mock = MockLLM.withResponse("{}")
+        let originalCall = ToolCallResult(id: "1", name: "test", arguments: "{}")
         let error = ToolError.invalidParameters("test")
 
         let result = try await ToolCallRepair.attemptRepair(
@@ -388,11 +388,11 @@ final class ToolCallRepairTests: XCTestCase {
 
         let customStrategy = ToolCallRepair.Strategy.custom { call, error, _ in
             receivedError = error
-            return AIToolCallResult(id: call.id, name: call.name, arguments: #"{"fixed": true}"#)
+            return ToolCallResult(id: call.id, name: call.name, arguments: #"{"fixed": true}"#)
         }
 
-        let mock = MockAILanguageModel.withResponse("{}")
-        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let mock = MockLLM.withResponse("{}")
+        let originalCall = ToolCallResult(id: "1", name: "test", arguments: "{}")
         let error = NSError(domain: "test", code: 42, userInfo: nil)
 
         _ = try await ToolCallRepair.attemptRepair(
@@ -411,8 +411,8 @@ final class ToolCallRepairTests: XCTestCase {
             nil
         }
 
-        let mock = MockAILanguageModel.withResponse("{}")
-        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let mock = MockLLM.withResponse("{}")
+        let originalCall = ToolCallResult(id: "1", name: "test", arguments: "{}")
         let error = ToolError.invalidParameters("test")
 
         let result = try await ToolCallRepair.attemptRepair(
@@ -433,9 +433,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_attemptRepair_autoRepairMax_succeeds_on_first_attempt() async throws {
         // Mock returns valid JSON on first call
-        let mock = MockAILanguageModel.withResponse(#"{"fixed": "first"}"#)
+        let mock = MockLLM.withResponse(#"{"fixed": "first"}"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "1",
             name: "test",
             arguments: #"{"original": true}"#
@@ -459,9 +459,9 @@ final class ToolCallRepairTests: XCTestCase {
 
     func test_attemptRepair_autoRepairMax_exhausts_attempts() async throws {
         // Mock always returns invalid JSON
-        let mock = MockAILanguageModel.withResponse("always invalid")
+        let mock = MockLLM.withResponse("always invalid")
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "1",
             name: "test",
             arguments: #"{"original": true}"#
@@ -485,9 +485,9 @@ final class ToolCallRepairTests: XCTestCase {
     }
 
     func test_attemptRepair_autoRepairMax_with_zero_returns_failed() async throws {
-        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+        let mock = MockLLM.withResponse(#"{"fixed": true}"#)
 
-        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let originalCall = ToolCallResult(id: "1", name: "test", arguments: "{}")
         let error = ToolError.invalidParameters("test")
 
         let result = try await ToolCallRepair.attemptRepair(
@@ -506,9 +506,9 @@ final class ToolCallRepairTests: XCTestCase {
     }
 
     func test_attemptRepair_autoRepairMax_with_negative_returns_failed() async throws {
-        let mock = MockAILanguageModel.withResponse(#"{"fixed": true}"#)
+        let mock = MockLLM.withResponse(#"{"fixed": true}"#)
 
-        let originalCall = AIToolCallResult(id: "1", name: "test", arguments: "{}")
+        let originalCall = ToolCallResult(id: "1", name: "test", arguments: "{}")
         let error = ToolError.invalidParameters("test")
 
         let result = try await ToolCallRepair.attemptRepair(
@@ -529,9 +529,9 @@ final class ToolCallRepairTests: XCTestCase {
     // MARK: - Integration with Tool Schema
 
     func test_repair_uses_tool_schema_when_provided() async throws {
-        let mock = MockAILanguageModel.withResponse(#"{"location": "New York"}"#)
+        let mock = MockLLM.withResponse(#"{"location": "New York"}"#)
 
-        let originalCall = AIToolCallResult(
+        let originalCall = ToolCallResult(
             id: "1",
             name: "get_weather",
             arguments: #"{"loc": "NY"}"#

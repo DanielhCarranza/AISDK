@@ -22,7 +22,7 @@ public class ExperimentalResearchAgent {
     
     private let model: LLMModelProtocol
     public let llm: LegacyLLM
-    private var tools: [AITool.Type]
+    private var tools: [Tool.Type]
     public var state: LegacyAgentState = .idle
     
     public var messages: [LegacyChatMessage] = []
@@ -58,7 +58,7 @@ public class ExperimentalResearchAgent {
     ///   - instructions: Optional system instructions for the agent's behavior
     public init(
         llm: LegacyLLM,
-        tools: [AITool.Type] = [],
+        tools: [Tool.Type] = [],
         messages: [LegacyChatMessage] = [],
         instructions: String? = nil
     ) {
@@ -75,8 +75,8 @@ public class ExperimentalResearchAgent {
             self.model = OpenAIModels.gpt4o
         }
         
-        // Register tools with AIToolRegistry
-        AIToolRegistry.registerAll(tools: tools)
+        // Register tools with ToolRegistry
+        ToolRegistry.registerAll(tools: tools)
         
         // Add system message if instructions are provided
         if let instructions = instructions {
@@ -94,7 +94,7 @@ public class ExperimentalResearchAgent {
     /// - Throws: AgentError if initialization fails
     init(
         model: LLMModel,
-        tools: [AITool.Type] = [],
+        tools: [Tool.Type] = [],
         messages: [LegacyChatMessage] = [], 
         instructions: String? = nil
     ) {
@@ -105,8 +105,8 @@ public class ExperimentalResearchAgent {
         // Convert legacy model to protocol
         self.model = model.toProtocol()
         
-        // Register tools with AIToolRegistry
-        AIToolRegistry.registerAll(tools: tools)
+        // Register tools with ToolRegistry
+        ToolRegistry.registerAll(tools: tools)
         
         // Initialize appropriate LegacyLLM based on model
         self.llm = OpenAIProvider(apiKey: model.apiKey ?? " ")
@@ -645,8 +645,8 @@ public class ExperimentalResearchAgent {
                 throw error
             }
             
-            // Use AIToolRegistry instead of direct array search
-            guard let toolType = AIToolRegistry.toolType(forName: function.name) else {
+            // Use ToolRegistry instead of direct array search
+            guard let toolType = ToolRegistry.toolType(forName: function.name) else {
                 let error = AgentError.toolExecutionFailed("Tool not found: \(function.name)")
                 setState(.error(error))
                 throw error
@@ -759,8 +759,8 @@ public class ExperimentalResearchAgent {
     /// - Returns: A tuple containing the message and optional metadata
     /// - Throws: Errors if tool execution fails
     private func executeToolCall(name: String, arguments: String, toolCallId: String) async throws -> (LegacyChatMessage, ToolMetadata?) {
-        // Use AIToolRegistry instead of direct array search
-        guard let toolType = AIToolRegistry.toolType(forName: name) else {
+        // Use ToolRegistry instead of direct array search
+        guard let toolType = ToolRegistry.toolType(forName: name) else {
             let error = AgentError.toolExecutionFailed("Tool not found: \(name)")
             setState(.error(error))
             throw error

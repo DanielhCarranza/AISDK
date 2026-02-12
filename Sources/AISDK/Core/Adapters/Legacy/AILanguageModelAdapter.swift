@@ -2,7 +2,7 @@
 //  AILanguageModelAdapter.swift
 //  AISDK
 //
-//  Adapter that wraps the legacy LegacyLLM protocol to conform to AILanguageModel
+//  Adapter that wraps the legacy LegacyLLM protocol to conform to LLM
 //  Provides backward compatibility for existing consumers
 //
 
@@ -10,7 +10,7 @@ import Foundation
 
 // MARK: - AILanguageModelAdapter
 
-/// Adapter that wraps an existing LegacyLLM implementation to conform to the new AILanguageModel protocol.
+/// Adapter that wraps an existing LegacyLLM implementation to conform to the new LLM protocol.
 /// This enables gradual migration from the legacy LegacyLLM protocol to the new unified interface.
 ///
 /// Usage:
@@ -24,7 +24,7 @@ import Foundation
 /// )
 /// let result = try await adapter.generateText(request: request)
 /// ```
-public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable {
+public final class AILanguageModelAdapter: LLM, @unchecked Sendable {
     // MARK: - Properties
 
     /// The wrapped legacy LegacyLLM instance
@@ -65,7 +65,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         self.defaultModel = defaultModel ?? modelId
     }
 
-    // MARK: - AILanguageModel Implementation
+    // MARK: - LLM Implementation
 
     public func generateText(request: AITextRequest) async throws -> AITextResult {
         // Validate provider access based on sensitivity and allowedProviders
@@ -328,7 +328,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
 
         let text = choice.message.content ?? ""
         let toolCalls = (choice.message.toolCalls ?? []).map { call in
-            AIToolCallResult(
+            ToolCallResult(
                 id: call.id,
                 name: call.function?.name ?? "",
                 arguments: call.function?.arguments ?? ""

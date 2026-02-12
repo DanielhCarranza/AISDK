@@ -2,7 +2,7 @@
 //  MCPIntegrationTests.swift
 //  AISDK
 //
-//  Integration tests for MCP (Model Context Protocol) support in AIAgentActor.
+//  Integration tests for MCP (Model Context Protocol) support in Agent.
 //
 //  These tests verify the complete MCP flow:
 //  1. LegacyAgent discovers tools from MCP server
@@ -20,17 +20,17 @@ import XCTest
 // MARK: - Test Tool for Integration Tests
 
 /// Simple echo tool for testing native + MCP tool combinations
-private struct TestEchoTool: AITool {
+private struct TestEchoTool: Tool {
     let name = "echo"
     let description = "Echoes back the input"
 
-    @AIParameter(description: "LegacyMessage to echo")
+    @Parameter(description: "LegacyMessage to echo")
     var message: String = ""
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
-        AIToolResult(content: "Echo: \(message)")
+    func execute() async throws -> ToolResult {
+        ToolResult(content: "Echo: \(message)")
     }
 }
 
@@ -320,11 +320,11 @@ final class MCPIntegrationTests: XCTestCase {
         XCTAssertEqual(schema.serverLabel, "weather-api")
     }
 
-    // MARK: - AIAgentActor with MCP Tests
+    // MARK: - Agent with MCP Tests
 
     func testAgentWithMCPToolRouting() async throws {
         // Create a mock model that will request an MCP tool call
-        let model = MockAILanguageModel.withToolCall(
+        let model = MockLLM.withToolCall(
             "mcp__filesystem__read_file",
             arguments: "{\"path\": \"/test/file.txt\"}"
         )
@@ -352,7 +352,7 @@ final class MCPIntegrationTests: XCTestCase {
         )
 
         // Create agent with MCP configuration
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [],
             mcpServers: [mcpConfig],
@@ -395,7 +395,7 @@ final class MCPIntegrationTests: XCTestCase {
 
     func testMCPApprovalFlow() async throws {
         // Test that approval handler is called for tools requiring approval
-        let model = MockAILanguageModel.withResponse("Test response")
+        let model = MockLLM.withResponse("Test response")
 
         let mcpConfig = MCPServerConfiguration(
             serverLabel: "dangerous-tools",
@@ -403,7 +403,7 @@ final class MCPIntegrationTests: XCTestCase {
             requireApproval: .always
         )
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             mcpServers: [mcpConfig]
         )
@@ -544,7 +544,7 @@ final class MCPIntegrationTests: XCTestCase {
     }
 
     func testCombinedNativeAndMCPTools() async throws {
-        // Test that native AITool and MCP tools are combined correctly
+        // Test that native Tool and MCP tools are combined correctly
 
         // Create MCP tools
         let mcpTools = [

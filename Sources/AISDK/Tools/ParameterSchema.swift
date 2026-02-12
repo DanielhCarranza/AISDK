@@ -1,8 +1,8 @@
 //
-//  AIParameter.swift
+//  ParameterSchema.swift
 //  AISDK
 //
-//  Validation helpers and schema generation for @AIParameter/@Parameter.
+//  Validation helpers and schema generation for @Parameter.
 //
 
 import Foundation
@@ -183,13 +183,6 @@ public protocol AIParameterInfo: Sendable {
     var jsonTypeName: String { get }
 }
 
-// MARK: - AIParameter Alias
-
-/// `@AIParameter` is a convenience alias for `@Parameter`.
-///
-/// Both wrappers share the same behavior. Prefer `@AIParameter` for new tools.
-public typealias AIParameter<Value: Codable> = Parameter<Value>
-
 // MARK: - Parameter Conformance
 
 extension Parameter: AIParameterInfo {
@@ -272,7 +265,7 @@ private func inferJSONTypeFromName(_ typeName: String) -> String {
 /// Protocol for types that can provide their parameter schema.
 ///
 /// Implement this protocol on your Arguments type to enable automatic
-/// schema generation from @AIParameter properties.
+/// schema generation from @Parameter properties.
 public protocol AIParameterSchema {
     /// The parameter schema entries for this type.
     static var parameterSchemaInfo: [AIParameterSchemaEntry] { get }

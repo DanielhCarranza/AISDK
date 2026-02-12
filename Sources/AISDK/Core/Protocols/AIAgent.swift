@@ -30,7 +30,7 @@ public protocol AIAgent: Sendable {
     var tools: [ToolSchema] { get }
 
     /// The underlying language model
-    var model: AILanguageModel { get }
+    var model: LLM { get }
 
     /// Send a message and get a response (non-streaming)
     /// - Parameter message: The user's message
@@ -114,7 +114,7 @@ public struct AIAgentResponse: Sendable {
     public let text: String
 
     /// Tool calls made during processing
-    public let toolCalls: [AIToolCallResult]
+    public let toolCalls: [ToolCallResult]
 
     /// Tool results from executed tools
     public let toolResults: [AIToolResultData]
@@ -130,7 +130,7 @@ public struct AIAgentResponse: Sendable {
 
     public init(
         text: String,
-        toolCalls: [AIToolCallResult] = [],
+        toolCalls: [ToolCallResult] = [],
         toolResults: [AIToolResultData] = [],
         messages: [AIMessage] = [],
         usage: AIUsage = .zero,
@@ -201,7 +201,7 @@ public enum AIAgentEvent: Sendable {
 /// Configuration options for creating an AI agent
 public struct AIAgentConfiguration: Sendable {
     /// The language model to use
-    public let model: AILanguageModel
+    public let model: LLM
 
     /// Available tools
     public let tools: [ToolSchema]
@@ -222,7 +222,7 @@ public struct AIAgentConfiguration: Sendable {
     public let name: String?
 
     public init(
-        model: AILanguageModel,
+        model: LLM,
         tools: [ToolSchema] = [],
         instructions: String? = nil,
         initialMessages: [AIMessage] = [],

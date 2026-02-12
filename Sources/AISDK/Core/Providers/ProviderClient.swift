@@ -14,7 +14,7 @@ import Foundation
 ///
 /// This protocol abstracts the communication layer between the routing system
 /// and individual AI providers (OpenRouter, LiteLLM, OpenAI, Anthropic, etc.).
-/// Unlike `AILanguageModel` which provides high-level semantics, `ProviderClient`
+/// Unlike `LLM` which provides high-level semantics, `ProviderClient`
 /// focuses on the raw request/response mechanics.
 ///
 /// ## Design Rationale
@@ -589,7 +589,7 @@ public extension ProviderResponse {
     func toAITextResult() -> AITextResult {
         AITextResult(
             text: content,
-            toolCalls: toolCalls.map { AIToolCallResult(id: $0.id, name: $0.name, arguments: $0.arguments) },
+            toolCalls: toolCalls.map { ToolCallResult(id: $0.id, name: $0.name, arguments: $0.arguments) },
             usage: usage?.toAIUsage() ?? .zero,
             finishReason: finishReason.toAIFinishReason(),
             requestId: id,
@@ -660,7 +660,7 @@ public extension ProviderStreamEvent {
 public extension AITextRequest {
     /// Convert to ProviderRequest for the transport layer
     ///
-    /// Note: AITool schemas are converted to ProviderJSONValue for provider requests.
+    /// Note: Tool schemas are converted to ProviderJSONValue for provider requests.
     ///
     /// - Parameters:
     ///   - modelId: Fallback model ID if request.model is nil

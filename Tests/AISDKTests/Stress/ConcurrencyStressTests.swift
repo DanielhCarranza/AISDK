@@ -117,7 +117,7 @@ actor TestCircuitBreakerDelegateActor: CircuitBreakerDelegate {
 // MARK: - Simple Mock for Stress Testing
 
 /// Simple inline mock language model for stress tests
-private final class StressTestMockModel: AILanguageModel, @unchecked Sendable {
+private final class StressTestMockModel: LLM, @unchecked Sendable {
     let provider = "stress-test"
     let modelId = "stress-model"
     let capabilities: LLMCapabilities = []
@@ -161,7 +161,7 @@ private final class StressTestMockModel: AILanguageModel, @unchecked Sendable {
 // MARK: - Slow Streaming Mock
 
 /// Mock language model that streams slowly to allow cancellation testing
-private final class SlowStreamingMockModel: AILanguageModel, @unchecked Sendable {
+private final class SlowStreamingMockModel: LLM, @unchecked Sendable {
     let provider = "slow-stream"
     let modelId = "slow-model"
     let capabilities: LLMCapabilities = []
@@ -235,7 +235,7 @@ final class ConcurrencyStressTests: XCTestCase {
             for i in 0..<concurrentOperations {
                 group.addTask {
                     let model = StressTestMockModel()
-                    let agent = AIAgentActor(model: model, tools: [])
+                    let agent = Agent(model: model, tools: [])
 
                     do {
                         let result = try await agent.execute(messages: [
@@ -618,7 +618,7 @@ final class ConcurrencyStressTests: XCTestCase {
             for i in 0..<25 {
                 group.addTask {
                     let model = StressTestMockModel()
-                    let agent = AIAgentActor(model: model, tools: [])
+                    let agent = Agent(model: model, tools: [])
                     do {
                         _ = try await agent.execute(messages: [.user("LegacyAgent \(i)")])
                         metrics.recordCompletion()

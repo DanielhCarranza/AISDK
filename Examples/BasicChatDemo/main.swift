@@ -79,7 +79,7 @@ struct BasicChatDemo {
             await testAnthropicGenerateObject(provider: anthropicProvider)
         }
         
-        // Test 5: AITool Calling Tests
+        // Test 5: Tool Calling Tests
         await testDirectToolCalls()
         await testToolWithLLM(provider: openAIProvider, providerName: "OpenAI")
         await testAgentWithTools(provider: openAIProvider)
@@ -615,7 +615,7 @@ func testGenerateObjectMethod(provider: LegacyLLM, providerName: String) async {
 // MARK: - Tool Testing Functions (Phase 3)
 
 // Demo tools for testing
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
     
@@ -624,15 +624,15 @@ struct WeatherTool: AITool {
         case fahrenheit
     }
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
     
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
@@ -642,18 +642,18 @@ struct WeatherTool: AITool {
         let conditions = ["sunny", "partly cloudy", "cloudy", "light rain"]
         let condition = conditions.randomElement()!
         
-        return AIToolResult(content: "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)")
+        return ToolResult(content: "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)")
     }
 }
 
-struct CalculatorTool: AITool {
+struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform basic arithmetic calculations"
     
-    @AIParameter(description: "First number")
+    @Parameter(description: "First number")
     var a: Double = 0.0
     
-    @AIParameter(description: "Second number")
+    @Parameter(description: "Second number")
     var b: Double = 0.0
     
     enum Operation: String, Codable, CaseIterable {
@@ -663,12 +663,12 @@ struct CalculatorTool: AITool {
         case divide = "/"
     }
 
-    @AIParameter(description: "Operation")
+    @Parameter(description: "Operation")
     var operation: Operation = .plus
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
         case .plus: result = a + b
@@ -678,7 +678,7 @@ struct CalculatorTool: AITool {
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
         }
-        return AIToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
+        return ToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 
@@ -686,7 +686,7 @@ func testDirectToolCalls() async {
     print("\n🔧 Testing Direct Tool Calls...")
     
     // Register tools
-    AIToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
+    ToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
     
     // Test Weather Tool
     do {

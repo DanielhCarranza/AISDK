@@ -2,7 +2,7 @@
 //  AIParameterTests.swift
 //  AISDKTests
 //
-//  Tests for the @AIParameter property wrapper and schema generation.
+//  Tests for the @Parameter property wrapper and schema generation.
 //
 
 import XCTest
@@ -14,7 +14,7 @@ final class AIParameterTests: XCTestCase {
 
     func testBasicParameter() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "A test string")
+            @Parameter(description: "A test string")
             var testString: String = ""
         }
 
@@ -27,7 +27,7 @@ final class AIParameterTests: XCTestCase {
 
     func testParameterWithDefaultValue() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Temperature unit")
+            @Parameter(description: "Temperature unit")
             var unit: String = "celsius"
         }
 
@@ -37,7 +37,7 @@ final class AIParameterTests: XCTestCase {
 
     func testParameterWithEnumValidation() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(
+            @Parameter(
                 description: "Temperature unit",
                 validation: .enumOf("celsius", "fahrenheit", "kelvin")
             )
@@ -50,7 +50,7 @@ final class AIParameterTests: XCTestCase {
 
     func testParameterWithRangeValidation() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(
+            @Parameter(
                 description: "Number of results",
                 validation: .range(min: 1, max: 100)
             )
@@ -64,7 +64,7 @@ final class AIParameterTests: XCTestCase {
 
     func testParameterWithLengthValidation() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(
+            @Parameter(
                 description: "Username",
                 validation: .length(min: 3, max: 20)
             )
@@ -78,7 +78,7 @@ final class AIParameterTests: XCTestCase {
 
     func testParameterWithPatternValidation() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(
+            @Parameter(
                 description: "Email address",
                 validation: .matching("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
             )
@@ -93,7 +93,7 @@ final class AIParameterTests: XCTestCase {
 
     func testStringTypeInference() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Test")
+            @Parameter(description: "Test")
             var value: String = ""
         }
 
@@ -103,7 +103,7 @@ final class AIParameterTests: XCTestCase {
 
     func testIntegerTypeInference() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Test")
+            @Parameter(description: "Test")
             var value: Int = 0
         }
 
@@ -113,7 +113,7 @@ final class AIParameterTests: XCTestCase {
 
     func testNumberTypeInference() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Test")
+            @Parameter(description: "Test")
             var value: Double = 0.0
         }
 
@@ -123,7 +123,7 @@ final class AIParameterTests: XCTestCase {
 
     func testBooleanTypeInference() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Test")
+            @Parameter(description: "Test")
             var value: Bool = false
         }
 
@@ -135,10 +135,10 @@ final class AIParameterTests: XCTestCase {
 
     func testCodableRoundtrip() throws {
         struct TestArgs: Codable, Sendable, Equatable {
-            @AIParameter(description: "Location")
+            @Parameter(description: "Location")
             var location: String = ""
 
-            @AIParameter(description: "Unit")
+            @Parameter(description: "Unit")
             var unit: String = "celsius"
 
             static func == (lhs: TestArgs, rhs: TestArgs) -> Bool {
@@ -158,10 +158,10 @@ final class AIParameterTests: XCTestCase {
 
     func testDecodingFromJSON() throws {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Location")
+            @Parameter(description: "Location")
             var location: String = ""
 
-            @AIParameter(description: "Unit")
+            @Parameter(description: "Unit")
             var unit: String = "celsius"
         }
 
@@ -178,7 +178,7 @@ final class AIParameterTests: XCTestCase {
 
     func testSchemaGenerationBasicWithInstance() {
         struct WeatherArgs: Codable, Sendable {
-            @AIParameter(description: "The city name")
+            @Parameter(description: "The city name")
             var location: String = ""
         }
 
@@ -199,7 +199,7 @@ final class AIParameterTests: XCTestCase {
 
     func testSchemaGenerationWithProtocol() {
         struct WeatherArgs: Codable, Sendable, AIParameterSchema {
-            @AIParameter(description: "The city name")
+            @Parameter(description: "The city name")
             var location: String = ""
 
             static var parameterSchemaInfo: [AIParameterSchemaEntry] {
@@ -229,13 +229,13 @@ final class AIParameterTests: XCTestCase {
 
     func testSchemaGenerationWithValidation() {
         struct SearchArgs: Codable, Sendable {
-            @AIParameter(
+            @Parameter(
                 description: "Number of results",
                 validation: .range(min: 1, max: 100)
             )
             var count: Int = 10
 
-            @AIParameter(
+            @Parameter(
                 description: "Sort order",
                 validation: .enumOf("asc", "desc")
             )
@@ -261,10 +261,10 @@ final class AIParameterTests: XCTestCase {
 
     func testSnakeCaseConversion() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "User name")
+            @Parameter(description: "User name")
             var userName: String = ""
 
-            @AIParameter(description: "Max results")
+            @Parameter(description: "Max results")
             var maxResultCount: Int = 10
         }
 
@@ -323,7 +323,7 @@ final class AIParameterTests: XCTestCase {
 
     func testRequiredParameterInference() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Required field")
+            @Parameter(description: "Required field")
             var requiredField: String = ""
         }
 
@@ -333,7 +333,7 @@ final class AIParameterTests: XCTestCase {
 
     func testExplicitRequiredFlag() {
         struct TestArgs: Codable, Sendable {
-            @AIParameter(description: "Optional field", required: false)
+            @Parameter(description: "Optional field", required: false)
             var optionalField: String = ""
         }
 
@@ -378,10 +378,10 @@ final class AIParameterTests: XCTestCase {
     // MARK: - Equatable Tests
 
     func testParameterEquatable() {
-        @AIParameter(description: "Test")
+        @Parameter(description: "Test")
         var param1: String = "value"
 
-        @AIParameter(description: "Test")
+        @Parameter(description: "Test")
         var param2: String = "value"
 
         XCTAssertEqual($param1, $param2)

@@ -112,7 +112,7 @@ final class StreamMemoryTests: XCTestCase {
         // Create scope for agent
         do {
             let model = MemoryTestMockModel()
-            let agent = AIAgentActor(model: model, tools: [])
+            let agent = Agent(model: model, tools: [])
 
             // Store weak reference as AnyObject
             weakAgentRef = WeakRef(agent as AnyObject)
@@ -194,7 +194,7 @@ final class StreamMemoryTests: XCTestCase {
         for _ in 0..<iterations {
             autoreleasepool {
                 let model = MemoryTestMockModel()
-                let agent = AIAgentActor(model: model, tools: [])
+                let agent = Agent(model: model, tools: [])
                 weakRefs.append(WeakRef(agent as AnyObject))
 
                 Task {
@@ -240,7 +240,7 @@ final class StreamMemoryTests: XCTestCase {
             for i in 0..<iterations {
                 group.addTask {
                     let model = MemoryTestMockModel()
-                    let agent = AIAgentActor(model: model, tools: [])
+                    let agent = Agent(model: model, tools: [])
 
                     do {
                         var eventCount = 0
@@ -343,7 +343,7 @@ private final class WeakRef<T: AnyObject> {
 // MARK: - Memory Test Mock Model
 
 /// Simple mock model for memory testing
-private final class MemoryTestMockModel: AILanguageModel, @unchecked Sendable {
+private final class MemoryTestMockModel: LLM, @unchecked Sendable {
     let provider = "memory-test"
     let modelId = "memory-model"
     let capabilities: LLMCapabilities = []
@@ -377,7 +377,7 @@ private final class MemoryTestMockModel: AILanguageModel, @unchecked Sendable {
 // MARK: - Failing Memory Test Mock Model
 
 /// Mock model that always fails for error path testing
-private final class FailingMemoryTestMockModel: AILanguageModel, @unchecked Sendable {
+private final class FailingMemoryTestMockModel: LLM, @unchecked Sendable {
     let provider = "failing-memory-test"
     let modelId = "failing-memory-model"
     let capabilities: LLMCapabilities = []

@@ -28,7 +28,7 @@ struct AITextResultTests {
     @Test("Creates result with all parameters")
     func testFullInit() {
         let toolCalls = [
-            AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"NYC\"}")
+            ToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"NYC\"}")
         ]
         let usage = AIUsage(promptTokens: 100, completionTokens: 50)
 
@@ -60,7 +60,7 @@ struct AITextResultTests {
         let withoutTools = AITextResult(text: "Hello")
         let withTools = AITextResult(
             text: "Let me check that",
-            toolCalls: [AIToolCallResult(id: "1", name: "search", arguments: "{}")]
+            toolCalls: [ToolCallResult(id: "1", name: "search", arguments: "{}")]
         )
 
         #expect(withoutTools.hasToolCalls == false)

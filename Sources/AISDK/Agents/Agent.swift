@@ -1,5 +1,5 @@
 //
-//  AIAgentActor.swift
+//  Agent.swift
 //  AISDK
 //
 //  Actor-based agent with full isolation and observable state
@@ -8,7 +8,7 @@
 
 import Foundation
 
-// MARK: - AIAgentActor
+// MARK: - Agent
 
 /// Actor-based agent with full isolation and observable state for UI binding.
 ///
@@ -23,7 +23,7 @@ import Foundation
 ///
 /// ## Usage
 /// ```swift
-/// let agent = AIAgentActor(
+/// let agent = Agent(
 ///     model: myModel,
 ///     tools: [SearchTool.self, CalculatorTool.self],
 ///     instructions: "You are a helpful assistant."
@@ -40,8 +40,8 @@ import Foundation
 /// ```
 ///
 /// - Note: There is also a `protocol AIAgent` that defines the unified agent interface.
-///   This actor (`AIAgentActor`) is the concrete actor-based implementation.
-public actor AIAgentActor {
+///   This actor (`Agent`) is the concrete actor-based implementation.
+public actor Agent {
     // MARK: - Request Options
 
     /// Request-level options applied to each model call
@@ -85,10 +85,10 @@ public actor AIAgentActor {
     // MARK: - Configuration (immutable after init)
 
     /// The language model to use for generation
-    private let model: any AILanguageModel
+    private let model: any LLM
 
     /// Available tool types for this agent
-    private let tools: [AITool.Type]
+    private let tools: [Tool.Type]
 
     /// MCP server configurations for external tool discovery
     private let mcpServers: [MCPServerConfiguration]
@@ -195,7 +195,7 @@ public actor AIAgentActor {
     /// to prevent collisions with native tools.
     ///
     /// ```swift
-    /// let agent = AIAgentActor(
+    /// let agent = Agent(
     ///     model: myModel,
     ///     tools: [SearchTool.self],
     ///     mcpServers: [
@@ -208,8 +208,8 @@ public actor AIAgentActor {
     /// )
     /// ```
     public init(
-        model: any AILanguageModel,
-        tools: [AITool.Type] = [],
+        model: any LLM,
+        tools: [Tool.Type] = [],
         mcpServers: [MCPServerConfiguration] = [],
         skillConfiguration: SkillConfiguration = .default,
         instructions: String? = nil,
@@ -245,7 +245,7 @@ public actor AIAgentActor {
     ///
     /// - Parameter messages: The initial messages for the conversation
     /// - Returns: The result of the agent execution
-    /// - Throws: AIAgentActorError if execution fails
+    /// - Throws: AgentError if execution fails
     public func execute(messages: [AIMessage]) async throws -> AIAgentResult {
         let operation = AIOperation(messages: messages)
         operationQueue.append(operation)
@@ -411,7 +411,7 @@ public actor AIAgentActor {
 
             // Stream the response
             var stepText = ""
-            var toolCalls: [AIToolCallResult] = []
+            var toolCalls: [ToolCallResult] = []
             var toolCallBuilders: [String: ToolCallBuilder] = [:]
             var stepUsage = AIUsage.zero
             var finishReason: AIFinishReason = .unknown
@@ -437,7 +437,7 @@ public actor AIAgentActor {
 
                     case .toolCall(let id, let name, let arguments),
                          .toolCallFinish(let id, let name, let arguments):
-                        let toolCall = AIToolCallResult(id: id, name: name, arguments: arguments)
+                        let toolCall = ToolCallResult(id: id, name: name, arguments: arguments)
                         toolCalls.append(toolCall)
                         continuation.yield(.toolCall(id: id, name: name, arguments: arguments))
 
@@ -788,7 +788,7 @@ public actor AIAgentActor {
     ///
     /// - Parameter toolCall: The tool call to execute
     /// - Returns: The tool result
-    private func executeToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
+    private func executeToolCall(_ toolCall: ToolCallResult) async throws -> ToolResult {
         // Check if this is an MCP tool (namespaced with mcp__serverLabel__toolName)
         if toolCall.name.hasPrefix("mcp__") {
             return try await executeMCPToolCall(toolCall)
@@ -798,8 +798,8 @@ public actor AIAgentActor {
         return try await executeNativeToolCall(toolCall)
     }
 
-    /// Execute a native AITool
-    private func executeNativeToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
+    /// Execute a native Tool
+    private func executeNativeToolCall(_ toolCall: ToolCallResult) async throws -> ToolResult {
         // Find tool type by name
         guard let toolType = tools.first(where: { $0.init().name == toolCall.name }) else {
             throw AISDKErrorV2.toolNotFound(toolCall.name)
@@ -808,7 +808,7 @@ public actor AIAgentActor {
         // Create and configure tool instance
         let argumentsData = toolCall.arguments.data(using: .utf8) ?? Data()
 
-        let configuredTool: AITool
+        let configuredTool: Tool
         do {
             var tool = toolType.init()
             configuredTool = try tool.validateAndSetParameters(argumentsData)
@@ -831,7 +831,7 @@ public actor AIAgentActor {
     }
 
     /// Execute an MCP tool call
-    private func executeMCPToolCall(_ toolCall: AIToolCallResult) async throws -> AIToolResult {
+    private func executeMCPToolCall(_ toolCall: ToolCallResult) async throws -> ToolResult {
         // Parse the namespaced tool name: mcp__serverLabel__toolName
         let components = toolCall.name.components(separatedBy: "__")
         guard components.count >= 3,
@@ -887,7 +887,7 @@ public actor AIAgentActor {
             try await self.mcpClient.callTool(server: server, name: toolName, arguments: arguments)
         }
 
-        // Convert MCP result to AIToolResult
+        // Convert MCP result to ToolResult
         if result.isError {
             throw AISDKErrorV2.toolExecutionFailed(
                 tool: toolCall.name,
@@ -896,7 +896,7 @@ public actor AIAgentActor {
         }
 
         // Return result (metadata is nil for MCP tools - protocol doesn't define metadata format)
-        return AIToolResult(content: result.textContent)
+        return ToolResult(content: result.textContent)
     }
 
     /// Parse JSON string arguments to AIProxyJSONValue dictionary
@@ -1062,7 +1062,7 @@ public actor AIAgentActor {
     /// Build combined tool schemas from native tools and MCP tools.
     ///
     /// This method returns an array of `ToolSchema` that can be passed to the
-    /// language model. Native tools are converted from their `AITool.Type` definitions,
+    /// language model. Native tools are converted from their `Tool.Type` definitions,
     /// while MCP tools are converted from their `MCPToolSchema` definitions.
     ///
     /// - Returns: Array of tool schemas for the language model, or nil if no tools
@@ -1561,10 +1561,10 @@ private final class ToolCallBuilder: @unchecked Sendable {
         lock.unlock()
     }
 
-    func build() -> AIToolCallResult {
+    func build() -> ToolCallResult {
         lock.lock()
         let args = arguments
         lock.unlock()
-        return AIToolCallResult(id: id, name: name, arguments: args)
+        return ToolCallResult(id: id, name: name, arguments: args)
     }
 }
