@@ -2,15 +2,15 @@
 //  AIMessage.swift
 //  AISDK
 //
-//  Universal Message System for AI
-//  Provider-agnostic message format that converts to specific LLM provider formats
+//  Universal LegacyMessage System for AI
+//  Provider-agnostic message format that converts to specific LegacyLLM provider formats
 //
 
 import Foundation
 
-// MARK: - Universal Message
+// MARK: - Universal LegacyMessage
 
-/// Universal message that works across all LLM providers
+/// Universal message that works across all LegacyLLM providers
 public struct AIInputMessage {
     public let role: AIMessageRole
     public let content: [AIContentPart]

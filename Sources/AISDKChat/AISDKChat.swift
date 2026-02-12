@@ -11,5 +11,5 @@ import AISDK
 // MARK: - Module Exports
 public typealias AIChatManager = AISDKChat.AIChatManager
 public typealias ChatCompanionView = AISDKChat.ChatCompanionView
-public typealias ChatMessage = AISDKChat.ChatMessage
+public typealias LegacyChatMessage = AISDKChat.LegacyChatMessage
 public typealias ChatSession = AISDKChat.ChatSession

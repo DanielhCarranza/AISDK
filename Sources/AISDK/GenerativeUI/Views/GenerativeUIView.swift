@@ -3,7 +3,7 @@
 //  AISDK
 //
 //  Main SwiftUI view for rendering generative UI from UITree data
-//  Implements the json-render pattern for LLM-generated interfaces
+//  Implements the json-render pattern for LegacyLLM-generated interfaces
 //
 
 #if canImport(SwiftUI)
@@ -45,7 +45,7 @@ public struct PropsDecoderConfiguration: Sendable {
 
 // MARK: - GenerativeUIView
 
-/// Main SwiftUI view for rendering LLM-generated UI from a UITree
+/// Main SwiftUI view for rendering LegacyLLM-generated UI from a UITree
 ///
 /// `GenerativeUIView` is the top-level view that renders a complete `UITree`
 /// structure into native SwiftUI views. It connects the json-render pattern
@@ -79,7 +79,7 @@ public struct PropsDecoderConfiguration: Sendable {
 ///
 /// ## Security
 /// The default initializer uses `UIComponentRegistry.default` which allows all
-/// actions (pass-through mode). For production use with LLM-generated UI, use
+/// actions (pass-through mode). For production use with LegacyLLM-generated UI, use
 /// `GenerativeUIView.secure(tree:onAction:)` or pass `UIComponentRegistry.secureDefault`
 /// to prevent unauthorized actions.
 ///
@@ -102,7 +102,7 @@ public struct GenerativeUIView: View, Sendable {
     /// Creates a GenerativeUIView with the default registry
     ///
     /// - Warning: The default registry allows all actions (pass-through mode).
-    ///   For production use with LLM-generated UI, use `GenerativeUIView.secure(tree:onAction:)`
+    ///   For production use with LegacyLLM-generated UI, use `GenerativeUIView.secure(tree:onAction:)`
     ///   or pass `UIComponentRegistry.secureDefault` to prevent unauthorized actions.
     ///
     /// - Parameters:
@@ -176,7 +176,7 @@ extension GenerativeUIView {
     /// - All Core 8 component views
     /// - Pre-configured action allowlist (submit, navigate, dismiss)
     ///
-    /// This is the recommended initializer for production use with LLM-generated UI.
+    /// This is the recommended initializer for production use with LegacyLLM-generated UI.
     ///
     /// - Parameters:
     ///   - tree: The UITree to render

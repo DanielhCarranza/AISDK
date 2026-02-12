@@ -23,14 +23,14 @@ public enum AnthropicMessageStreamingChunk: Sendable {
     /// received.
     case toolUse(name: String, input: [String: Any])
 
-    /// Message metadata (stop reason, usage)
+    /// LegacyMessage metadata (stop reason, usage)
     case messageDelta(AnthropicMessageDelta)
 
     /// Stream completed
     case done
 }
 
-/// Message-level delta metadata in streaming responses
+/// LegacyMessage-level delta metadata in streaming responses
 public struct AnthropicMessageDelta: Codable, Sendable, Equatable {
     public let stopReason: String?
     public let stopSequence: String?

@@ -2,7 +2,7 @@
 //  SkillValidatorTests.swift
 //  AISDKTests
 //
-//  Tests for skill validation against the Agent Skills Protocol.
+//  Tests for skill validation against the LegacyAgent Skills Protocol.
 //
 
 import XCTest

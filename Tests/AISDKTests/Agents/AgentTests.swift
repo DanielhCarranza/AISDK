@@ -1,19 +1,19 @@
 //
-//  AIAgentActorTests.swift
+//  AgentTests.swift
 //  AISDKTests
 //
-//  Tests for AIAgentActor core functionality
+//  Tests for Agent core functionality
 //
 
 import XCTest
 @testable import AISDK
 
-final class AIAgentActorTests: XCTestCase {
+final class AgentTests: XCTestCase {
 
     // MARK: - Test Helpers
 
     /// Mock language model for testing
-    private class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+    private class MockLanguageModel: LLM, @unchecked Sendable {
         let provider = "mock"
         let modelId = "mock-model"
         let capabilities: LLMCapabilities = []
@@ -75,7 +75,7 @@ final class AIAgentActorTests: XCTestCase {
         let model = MockLanguageModel()
 
         // When
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [],
             instructions: "You are a helpful assistant.",
@@ -105,7 +105,7 @@ final class AIAgentActorTests: XCTestCase {
         let model = MockLanguageModel()
 
         // When
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // Then
         XCTAssertNil(agent.name)
@@ -121,7 +121,7 @@ final class AIAgentActorTests: XCTestCase {
         let customId = "custom-agent-123"
 
         // When
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             agentId: customId
         )
@@ -135,7 +135,7 @@ final class AIAgentActorTests: XCTestCase {
     func test_observable_state_accessible() async throws {
         // Given
         let model = MockLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When - Access observable state from nonisolated context
         let observableState = agent.observableState
@@ -152,7 +152,7 @@ final class AIAgentActorTests: XCTestCase {
     func test_observable_state_updates_during_execution() async throws {
         // Given
         let model = MockLanguageModel()
-        var stateChanges: [AgentState] = []
+        var stateChanges: [LegacyAgentState] = []
         var isProcessingChanges: [Bool] = []
 
         model.generateTextHandler = { _ in
@@ -166,7 +166,7 @@ final class AIAgentActorTests: XCTestCase {
             )
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
         let observableState = agent.observableState
 
         // Capture initial state
@@ -218,19 +218,19 @@ final class AIAgentActorTests: XCTestCase {
             )
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When - Execute calls sequentially (they should be queued)
-        async let result1 = agent.execute(messages: [.user("Message 1")])
+        async let result1 = agent.execute(messages: [.user("LegacyMessage 1")])
 
         // Small delay to ensure first request is queued
         try await Task.sleep(nanoseconds: 10_000_000) // 10ms
 
-        async let result2 = agent.execute(messages: [.user("Message 2")])
+        async let result2 = agent.execute(messages: [.user("LegacyMessage 2")])
 
         try await Task.sleep(nanoseconds: 10_000_000) // 10ms
 
-        async let result3 = agent.execute(messages: [.user("Message 3")])
+        async let result3 = agent.execute(messages: [.user("LegacyMessage 3")])
 
         // Wait for all results
         _ = try await (result1, result2, result3)
@@ -259,7 +259,7 @@ final class AIAgentActorTests: XCTestCase {
             )
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When - Launch multiple concurrent requests
         async let result1 = agent.execute(messages: [.user("1")])
@@ -296,7 +296,7 @@ final class AIAgentActorTests: XCTestCase {
             )
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             instructions: "Be helpful."
         )
@@ -317,7 +317,7 @@ final class AIAgentActorTests: XCTestCase {
     func test_execute_updates_message_history() async throws {
         // Given
         let model = MockLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         _ = try await agent.execute(messages: [.user("Hello")])
@@ -341,13 +341,13 @@ final class AIAgentActorTests: XCTestCase {
             // Always return tool calls to continue the loop
             return AITextResult(
                 text: "Thinking...",
-                toolCalls: [AIToolCallResult(id: "1", name: "test", arguments: "{}")],
+                toolCalls: [ToolCallResult(id: "1", name: "test", arguments: "{}")],
                 usage: AIUsage(promptTokens: 10, completionTokens: 5),
                 finishReason: .toolCalls
             )
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             stopCondition: .stepCount(3)
         )
@@ -379,7 +379,7 @@ final class AIAgentActorTests: XCTestCase {
             )
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             stopCondition: .noToolCalls
         )
@@ -397,7 +397,7 @@ final class AIAgentActorTests: XCTestCase {
     func test_reset_clears_state() async throws {
         // Given
         let model = MockLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // Execute to populate history
         _ = try await agent.execute(messages: [.user("Hello")])
@@ -432,7 +432,7 @@ final class AIAgentActorTests: XCTestCase {
     func test_setMessages_updates_history() async throws {
         // Given
         let model = MockLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         let newMessages: [AIMessage] = [
             .system("You are helpful"),
@@ -526,7 +526,7 @@ final class StopConditionTests: XCTestCase {
 
     func test_tokenBudget_condition_stops_when_budget_exceeded() async throws {
         // Given
-        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+        class MockLanguageModel: LLM, @unchecked Sendable {
             let provider = "mock"
             let modelId = "mock-model"
             let capabilities: LLMCapabilities = []
@@ -554,7 +554,7 @@ final class StopConditionTests: XCTestCase {
                 // Each step uses 100 tokens total (50 prompt + 50 completion)
                 return AITextResult(
                     text: "Step \(currentCall)",
-                    toolCalls: [AIToolCallResult(id: "call-\(currentCall)", name: "mock_tool", arguments: "{}")],
+                    toolCalls: [ToolCallResult(id: "call-\(currentCall)", name: "mock_tool", arguments: "{}")],
                     usage: AIUsage(promptTokens: 50, completionTokens: 50),
                     finishReason: .toolCalls
                 )
@@ -579,7 +579,7 @@ final class StopConditionTests: XCTestCase {
         // Token accumulation: step0=100, step1=200, step2=300
         // Budget check happens after step with accumulated tokens
         // At step 2 completion: 300 >= 250, should stop
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             stopCondition: .tokenBudget(maxTokens: 250)
         )
@@ -613,7 +613,7 @@ final class StopConditionTests: XCTestCase {
 
     func test_stepCount_condition_stops_at_max_steps() async throws {
         // Given
-        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+        class MockLanguageModel: LLM, @unchecked Sendable {
             let provider = "mock"
             let modelId = "mock-model"
             let capabilities: LLMCapabilities = []
@@ -629,7 +629,7 @@ final class StopConditionTests: XCTestCase {
                 // Always return tool calls to keep the loop going
                 return AITextResult(
                     text: "Step \(currentCall)",
-                    toolCalls: [AIToolCallResult(id: "call-\(currentCall)", name: "mock_tool", arguments: "{}")],
+                    toolCalls: [ToolCallResult(id: "call-\(currentCall)", name: "mock_tool", arguments: "{}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -651,7 +651,7 @@ final class StopConditionTests: XCTestCase {
         let model = MockLanguageModel()
 
         // Stop after exactly 2 steps
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             stopCondition: .stepCount(2)
         )
@@ -675,7 +675,7 @@ final class StopConditionTests: XCTestCase {
 
     func test_stepCount_zero_stops_immediately() async throws {
         // Given
-        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+        class MockLanguageModel: LLM, @unchecked Sendable {
             let provider = "mock"
             let modelId = "mock-model"
             let capabilities: LLMCapabilities = []
@@ -685,7 +685,7 @@ final class StopConditionTests: XCTestCase {
                 callCount += 1
                 return AITextResult(
                     text: "Response",
-                    toolCalls: [AIToolCallResult(id: "call-1", name: "mock_tool", arguments: "{}")],
+                    toolCalls: [ToolCallResult(id: "call-1", name: "mock_tool", arguments: "{}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -707,7 +707,7 @@ final class StopConditionTests: XCTestCase {
         let model = MockLanguageModel()
 
         // stepCount(0) should stop immediately after first step
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             stopCondition: .stepCount(0)
         )
@@ -781,7 +781,7 @@ final class ObservableAgentStateTests: XCTestCase {
         observableState.state = .thinking
 
         // When
-        var receivedStates: [AgentState] = []
+        var receivedStates: [LegacyAgentState] = []
         let task = Task {
             for await state in observableState.stateStream {
                 receivedStates.append(state)
@@ -804,7 +804,7 @@ final class ObservableAgentStateTests: XCTestCase {
     func test_stateStream_emits_state_changes() async throws {
         // Given
         let observableState = ObservableAgentState()
-        var receivedStates: [AgentState] = []
+        var receivedStates: [LegacyAgentState] = []
 
         let task = Task {
             for await state in observableState.stateStream {
@@ -839,8 +839,8 @@ final class ObservableAgentStateTests: XCTestCase {
     func test_stateStream_supports_multiple_subscribers() async throws {
         // Given
         let observableState = ObservableAgentState()
-        var subscriber1States: [AgentState] = []
-        var subscriber2States: [AgentState] = []
+        var subscriber1States: [LegacyAgentState] = []
+        var subscriber2States: [LegacyAgentState] = []
 
         // When - Create two subscribers
         let task1 = Task {
@@ -917,7 +917,7 @@ final class ObservableAgentStateTests: XCTestCase {
         let streamTerminated = expectation(description: "Stream should terminate")
 
         // Create observableState in a scope so it can be deallocated
-        var stream: AsyncStream<AgentState>?
+        var stream: AsyncStream<LegacyAgentState>?
         autoreleasepool {
             let observableState = ObservableAgentState()
             stream = observableState.stateStream
@@ -946,7 +946,7 @@ final class ObservableAgentStateTests: XCTestCase {
 
     func test_stateStream_integration_with_agent_execution() async throws {
         // Given
-        class MockLanguageModel: AILanguageModel, @unchecked Sendable {
+        class MockLanguageModel: LLM, @unchecked Sendable {
             let provider = "mock"
             let modelId = "mock-model"
             let capabilities: LLMCapabilities = []
@@ -980,13 +980,13 @@ final class ObservableAgentStateTests: XCTestCase {
 
         // Thread-safe state collection actor
         actor StateCollector {
-            var states: [AgentState] = []
+            var states: [LegacyAgentState] = []
 
-            func append(_ state: AgentState) {
+            func append(_ state: LegacyAgentState) {
                 states.append(state)
             }
 
-            func getStates() -> [AgentState] {
+            func getStates() -> [LegacyAgentState] {
                 return states
             }
 
@@ -996,7 +996,7 @@ final class ObservableAgentStateTests: XCTestCase {
         }
 
         let model = MockLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
         let stateCollector = StateCollector()
         let collectedEnoughStates = expectation(description: "Collected enough states")
 
@@ -1034,12 +1034,12 @@ final class ObservableAgentStateTests: XCTestCase {
 
 // MARK: - Streaming Tests
 
-final class AIAgentActorStreamingTests: XCTestCase {
+final class AgentStreamingTests: XCTestCase {
 
     // MARK: - Test Helpers
 
     /// Mock language model with streaming support
-    private class MockStreamingLanguageModel: AILanguageModel, @unchecked Sendable {
+    private class MockStreamingLanguageModel: LLM, @unchecked Sendable {
         let provider = "mock"
         let modelId = "mock-streaming-model"
         let capabilities: LLMCapabilities = []
@@ -1091,7 +1091,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_emits_start_event() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var events: [AIStreamEvent] = []
@@ -1111,7 +1111,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_emits_textDelta_events() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var textDeltas: [String] = []
@@ -1128,7 +1128,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_emits_stepStart_event() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var stepStartEvents: [Int] = []
@@ -1145,7 +1145,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_emits_stepFinish_event() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var stepFinishEvents: [(Int, AIStepResult)] = []
@@ -1164,7 +1164,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_emits_finish_event() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var finishEvents: [(AIFinishReason, AIUsage)] = []
@@ -1182,7 +1182,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_emits_usage_event() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var usageEvents: [AIUsage] = []
@@ -1212,7 +1212,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model, stopCondition: .stepCount(1))
+        let agent = Agent(model: model, stopCondition: .stepCount(1))
 
         // When
         var toolCallStartEvents: [(String, String)] = []
@@ -1242,7 +1242,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model, stopCondition: .stepCount(1))
+        let agent = Agent(model: model, stopCondition: .stepCount(1))
 
         // When
         var toolCallDeltas: [(String, String)] = []
@@ -1270,7 +1270,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model, stopCondition: .stepCount(1))
+        let agent = Agent(model: model, stopCondition: .stepCount(1))
 
         // When
         var toolCallEvents: [(String, String, String)] = []
@@ -1315,7 +1315,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model, stopCondition: .stepCount(3))
+        let agent = Agent(model: model, stopCondition: .stepCount(3))
 
         // When
         var stepStartIndices: [Int] = []
@@ -1344,7 +1344,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         var errorEvents: [Error] = []
@@ -1375,7 +1375,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
         let observableState = agent.observableState
 
         // Capture initial state
@@ -1430,18 +1430,18 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When - Execute two streams concurrently
         async let stream1: () = {
-            for try await _ in agent.streamExecute(messages: [.user("Message 1")]) {}
+            for try await _ in agent.streamExecute(messages: [.user("LegacyMessage 1")]) {}
         }()
 
         // Small delay to ensure first is queued first
         try await Task.sleep(nanoseconds: 5_000_000) // 5ms
 
         async let stream2: () = {
-            for try await _ in agent.streamExecute(messages: [.user("Message 2")]) {}
+            for try await _ in agent.streamExecute(messages: [.user("LegacyMessage 2")]) {}
         }()
 
         // Wait for both
@@ -1473,7 +1473,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When - Start streaming and cancel after a short time
         var receivedCount = 0
@@ -1496,12 +1496,12 @@ final class AIAgentActorStreamingTests: XCTestCase {
         XCTAssertLessThan(receivedCount, 100)
     }
 
-    // MARK: - Message History Tests
+    // MARK: - LegacyMessage History Tests
 
     func test_streamExecute_updates_message_history() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         for try await _ in agent.streamExecute(messages: [.user("Hello")]) {
@@ -1519,7 +1519,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_with_instructions_prepends_system_message() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             instructions: "You are helpful."
         )
@@ -1541,7 +1541,7 @@ final class AIAgentActorStreamingTests: XCTestCase {
     func test_streamExecute_updates_step_history() async throws {
         // Given
         let model = MockStreamingLanguageModel()
-        let agent = AIAgentActor(model: model)
+        let agent = Agent(model: model)
 
         // When
         for try await _ in agent.streamExecute(messages: [.user("Hello")]) {
@@ -1556,14 +1556,14 @@ final class AIAgentActorStreamingTests: XCTestCase {
     }
 }
 
-// MARK: - AIAgentActor Tool Execution Tests
+// MARK: - Agent Tool Execution Tests
 
-final class AIAgentActorToolExecutionTests: XCTestCase {
+final class AgentToolExecutionTests: XCTestCase {
 
     // MARK: - Test Tools
 
     /// Simple test tool for weather queries
-    private struct MockWeatherTool: AITool {
+    private struct MockWeatherTool: Tool {
         let name = "get_weather"
         let description = "Get the current weather for a location"
 
@@ -1572,13 +1572,13 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
 
         init() {}
 
-        func execute() async throws -> AIToolResult {
-            return AIToolResult(content: "Weather in \(city): 22°C, sunny")
+        func execute() async throws -> ToolResult {
+            return ToolResult(content: "Weather in \(city): 22°C, sunny")
         }
     }
 
     /// Test tool for calculator operations
-    private struct MockCalculatorTool: AITool {
+    private struct MockCalculatorTool: Tool {
         let name = "calculate"
         let description = "Perform basic arithmetic"
 
@@ -1593,7 +1593,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
 
         init() {}
 
-        func execute() async throws -> AIToolResult {
+        func execute() async throws -> ToolResult {
             let result: Double
             switch operation {
             case "+": result = a + b
@@ -1604,25 +1604,25 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
                 result = a / b
             default: throw ToolError.executionFailed("Invalid operation")
             }
-            return AIToolResult(content: "Result: \(result)")
+            return ToolResult(content: "Result: \(result)")
         }
     }
 
     /// Test tool that always fails
-    private struct FailingTool: AITool {
+    private struct FailingTool: Tool {
         let name = "failing_tool"
         let description = "A tool that always fails"
 
         init() {}
 
-        func execute() async throws -> AIToolResult {
+        func execute() async throws -> ToolResult {
             throw ToolError.executionFailed("This tool always fails")
         }
     }
 
     // MARK: - Mock Language Model with Tool Support
 
-    private class MockToolLanguageModel: AILanguageModel, @unchecked Sendable {
+    private class MockToolLanguageModel: LLM, @unchecked Sendable {
         let provider = "mock"
         let modelId = "mock-tool-model"
         let capabilities: LLMCapabilities = []
@@ -1680,7 +1680,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
                 // First call: return a tool call
                 return AITextResult(
                     text: "Let me check the weather...",
-                    toolCalls: [AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"London\"}")],
+                    toolCalls: [ToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"London\"}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1695,7 +1695,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self],
             instructions: "You are a helpful weather assistant."
@@ -1730,7 +1730,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
                 // First call: weather tool
                 return AITextResult(
                     text: "Checking weather...",
-                    toolCalls: [AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"Paris\"}")],
+                    toolCalls: [ToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"Paris\"}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1738,7 +1738,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
                 // Second call: calculator tool
                 return AITextResult(
                     text: "Let me calculate...",
-                    toolCalls: [AIToolCallResult(id: "call-2", name: "calculate", arguments: "{\"a\":22,\"b\":10,\"operation\":\"+\"}")],
+                    toolCalls: [ToolCallResult(id: "call-2", name: "calculate", arguments: "{\"a\":22,\"b\":10,\"operation\":\"+\"}")],
                     usage: AIUsage(promptTokens: 15, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1753,7 +1753,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self, MockCalculatorTool.self],
             stopCondition: .stepCount(5)
@@ -1782,7 +1782,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
                 // Request an unknown tool
                 return AITextResult(
                     text: "Calling unknown tool...",
-                    toolCalls: [AIToolCallResult(id: "call-1", name: "unknown_tool", arguments: "{}")],
+                    toolCalls: [ToolCallResult(id: "call-1", name: "unknown_tool", arguments: "{}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1796,7 +1796,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self], // Only weather tool, not the requested one
             stopCondition: .stepCount(3)
@@ -1838,7 +1838,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             if callCount == 1 {
                 return AITextResult(
                     text: "Calling failing tool...",
-                    toolCalls: [AIToolCallResult(id: "fail-call-1", name: "failing_tool", arguments: "{}")],
+                    toolCalls: [ToolCallResult(id: "fail-call-1", name: "failing_tool", arguments: "{}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1852,7 +1852,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [FailingTool.self],
             stopCondition: .stepCount(3)
@@ -1881,7 +1881,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
         }
     }
 
-    // MARK: - Tool Results in Message History Tests
+    // MARK: - Tool Results in LegacyMessage History Tests
 
     func test_tool_results_added_to_message_history() async throws {
         // Given
@@ -1893,7 +1893,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             if callCount == 1 {
                 return AITextResult(
                     text: "Checking weather...",
-                    toolCalls: [AIToolCallResult(id: "tool-call-123", name: "get_weather", arguments: "{\"city\":\"Tokyo\"}")],
+                    toolCalls: [ToolCallResult(id: "tool-call-123", name: "get_weather", arguments: "{\"city\":\"Tokyo\"}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
@@ -1907,7 +1907,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self]
         )
@@ -1957,7 +1957,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self],
             stopCondition: .stepCount(3)
@@ -2002,7 +2002,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self],
             stopCondition: .stepCount(3)
@@ -2041,7 +2041,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             if callCount == 1 {
                 return AITextResult(
                     text: "Calculating...",
-                    toolCalls: [AIToolCallResult(
+                    toolCalls: [ToolCallResult(
                         id: "call-1",
                         name: "calculate",
                         arguments: "{\"a\":100,\"b\":25,\"operation\":\"*\"}"
@@ -2059,7 +2059,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockCalculatorTool.self]
         )
@@ -2089,13 +2089,13 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
         model.generateTextHandler = { _ in
             AITextResult(
                 text: "Calling tool...",
-                toolCalls: [AIToolCallResult(id: "call-\(UUID().uuidString)", name: "get_weather", arguments: "{\"city\":\"Test\"}")],
+                toolCalls: [ToolCallResult(id: "call-\(UUID().uuidString)", name: "get_weather", arguments: "{\"city\":\"Test\"}")],
                 usage: AIUsage(promptTokens: 10, completionTokens: 5),
                 finishReason: .toolCalls
             )
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self],
             stopCondition: .stepCount(3) // Stop after 3 steps
@@ -2120,14 +2120,14 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             if callCount == 1 {
                 return AITextResult(
                     text: "Step 1",
-                    toolCalls: [AIToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"A\"}")],
+                    toolCalls: [ToolCallResult(id: "call-1", name: "get_weather", arguments: "{\"city\":\"A\"}")],
                     usage: AIUsage(promptTokens: 10, completionTokens: 5),
                     finishReason: .toolCalls
                 )
             } else if callCount == 2 {
                 return AITextResult(
                     text: "Step 2",
-                    toolCalls: [AIToolCallResult(id: "call-2", name: "get_weather", arguments: "{\"city\":\"B\"}")],
+                    toolCalls: [ToolCallResult(id: "call-2", name: "get_weather", arguments: "{\"city\":\"B\"}")],
                     usage: AIUsage(promptTokens: 20, completionTokens: 10),
                     finishReason: .toolCalls
                 )
@@ -2141,7 +2141,7 @@ final class AIAgentActorToolExecutionTests: XCTestCase {
             }
         }
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [MockWeatherTool.self]
         )

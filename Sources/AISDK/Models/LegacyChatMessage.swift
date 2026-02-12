@@ -1,5 +1,5 @@
 //
-//  ChatMessage.swift
+//  LegacyChatMessage.swift
 //  HealthCompanion
 //
 //  Created by Abhigael Mendez Carranza on 04/01/25.
@@ -7,10 +7,10 @@
 
 import Foundation
 
-public class ChatMessage: Identifiable, Codable {
+public class LegacyChatMessage: Identifiable, Codable {
     public let id: UUID
     public let timestamp: Date
-    public var message: Message
+    public var message: LegacyMessage
     public var metadata: ToolMetadata?
     public var attachments: [Attachment] = []
 
@@ -63,7 +63,7 @@ public class ChatMessage: Identifiable, Codable {
         }
     }
     
-    public init(message: Message, metadata: ToolMetadata? = nil, hidden: Bool = false, feedback: Feedback? = nil) {
+    public init(message: LegacyMessage, metadata: ToolMetadata? = nil, hidden: Bool = false, feedback: Feedback? = nil) {
         self.id = UUID()
         self.timestamp = Date()
         self.message = message
@@ -81,7 +81,7 @@ public class ChatMessage: Identifiable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         timestamp = try container.decode(Date.self, forKey: .timestamp)
-        message = try container.decode(Message.self, forKey: .message)
+        message = try container.decode(LegacyMessage.self, forKey: .message)
         metadata = try container.decodeIfPresent(AnyToolMetadata.self, forKey: .metadata)?.metadata
         attachments = try container.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
         hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
@@ -165,15 +165,15 @@ public class ChatMessage: Identifiable, Codable {
     }
     
     /// Creates a pending message for the given role
-    public static func pending(role: Message) -> ChatMessage {
-        let message = ChatMessage(message: role)
+    public static func pending(role: LegacyMessage) -> LegacyChatMessage {
+        let message = LegacyChatMessage(message: role)
         message.isPending = true
         return message
     }
 }
 
-extension ChatMessage: Equatable {
-    public static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+extension LegacyChatMessage: Equatable {
+    public static func == (lhs: LegacyChatMessage, rhs: LegacyChatMessage) -> Bool {
         // Compare the unique identifiers
         lhs.id == rhs.id
     }

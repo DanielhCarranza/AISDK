@@ -140,7 +140,7 @@ public enum LLMError: AIError, Equatable {
     }
 } 
 
-// MARK: - Agent Errors
+// MARK: - LegacyAgent Errors
 public enum AgentError: AIError {
     case invalidModel
     case missingAPIKey

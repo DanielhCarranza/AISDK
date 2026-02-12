@@ -1,7 +1,7 @@
 import Foundation
 
 /// Protocol defining the essential properties and behavior for medical record content
-/// that can be attached to messages and converted to LLM context.
+/// that can be attached to messages and converted to LegacyLLM context.
 public protocol MedicalRecordContent: Codable {
     /// Unique identifier for the medical record
     var id: String { get }
@@ -21,7 +21,7 @@ public protocol MedicalRecordContent: Codable {
     /// Human-readable display name for the record type
     var displayName: String { get }
     
-    /// Converts the medical record to a formatted string for LLM context
+    /// Converts the medical record to a formatted string for LegacyLLM context
     /// This method allows each implementation to control how the record appears to the AI
     func toLLMContext() -> String
 } 

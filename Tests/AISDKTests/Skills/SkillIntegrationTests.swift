@@ -2,7 +2,7 @@
 //  SkillIntegrationTests.swift
 //  AISDKTests
 //
-//  Integration tests for skills with AIAgentActor.
+//  Integration tests for skills with Agent.
 //
 
 import XCTest

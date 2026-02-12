@@ -1,15 +1,15 @@
 //
-//  MockAILanguageModel.swift
+//  MockLLM.swift
 //  AISDKTests
 //
-//  Mock implementation of AILanguageModel for testing
+//  Mock implementation of LLM for testing
 //  Supports configurable responses, tool calls, streaming, and error injection
 //
 
 import Foundation
 @testable import AISDK
 
-/// Mock implementation of AILanguageModel for comprehensive testing
+/// Mock implementation of LLM for comprehensive testing
 ///
 /// Provides factory methods for common test scenarios:
 /// - `withResponse(_:)` - Fixed text response
@@ -20,12 +20,12 @@ import Foundation
 ///
 /// Example usage:
 /// ```swift
-/// let mock = MockAILanguageModel.withResponse("Hello, world!")
+/// let mock = MockLLM.withResponse("Hello, world!")
 /// let result = try await mock.generateText(request: AITextRequest(messages: [.user("Hi")]))
 /// XCTAssertEqual(result.text, "Hello, world!")
 /// ```
-public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
-    // MARK: - AILanguageModel Protocol
+public final class MockLLM: LLM, @unchecked Sendable {
+    // MARK: - LLM Protocol
 
     public let provider: String
     public let modelId: String
@@ -35,7 +35,7 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     // All configuration properties are private and accessed via thread-safe setters/getters
 
     private var _responseText: String
-    private var _toolCalls: [AIToolCallResult]
+    private var _toolCalls: [ToolCallResult]
     private var _streamEvents: [AIStreamEvent]
     private var _usage: AIUsage
     private var _finishReason: AIFinishReason
@@ -51,7 +51,7 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     }
 
     /// Tool calls to include in responses
-    public var toolCalls: [AIToolCallResult] {
+    public var toolCalls: [ToolCallResult] {
         get { lock.lock(); defer { lock.unlock() }; return _toolCalls }
         set { lock.lock(); defer { lock.unlock() }; _toolCalls = newValue }
     }
@@ -145,7 +145,7 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
     /// Configuration snapshot for thread-safe reading
     private struct ConfigSnapshot {
         let responseText: String
-        let toolCalls: [AIToolCallResult]
+        let toolCalls: [ToolCallResult]
         let streamEvents: [AIStreamEvent]
         let usage: AIUsage
         let finishReason: AIFinishReason
@@ -188,7 +188,7 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
         lastObjectRequestType = String(describing: type)
     }
 
-    // MARK: - AILanguageModel Protocol Methods
+    // MARK: - LLM Protocol Methods
 
     public func generateText(request: AITextRequest) async throws -> AITextResult {
         recordTextRequest(request)
@@ -364,7 +364,7 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
 
     private func generateStreamEvents(
         from text: String,
-        toolCalls: [AIToolCallResult],
+        toolCalls: [ToolCallResult],
         usage: AIUsage,
         finishReason: AIFinishReason
     ) -> [AIStreamEvent] {
@@ -410,13 +410,13 @@ public final class MockAILanguageModel: AILanguageModel, @unchecked Sendable {
 
 // MARK: - Factory Methods
 
-extension MockAILanguageModel {
+extension MockLLM {
     /// Create a mock that returns a fixed text response
     ///
     /// - Parameter text: The text to return
-    /// - Returns: A configured MockAILanguageModel
-    public static func withResponse(_ text: String) -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func withResponse(_ text: String) -> MockLLM {
+        let mock = MockLLM()
         mock.responseText = text
         return mock
     }
@@ -426,12 +426,12 @@ extension MockAILanguageModel {
     /// - Parameters:
     ///   - toolName: The name of the tool to call
     ///   - arguments: JSON arguments for the tool
-    /// - Returns: A configured MockAILanguageModel
-    public static func withToolCall(_ toolName: String, arguments: String) -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func withToolCall(_ toolName: String, arguments: String) -> MockLLM {
+        let mock = MockLLM()
         mock.responseText = ""
         mock.toolCalls = [
-            AIToolCallResult(
+            ToolCallResult(
                 id: "mock-tool-call-\(UUID().uuidString.prefix(8))",
                 name: toolName,
                 arguments: arguments
@@ -444,12 +444,12 @@ extension MockAILanguageModel {
     /// Create a mock that returns multiple tool calls
     ///
     /// - Parameter toolCalls: Array of tuples (name, arguments) for each tool call
-    /// - Returns: A configured MockAILanguageModel
-    public static func withToolCalls(_ toolCalls: [(name: String, arguments: String)]) -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func withToolCalls(_ toolCalls: [(name: String, arguments: String)]) -> MockLLM {
+        let mock = MockLLM()
         mock.responseText = ""
         mock.toolCalls = toolCalls.map { name, arguments in
-            AIToolCallResult(
+            ToolCallResult(
                 id: "mock-tool-call-\(UUID().uuidString.prefix(8))",
                 name: name,
                 arguments: arguments
@@ -464,9 +464,9 @@ extension MockAILanguageModel {
     /// - Parameters:
     ///   - delay: The delay before responding
     ///   - response: The response text (default: "Mock response")
-    /// - Returns: A configured MockAILanguageModel
-    public static func withSlowResponse(delay: Duration, response: String = "Mock response") -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func withSlowResponse(delay: Duration, response: String = "Mock response") -> MockLLM {
+        let mock = MockLLM()
         mock.responseText = response
         mock.delay = delay
         return mock
@@ -475,9 +475,9 @@ extension MockAILanguageModel {
     /// Create a mock that fails with an error
     ///
     /// - Parameter error: The error to throw
-    /// - Returns: A configured MockAILanguageModel
-    public static func failing(with error: Error) -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func failing(with error: Error) -> MockLLM {
+        let mock = MockLLM()
         mock.errorToThrow = error
         return mock
     }
@@ -485,9 +485,9 @@ extension MockAILanguageModel {
     /// Create a mock that fails with an AISDKError
     ///
     /// - Parameter error: The AISDKError to throw
-    /// - Returns: A configured MockAILanguageModel
-    public static func failing(with error: AISDKError) -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func failing(with error: AISDKError) -> MockLLM {
+        let mock = MockLLM()
         mock.errorToThrow = error
         return mock
     }
@@ -495,9 +495,9 @@ extension MockAILanguageModel {
     /// Create a mock with custom stream events
     ///
     /// - Parameter events: The stream events to emit
-    /// - Returns: A configured MockAILanguageModel
-    public static func withStreamEvents(_ events: [AIStreamEvent]) -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func withStreamEvents(_ events: [AIStreamEvent]) -> MockLLM {
+        let mock = MockLLM()
         mock.streamEvents = events
         return mock
     }
@@ -507,9 +507,9 @@ extension MockAILanguageModel {
     /// - Parameters:
     ///   - object: The Codable object to return
     ///   - encoder: JSON encoder (default: standard encoder)
-    /// - Returns: A configured MockAILanguageModel
-    public static func withObject<T: Codable>(_ object: T, encoder: JSONEncoder = JSONEncoder()) throws -> MockAILanguageModel {
-        let mock = MockAILanguageModel()
+    /// - Returns: A configured MockLLM
+    public static func withObject<T: Codable>(_ object: T, encoder: JSONEncoder = JSONEncoder()) throws -> MockLLM {
+        let mock = MockLLM()
         let data = try encoder.encode(object)
         mock.responseText = String(data: data, encoding: .utf8) ?? "{}"
         return mock
@@ -518,21 +518,21 @@ extension MockAILanguageModel {
     /// Create a mock with a specific provider ID
     ///
     /// - Parameter providerId: The provider identifier
-    /// - Returns: A configured MockAILanguageModel
-    public static func withProvider(_ providerId: String) -> MockAILanguageModel {
-        MockAILanguageModel(providerId: providerId)
+    /// - Returns: A configured MockLLM
+    public static func withProvider(_ providerId: String) -> MockLLM {
+        MockLLM(providerId: providerId)
     }
 }
 
 // MARK: - Sequence Mocking
 
-extension MockAILanguageModel {
+extension MockLLM {
     /// Create a mock that returns different responses for sequential calls
     ///
     /// - Parameter responses: Array of responses, one for each call
-    /// - Returns: A configured MockAILanguageModel
-    public static func withSequence(_ responses: [String]) -> SequentialMockAILanguageModel {
-        SequentialMockAILanguageModel(responses: responses)
+    /// - Returns: A configured MockLLM
+    public static func withSequence(_ responses: [String]) -> SequentialMockLLM {
+        SequentialMockLLM(responses: responses)
     }
 }
 
@@ -540,7 +540,7 @@ extension MockAILanguageModel {
 ///
 /// Note: If initialized with an empty array, methods will return an empty string
 /// for text operations. This enables testing edge cases.
-public final class SequentialMockAILanguageModel: AILanguageModel, @unchecked Sendable {
+public final class SequentialMockLLM: LLM, @unchecked Sendable {
     public let provider: String = "mock-sequential"
     public let modelId: String = "mock-sequential-model"
     public let capabilities: LLMCapabilities = [.text, .tools, .streaming, .structuredOutputs]

@@ -33,8 +33,8 @@ Run `scripts/list_files.sh` to get a recursive listing of source files.
 
 The script will output something like:
 ```
-./Sources/AISDK/Agents/AIAgentActor.swift
-./Sources/AISDK/Tools/AITool.swift
+./Sources/AISDK/Agents/Agent.swift
+./Sources/AISDK/Tools/Tool.swift
 ...
 ```
 

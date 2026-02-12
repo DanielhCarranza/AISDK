@@ -47,7 +47,7 @@ final class BasicChatTests: XCTestCase {
     
     func testChatCompletionWithMultipleMessages() async throws {
         // Given
-        let messages: [Message] = [
+        let messages: [LegacyMessage] = [
             .system(content: .text("You are a helpful assistant.")),
             .user(content: .text("What is 2+2?")),
             .assistant(content: .text("2+2 equals 4.")),
@@ -120,7 +120,7 @@ final class BasicChatTests: XCTestCase {
         }
     }
     
-    // MARK: - Message Content Type Tests
+    // MARK: - LegacyMessage Content Type Tests
     
     func testChatCompletionWithTextContent() async throws {
         // Given
@@ -170,7 +170,7 @@ final class BasicChatTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: "Custom mock response content",
                         toolCalls: nil,

@@ -9,7 +9,7 @@
 //  - MCPClient actor behavior
 //  - MCP JSON-RPC message encoding/decoding
 //  - MCPToolSchema conversion and namespacing
-//  - AIAgentActor MCP integration
+//  - Agent MCP integration
 //
 
 import XCTest
@@ -584,10 +584,10 @@ final class MCPClientErrorTests: XCTestCase {
 
 final class MCPAgentIntegrationTests: XCTestCase {
 
-    /// Test that AIAgentActor can be created with MCP servers
+    /// Test that Agent can be created with MCP servers
     func testAgentCreationWithMCPServers() async throws {
-        // Use the existing MockAILanguageModel from the Mocks folder
-        let model = MockAILanguageModel.withResponse("Mock response")
+        // Use the existing MockLLM from the Mocks folder
+        let model = MockLLM.withResponse("Mock response")
 
         let mcpConfig = MCPServerConfiguration(
             serverLabel: "test-server",
@@ -596,7 +596,7 @@ final class MCPAgentIntegrationTests: XCTestCase {
             blockedTools: ["tool3"]
         )
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [],
             mcpServers: [mcpConfig],
@@ -608,7 +608,7 @@ final class MCPAgentIntegrationTests: XCTestCase {
 
     /// Test that approval handler can be set
     func testApprovalHandler() async throws {
-        let model = MockAILanguageModel.withResponse("Mock response")
+        let model = MockLLM.withResponse("Mock response")
 
         let mcpConfig = MCPServerConfiguration(
             serverLabel: "test",
@@ -616,7 +616,7 @@ final class MCPAgentIntegrationTests: XCTestCase {
             requireApproval: .always
         )
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             mcpServers: [mcpConfig]
         )
@@ -655,7 +655,7 @@ final class MCPAgentIntegrationTests: XCTestCase {
 
     /// Test that multiple MCP servers can be configured
     func testMultipleMCPServers() async throws {
-        let model = MockAILanguageModel.withResponse("Mock response")
+        let model = MockLLM.withResponse("Mock response")
 
         let githubConfig = MCPServerConfiguration(
             serverLabel: "github",
@@ -675,7 +675,7 @@ final class MCPAgentIntegrationTests: XCTestCase {
             requireApproval: .always
         )
 
-        let agent = AIAgentActor(
+        let agent = Agent(
             model: model,
             tools: [],
             mcpServers: [githubConfig, slackConfig, filesystemConfig],
@@ -688,7 +688,7 @@ final class MCPAgentIntegrationTests: XCTestCase {
 
 // MARK: - Extension for Testing
 
-extension AIAgentActor {
+extension Agent {
     /// Helper to set approval handler in tests
     func setApprovalHandler(_ handler: @escaping @Sendable (MCPApprovalContext) async -> Bool) async {
         self.mcpApprovalHandler = handler

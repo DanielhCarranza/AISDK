@@ -2,7 +2,7 @@
 //  AILanguageModelAdapter.swift
 //  AISDK
 //
-//  Adapter that wraps the legacy LLM protocol to conform to AILanguageModel
+//  Adapter that wraps the legacy LegacyLLM protocol to conform to LLM
 //  Provides backward compatibility for existing consumers
 //
 
@@ -10,12 +10,12 @@ import Foundation
 
 // MARK: - AILanguageModelAdapter
 
-/// Adapter that wraps an existing LLM implementation to conform to the new AILanguageModel protocol.
-/// This enables gradual migration from the legacy LLM protocol to the new unified interface.
+/// Adapter that wraps an existing LegacyLLM implementation to conform to the new LLM protocol.
+/// This enables gradual migration from the legacy LegacyLLM protocol to the new unified interface.
 ///
 /// Usage:
 /// ```swift
-/// let legacyLLM: LLM = OpenAIProvider(...)
+/// let legacyLLM: LegacyLLM = OpenAIProvider(...)
 /// let adapter = AILanguageModelAdapter(
 ///     llm: legacyLLM,
 ///     provider: "openai",
@@ -24,11 +24,11 @@ import Foundation
 /// )
 /// let result = try await adapter.generateText(request: request)
 /// ```
-public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable {
+public final class AILanguageModelAdapter: LLM, @unchecked Sendable {
     // MARK: - Properties
 
-    /// The wrapped legacy LLM instance
-    private let llm: LLM
+    /// The wrapped legacy LegacyLLM instance
+    private let llm: LegacyLLM
 
     /// The provider identifier
     public let provider: String
@@ -44,15 +44,15 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
 
     // MARK: - Initialization
 
-    /// Creates an adapter wrapping a legacy LLM implementation
+    /// Creates an adapter wrapping a legacy LegacyLLM implementation
     /// - Parameters:
-    ///   - llm: The legacy LLM to wrap
+    ///   - llm: The legacy LegacyLLM to wrap
     ///   - provider: The provider name (e.g., "openai", "anthropic")
     ///   - modelId: The model identifier
     ///   - capabilities: The capabilities supported by this model
     ///   - defaultModel: The default model to use if not specified in requests
     public init(
-        llm: LLM,
+        llm: LegacyLLM,
         provider: String,
         modelId: String,
         capabilities: LLMCapabilities = [.text, .streaming],
@@ -65,7 +65,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         self.defaultModel = defaultModel ?? modelId
     }
 
-    // MARK: - AILanguageModel Implementation
+    // MARK: - LLM Implementation
 
     public func generateText(request: AITextRequest) async throws -> AITextResult {
         // Validate provider access based on sensitivity and allowedProviders
@@ -74,7 +74,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         // Convert AITextRequest to legacy ChatCompletionRequest
         let chatRequest = try convertToLegacyRequest(request, streaming: false)
 
-        // Execute using legacy LLM
+        // Execute using legacy LLM protocol
         let response = try await llm.sendChatCompletion(request: chatRequest)
 
         // Convert response to AITextResult
@@ -98,7 +98,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
                         provider: self.provider
                     )))
 
-                    // Execute streaming using legacy LLM
+                    // Execute streaming using legacy LLM protocol
                     let stream = try await llm.sendChatCompletionStream(request: chatRequest)
 
                     var accumulatedText = ""
@@ -182,7 +182,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    // For legacy LLM, we don't have true object streaming
+                    // For legacy LegacyLLM, we don't have true object streaming
                     // Fall back to generating the full object and emitting it as a single event
                     let result = try await self.generateObject(request: request)
 
@@ -273,8 +273,8 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
         )
     }
 
-    private func convertToLegacyMessage(_ message: AIMessage) -> Message {
-        // Convert AIMessage to the legacy Message enum used by ChatCompletionRequest
+    private func convertToLegacyMessage(_ message: AIMessage) -> LegacyMessage {
+        // Convert AIMessage to the legacy LegacyMessage enum used by ChatCompletionRequest
         switch message.role {
         case .user:
             return .user(content: message.content.asUserContent, name: message.name)
@@ -328,7 +328,7 @@ public final class AILanguageModelAdapter: AILanguageModel, @unchecked Sendable 
 
         let text = choice.message.content ?? ""
         let toolCalls = (choice.message.toolCalls ?? []).map { call in
-            AIToolCallResult(
+            ToolCallResult(
                 id: call.id,
                 name: call.function?.name ?? "",
                 arguments: call.function?.arguments ?? ""
@@ -504,15 +504,15 @@ public extension AILanguageModelAdapter {
         )
     }
 
-    /// Create an adapter from any LLM provider
+    /// Create an adapter from any LegacyLLM provider
     /// - Parameters:
-    ///   - llm: The LLM provider to wrap
+    ///   - llm: The LegacyLLM provider to wrap
     ///   - provider: The provider name (e.g., "openai", "anthropic", "google")
     ///   - model: The model identifier
     ///   - capabilities: The capabilities of the model
     /// - Returns: An AILanguageModelAdapter wrapping the provider
     static func from(
-        _ llm: LLM,
+        _ llm: LegacyLLM,
         provider: String,
         model: String,
         capabilities: LLMCapabilities = [.text, .streaming]

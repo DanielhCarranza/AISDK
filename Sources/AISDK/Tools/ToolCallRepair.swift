@@ -3,7 +3,7 @@
 //  AISDK
 //
 //  Tool call repair mechanism for handling failed tool calls
-//  Uses hybrid strategy: local validation + LLM-assisted repair
+//  Uses hybrid strategy: local validation + LegacyLLM-assisted repair
 //
 //  Based on Vercel AI SDK 6.x patterns for robust tool execution
 //
@@ -14,7 +14,7 @@ import Foundation
 
 /// Tool call repair mechanism for handling and recovering from failed tool calls
 ///
-/// Provides multiple repair strategies from strict (no repair) to LLM-assisted repair
+/// Provides multiple repair strategies from strict (no repair) to LegacyLLM-assisted repair
 /// where the model is asked to correct malformed arguments.
 ///
 /// ## Strategies
@@ -100,7 +100,7 @@ public struct ToolCallRepair: Sendable {
         case autoRepairMax(Int)
 
         /// Custom repair logic
-        case custom(@Sendable (AIToolCallResult, Error, any AILanguageModel) async throws -> AIToolCallResult?)
+        case custom(@Sendable (ToolCallResult, Error, any LLM) async throws -> ToolCallResult?)
 
         /// Default strategy (single repair attempt)
         public static var `default`: Strategy { .autoRepairOnce }
@@ -156,7 +156,7 @@ public struct ToolCallRepair: Sendable {
     /// Result of a repair attempt
     public enum RepairResult: Sendable, Equatable {
         /// Repair succeeded with corrected tool call
-        case repaired(AIToolCallResult)
+        case repaired(ToolCallResult)
 
         /// Repair failed and cannot be retried
         case failed(reason: String)
@@ -181,12 +181,12 @@ public struct ToolCallRepair: Sendable {
     /// - Returns: A repaired tool call if successful, nil if repair fails
     /// - Throws: If the repair request itself fails
     public static func repair(
-        toolCall: AIToolCallResult,
+        toolCall: ToolCallResult,
         error: Error,
-        model: any AILanguageModel,
+        model: any LLM,
         toolSchema: ToolSchema? = nil,
         requestContext: RequestContext? = nil
-    ) async throws -> AIToolCallResult? {
+    ) async throws -> ToolCallResult? {
         // Build repair prompt with context
         let repairPrompt = buildRepairPrompt(
             toolCall: toolCall,
@@ -217,7 +217,7 @@ public struct ToolCallRepair: Sendable {
             return nil
         }
 
-        return AIToolCallResult(
+        return ToolCallResult(
             id: toolCall.id,
             name: toolCall.name,
             arguments: correctedArgs
@@ -235,9 +235,9 @@ public struct ToolCallRepair: Sendable {
     ///   - requestContext: Optional context to preserve safety settings
     /// - Returns: RepairResult indicating the outcome
     public static func attemptRepair(
-        toolCall: AIToolCallResult,
+        toolCall: ToolCallResult,
         error: Error,
-        model: any AILanguageModel,
+        model: any LLM,
         strategy: Strategy,
         toolSchema: ToolSchema? = nil,
         requestContext: RequestContext? = nil
@@ -313,7 +313,7 @@ public struct ToolCallRepair: Sendable {
 
     /// Build a repair prompt with context about the failure
     private static func buildRepairPrompt(
-        toolCall: AIToolCallResult,
+        toolCall: ToolCallResult,
         error: Error,
         toolSchema: ToolSchema?
     ) -> String {

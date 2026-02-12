@@ -76,14 +76,14 @@ public enum ResponseAgentError: Error, LocalizedError, Equatable {
         case .emptyConversation:
             return "Cannot process empty conversation"
         case .messageConversionFailed(let message):
-            return "Message conversion failed: \(message)"
+            return "LegacyMessage conversion failed: \(message)"
             
         case .invalidState(let message):
             return "Invalid agent state: \(message)"
         case .operationCancelled:
             return "Operation was cancelled"
         case .agentBusy:
-            return "Agent is currently busy processing another request"
+            return "LegacyAgent is currently busy processing another request"
             
         case .backgroundTaskTimeout(let taskId):
             return "Background task '\(taskId)' timed out"
@@ -102,7 +102,7 @@ public enum ResponseAgentError: Error, LocalizedError, Equatable {
             return "ResponseAgent initialization parameters are invalid"
             
         case .toolNotFound:
-            return "The requested tool has not been registered with the AIToolRegistry"
+            return "The requested tool has not been registered with the ToolRegistry"
         case .toolExecutionFailed:
             return "The tool failed to execute successfully"
         case .toolValidationFailed:
@@ -150,7 +150,7 @@ public enum ResponseAgentError: Error, LocalizedError, Equatable {
             return "Check ResponseAgent initialization parameters and try again"
             
         case .toolNotFound:
-            return "Register the tool with AIToolRegistry.register(tool:) before using ResponseAgent"
+            return "Register the tool with ToolRegistry.register(tool:) before using ResponseAgent"
         case .toolExecutionFailed:
             return "Check tool implementation and ensure all required parameters are provided"
         case .toolValidationFailed:

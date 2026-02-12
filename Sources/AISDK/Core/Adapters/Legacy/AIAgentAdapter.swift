@@ -2,7 +2,7 @@
 //  AIAgentAdapter.swift
 //  AISDK
 //
-//  Adapter that wraps the legacy Agent class to conform to AIAgent
+//  Adapter that wraps the legacy LegacyAgent class to conform to AIAgent
 //  Provides backward compatibility for existing consumers
 //
 
@@ -10,12 +10,12 @@ import Foundation
 
 // MARK: - AIAgentAdapter
 
-/// Adapter that wraps an existing Agent implementation to conform to the new AIAgent protocol.
-/// This enables gradual migration from the legacy Agent class to the new unified interface.
+/// Adapter that wraps an existing LegacyAgent implementation to conform to the new AIAgent protocol.
+/// This enables gradual migration from the legacy LegacyAgent class to the new unified interface.
 ///
 /// Usage:
 /// ```swift
-/// let legacyAgent = Agent(llm: provider, tools: [WeatherTool.self])
+/// let legacyAgent = LegacyAgent(llm: provider, tools: [WeatherTool.self])
 /// let adapter = AIAgentAdapter(
 ///     agent: legacyAgent,
 ///     modelAdapter: AILanguageModelAdapter.fromOpenAI(provider)
@@ -25,11 +25,11 @@ import Foundation
 public final class AIAgentAdapter: @unchecked Sendable {
     // MARK: - Properties
 
-    /// The wrapped legacy Agent instance
-    private let agent: Agent
+    /// The wrapped legacy LegacyAgent instance
+    private let agent: LegacyAgent
 
     /// The language model adapter
-    private let modelAdapter: AILanguageModel
+    private let modelAdapter: LLM
 
     /// Unique identifier for this agent
     public let agentId: String
@@ -48,15 +48,15 @@ public final class AIAgentAdapter: @unchecked Sendable {
 
     // MARK: - Initialization
 
-    /// Creates an adapter wrapping a legacy Agent implementation
+    /// Creates an adapter wrapping a legacy LegacyAgent implementation
     /// - Parameters:
-    ///   - agent: The legacy Agent to wrap
-    ///   - modelAdapter: The AILanguageModel adapter for the underlying LLM
+    ///   - agent: The legacy LegacyAgent to wrap
+    ///   - modelAdapter: The LLM adapter for the underlying LegacyLLM
     ///   - name: Optional name for the agent
     ///   - agentId: Optional unique identifier (auto-generated if nil)
     public init(
-        agent: Agent,
-        modelAdapter: AILanguageModel,
+        agent: LegacyAgent,
+        modelAdapter: LLM,
         name: String? = nil,
         agentId: String? = nil
     ) {
@@ -119,7 +119,7 @@ extension AIAgentAdapter: AIAgent {
         toolSchemas
     }
 
-    public var model: AILanguageModel {
+    public var model: LLM {
         modelAdapter
     }
 
@@ -148,8 +148,8 @@ extension AIAgentAdapter: AIAgent {
                     // Emit start event
                     continuation.yield(.start)
 
-                    // Create ChatMessage for the legacy agent
-                    let chatMessage = ChatMessage(message: .user(content: .text(message)))
+                    // Create LegacyChatMessage for the legacy agent
+                    let chatMessage = LegacyChatMessage(message: .user(content: .text(message)))
 
                     // Get the stream from legacy agent
                     let stream = agent.sendStream(chatMessage, requiredTool: requiredTool)
@@ -219,7 +219,7 @@ extension AIAgentAdapter: AIAgent {
     }
 
     public func setMessages(_ messages: [AIMessage]) {
-        let chatMessages = messages.map { convertToChatMessage($0) }
+        let chatMessages = messages.map { convertToLegacyChatMessage($0) }
         agent.setMessages(chatMessages)
     }
 }
@@ -227,7 +227,7 @@ extension AIAgentAdapter: AIAgent {
 // MARK: - Conversion Helpers
 
 private extension AIAgentAdapter {
-    func convertToAIMessage(_ chatMessage: ChatMessage) -> AIMessage {
+    func convertToAIMessage(_ chatMessage: LegacyChatMessage) -> AIMessage {
         switch chatMessage.message {
         case .user(let content, let name):
             return AIMessage(
@@ -283,8 +283,8 @@ private extension AIAgentAdapter {
         }
     }
 
-    func convertToChatMessage(_ aiMessage: AIMessage) -> ChatMessage {
-        let message: Message
+    func convertToLegacyChatMessage(_ aiMessage: AIMessage) -> LegacyChatMessage {
+        let message: LegacyMessage
         switch aiMessage.role {
         case .user:
             message = .user(content: convertToUserContent(aiMessage.content), name: aiMessage.name)
@@ -318,7 +318,7 @@ private extension AIAgentAdapter {
                 toolCallId: aiMessage.toolCallId ?? ""
             )
         }
-        return ChatMessage(message: message)
+        return LegacyChatMessage(message: message)
     }
 
     func convertUserContent(_ content: UserContent) -> AIMessage.Content {
@@ -425,7 +425,7 @@ private extension AIAgentAdapter {
         }
     }
 
-    func extractToolCalls(from response: ChatMessage) -> [AIToolCallResult] {
+    func extractToolCalls(from response: LegacyChatMessage) -> [ToolCallResult] {
         guard case .assistant(_, _, let toolCalls) = response.message,
               let toolCalls = toolCalls else {
             return []
@@ -433,7 +433,7 @@ private extension AIAgentAdapter {
 
         return toolCalls.compactMap { call in
             guard let function = call.function else { return nil }
-            return AIToolCallResult(
+            return ToolCallResult(
                 id: call.id,
                 name: function.name,
                 arguments: function.arguments
@@ -441,7 +441,7 @@ private extension AIAgentAdapter {
         }
     }
 
-    func extractToolResults(from messages: [ChatMessage]) -> [AIToolResultData] {
+    func extractToolResults(from messages: [LegacyChatMessage]) -> [AIToolResultData] {
         messages.compactMap { message in
             guard case .tool(let content, _, let toolCallId) = message.message else {
                 return nil
@@ -458,7 +458,7 @@ private extension AIAgentAdapter {
 // MARK: - AIAgentState Conversion
 
 private extension AIAgentState {
-    init(from legacyState: AgentState) {
+    init(from legacyState: LegacyAgentState) {
         switch legacyState {
         case .idle:
             self = .idle
@@ -477,13 +477,13 @@ private extension AIAgentState {
 // MARK: - Factory Methods
 
 public extension AIAgentAdapter {
-    /// Create an adapter from a legacy Agent with OpenAI provider
+    /// Create an adapter from a legacy LegacyAgent with OpenAI provider
     /// - Parameters:
-    ///   - agent: The legacy Agent to wrap
+    ///   - agent: The legacy LegacyAgent to wrap
     ///   - model: The model identifier (default: "gpt-4")
     /// - Returns: An AIAgentAdapter wrapping the agent
     static func fromOpenAI(
-        _ agent: Agent,
+        _ agent: LegacyAgent,
         model: String = "gpt-4"
     ) -> AIAgentAdapter {
         let modelAdapter = AILanguageModelAdapter(
@@ -500,13 +500,13 @@ public extension AIAgentAdapter {
         )
     }
 
-    /// Create an adapter from a legacy Agent with Anthropic provider
+    /// Create an adapter from a legacy LegacyAgent with Anthropic provider
     /// - Parameters:
-    ///   - agent: The legacy Agent to wrap
+    ///   - agent: The legacy LegacyAgent to wrap
     ///   - model: The model identifier (default: "claude-3-opus")
     /// - Returns: An AIAgentAdapter wrapping the agent
     static func fromAnthropic(
-        _ agent: Agent,
+        _ agent: LegacyAgent,
         model: String = "claude-3-opus"
     ) -> AIAgentAdapter {
         let modelAdapter = AILanguageModelAdapter(
@@ -523,15 +523,15 @@ public extension AIAgentAdapter {
         )
     }
 
-    /// Create an adapter from a legacy Agent with a custom model adapter
+    /// Create an adapter from a legacy LegacyAgent with a custom model adapter
     /// - Parameters:
-    ///   - agent: The legacy Agent to wrap
-    ///   - modelAdapter: A pre-configured AILanguageModel adapter
+    ///   - agent: The legacy LegacyAgent to wrap
+    ///   - modelAdapter: A pre-configured LLM adapter
     ///   - name: Optional name for the agent
     /// - Returns: An AIAgentAdapter wrapping the agent
     static func from(
-        _ agent: Agent,
-        modelAdapter: AILanguageModel,
+        _ agent: LegacyAgent,
+        modelAdapter: LLM,
         name: String? = nil
     ) -> AIAgentAdapter {
         AIAgentAdapter(

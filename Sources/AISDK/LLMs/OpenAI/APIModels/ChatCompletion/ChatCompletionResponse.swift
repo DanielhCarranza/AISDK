@@ -29,7 +29,7 @@ public struct ChatCompletionResponse: Decodable, Sendable {
     
     public struct Choice: Decodable, Sendable {
         public let index: Int
-        public let message: Message
+        public let message: LegacyMessage
         public let logprobs: Logprobs?
         public let finishReason: String?
         
@@ -39,7 +39,7 @@ public struct ChatCompletionResponse: Decodable, Sendable {
         }
     }
     
-    public struct Message: Decodable, Sendable {
+    public struct LegacyMessage: Decodable, Sendable {
         public let role: String
         
         /// In normal text completions, `content` is the returned text.

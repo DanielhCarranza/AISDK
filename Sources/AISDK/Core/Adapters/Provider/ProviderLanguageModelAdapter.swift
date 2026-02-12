@@ -2,13 +2,13 @@
 //  ProviderLanguageModelAdapter.swift
 //  AISDK
 //
-//  Adapter that bridges ProviderClient to the AILanguageModel protocol.
+//  Adapter that bridges ProviderClient to the LLM protocol.
 //
 
 import Foundation
 
-/// Adapter that wraps a ProviderClient for use with AIAgentActor.
-public final class ProviderLanguageModelAdapter: AILanguageModel, @unchecked Sendable {
+/// Adapter that wraps a ProviderClient for use with Agent.
+public final class ProviderLanguageModelAdapter: LLM, @unchecked Sendable {
     private let client: any ProviderClient
     public let provider: String
     public let modelId: String

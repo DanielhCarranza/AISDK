@@ -25,7 +25,7 @@ import Foundation
 /// ## Usage
 /// ```swift
 /// // Use defaults
-/// let agent = AIAgentActor(
+/// let agent = Agent(
 ///     model: myModel,
 ///     skillConfiguration: .default
 /// )
@@ -35,7 +35,7 @@ import Foundation
 ///     searchRoots: [customPath],
 ///     maxSkillSizeBytes: 64 * 1024
 /// )
-/// let agent = AIAgentActor(
+/// let agent = Agent(
 ///     model: myModel,
 ///     skillConfiguration: config
 /// )

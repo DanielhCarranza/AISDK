@@ -42,7 +42,7 @@ final class MultimodalTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: "I can see a beautiful landscape with a wooden boardwalk extending through a green meadow. The image shows rolling hills in the background and a clear blue sky.",
                         toolCalls: nil,

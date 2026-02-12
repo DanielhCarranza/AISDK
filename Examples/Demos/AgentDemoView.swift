@@ -11,12 +11,12 @@ import SwiftUI
 struct AgentDemoView: View {
     // MARK: - Properties
     
-    @State private var messages: [ChatMessage] = []
+    @State private var messages: [LegacyChatMessage] = []
     @State private var inputText = ""
-    @State private var state: AgentState = .idle
+    @State private var state: LegacyAgentState = .idle
     @State private var isStreaming: Bool = false
     
-    private let agent: Agent
+    private let agent: LegacyAgent
     private let metadataTracker = MetadataTracker()
     
     // MARK: - Init
@@ -24,7 +24,7 @@ struct AgentDemoView: View {
     init() {
         // Initialize agent with demo tools
         do {
-            self.agent = try Agent(
+            self.agent = try LegacyAgent(
                 model: AgenticModels.o3mini,
                 tools: [WeatherToolUI.self, 
                 CalculatorTool.self, 
@@ -89,7 +89,7 @@ struct AgentDemoView: View {
         }
         .onAppear {
             // Add initial system message
-            messages.append(ChatMessage(message: .assistant(content: .text("""
+            messages.append(LegacyChatMessage(message: .assistant(content: .text("""
                 Hello! I can help you with:
                 - Weather information
                 - Basic calculations
@@ -104,7 +104,7 @@ struct AgentDemoView: View {
     // MARK: - Actions
     
     private func sendMessage() {
-        let userMessage = ChatMessage(message: .user(content: .text(inputText)))
+        let userMessage = LegacyChatMessage(message: .user(content: .text(inputText)))
         messages.append(userMessage)
         inputText = ""
         

@@ -10,7 +10,7 @@ import Foundation
 
 // MARK: - AIAgent Protocol
 
-/// Unified protocol for AI agents that coordinate LLM calls with tool execution.
+/// Unified protocol for AI agents that coordinate LegacyLLM calls with tool execution.
 /// This protocol provides a consistent interface for agent implementations across
 /// different backing implementations.
 public protocol AIAgent: Sendable {
@@ -30,7 +30,7 @@ public protocol AIAgent: Sendable {
     var tools: [ToolSchema] { get }
 
     /// The underlying language model
-    var model: AILanguageModel { get }
+    var model: LLM { get }
 
     /// Send a message and get a response (non-streaming)
     /// - Parameter message: The user's message
@@ -64,19 +64,19 @@ public extension AIAgent {
 
 /// Represents the current state of an AI agent
 public enum AIAgentState: Sendable, Equatable {
-    /// Agent is idle and ready for input
+    /// LegacyAgent is idle and ready for input
     case idle
 
-    /// Agent is thinking/processing
+    /// LegacyAgent is thinking/processing
     case thinking
 
-    /// Agent is executing a tool
+    /// LegacyAgent is executing a tool
     case executingTool(name: String)
 
-    /// Agent is generating a response
+    /// LegacyAgent is generating a response
     case responding
 
-    /// Agent encountered an error
+    /// LegacyAgent encountered an error
     case error(String)
 
     /// Whether the agent is currently processing
@@ -114,7 +114,7 @@ public struct AIAgentResponse: Sendable {
     public let text: String
 
     /// Tool calls made during processing
-    public let toolCalls: [AIToolCallResult]
+    public let toolCalls: [ToolCallResult]
 
     /// Tool results from executed tools
     public let toolResults: [AIToolResultData]
@@ -130,7 +130,7 @@ public struct AIAgentResponse: Sendable {
 
     public init(
         text: String,
-        toolCalls: [AIToolCallResult] = [],
+        toolCalls: [ToolCallResult] = [],
         toolResults: [AIToolResultData] = [],
         messages: [AIMessage] = [],
         usage: AIUsage = .zero,
@@ -151,7 +151,7 @@ public struct AIAgentResponse: Sendable {
 public enum AIAgentEvent: Sendable {
     // MARK: - State Events
 
-    /// Agent state changed
+    /// LegacyAgent state changed
     case stateChange(AIAgentState)
 
     // MARK: - Message Events
@@ -201,7 +201,7 @@ public enum AIAgentEvent: Sendable {
 /// Configuration options for creating an AI agent
 public struct AIAgentConfiguration: Sendable {
     /// The language model to use
-    public let model: AILanguageModel
+    public let model: LLM
 
     /// Available tools
     public let tools: [ToolSchema]
@@ -222,7 +222,7 @@ public struct AIAgentConfiguration: Sendable {
     public let name: String?
 
     public init(
-        model: AILanguageModel,
+        model: LLM,
         tools: [ToolSchema] = [],
         instructions: String? = nil,
         initialMessages: [AIMessage] = [],

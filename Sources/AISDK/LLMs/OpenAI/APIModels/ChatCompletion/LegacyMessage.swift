@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public enum Message: Codable {
+public enum LegacyMessage: Codable {
     case assistant(content: AssistantContent, name: String? = nil, toolCalls: [ChatCompletionResponse.ToolCall]? = nil)
     case system(content: SystemContent, name: String? = nil)
     case user(content: UserContent, name: String? = nil)

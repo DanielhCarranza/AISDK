@@ -494,7 +494,7 @@ public extension AISDKErrorV2 {
         )
     }
 
-    // MARK: AITool Errors
+    // MARK: Tool Errors
 
     /// Create a tool execution failed error
     static func toolExecutionFailed(

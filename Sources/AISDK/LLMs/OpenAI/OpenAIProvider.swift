@@ -8,7 +8,7 @@
 import Foundation
 import Alamofire
 
-public class OpenAIProvider: LLM {
+public class OpenAIProvider: LegacyLLM {
         
     // MARK: - Properties
     
@@ -65,7 +65,7 @@ public class OpenAIProvider: LLM {
     /// let request = ChatCompletionRequest(
     ///   model: "gpt-4o",
     ///   messages: [
-    ///       ChatMessage(role: "user", content: .string("Hello!"))
+    ///       LegacyChatMessage(role: "user", content: .string("Hello!"))
     ///   ]
     /// )
     /// let response = try await client.createChatCompletion(request: request)
@@ -134,7 +134,7 @@ public class OpenAIProvider: LLM {
     /// let request = ChatCompletionRequest(
     ///   model: "gpt-4o",
     ///   messages: [
-    ///       ChatMessage(role: "user", content: .string("Hello!"))
+    ///       LegacyChatMessage(role: "user", content: .string("Hello!"))
     ///   ],
     ///   stream: true
     /// )

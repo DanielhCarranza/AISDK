@@ -143,7 +143,7 @@ extension UITreeError: LocalizedError {
 
 /// Represents a complete UI tree parsed from json-render format
 ///
-/// `UITree` is the parsed representation of LLM-generated UI in the json-render pattern.
+/// `UITree` is the parsed representation of LegacyLLM-generated UI in the json-render pattern.
 /// It provides:
 /// - Structural validation (valid keys, no cycles, true tree structure, children correctness)
 /// - Component type validation against a `UICatalog`

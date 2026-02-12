@@ -17,11 +17,11 @@ struct WeatherToolUI: RenderableTool {
     
     init() {}
     
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
     
     // 1) Execute tool
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // Simulate network delay
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         
@@ -45,7 +45,7 @@ struct WeatherToolUI: RenderableTool {
         // Create the RenderMetadata
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return AIToolResult(content: textResponse, metadata: metadata)
+        return ToolResult(content: textResponse, metadata: metadata)
     }
     
     // 2) Render from metadata
@@ -118,33 +118,33 @@ struct WeatherToolUI: RenderableTool {
 }
 
 // MARK: - Weather Tool
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get the current weather in a given city"
     
     init() {}
     
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
     
-    func execute() async throws -> AIToolResult  {
+    func execute() async throws -> ToolResult  {
         // Simulate API delay
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        return AIToolResult(content: "Weather in \(city): 72°F, Sunny")
+        return ToolResult(content: "Weather in \(city): 72°F, Sunny")
     }
 }
 
 // MARK: - Calculator Tool
-struct CalculatorTool: AITool {
+struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform basic arithmetic calculations"
     
     init() {}
     
-    @AIParameter(description: "First number", .range(-1000...1000))
+    @Parameter(description: "First number", .range(-1000...1000))
     var a: Double = 0
     
-    @AIParameter(description: "Second number", .range(-1000...1000))
+    @Parameter(description: "Second number", .range(-1000...1000))
     var b: Double = 0
     
     enum Operation: String, Codable, CaseIterable {
@@ -154,10 +154,10 @@ struct CalculatorTool: AITool {
         case divide = "/"
     }
 
-    @AIParameter(description: "Operation to perform")
+    @Parameter(description: "Operation to perform")
     var operation: Operation = .plus
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
         case .plus: result = a + b
@@ -167,48 +167,48 @@ struct CalculatorTool: AITool {
             guard b != 0 else { throw AgentError.toolExecutionFailed("Division by zero") }
             result = a / b
         }
-        return AIToolResult(content: String(format: "%.2f %@ %.2f = %.2f", a, operation.rawValue, b, result))
+        return ToolResult(content: String(format: "%.2f %@ %.2f = %.2f", a, operation.rawValue, b, result))
     }
 }
 
-struct TimezoneTool: AITool {
+struct TimezoneTool: Tool {
     let name = "convert_timezone"
     let description = "Convert time between different timezones"
     let returnToolResponse = true  // Direct response without AI interpretation
     
     init() {}
     
-    @AIParameter(description: "Source timezone (e.g. America/New_York)")
+    @Parameter(description: "Source timezone (e.g. America/New_York)")
     var fromTimezone: String = ""
     
-    @AIParameter(description: "Target timezone (e.g. Asia/Tokyo)")
+    @Parameter(description: "Target timezone (e.g. Asia/Tokyo)")
     var toTimezone: String = ""
     
-    @AIParameter(description: "Time to convert (format: HH:mm)")
+    @Parameter(description: "Time to convert (format: HH:mm)")
     var time: String = ""
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        return AIToolResult(content: "Tool response: \(time) in \(fromTimezone) to \(toTimezone)")
+        return ToolResult(content: "Tool response: \(time) in \(fromTimezone) to \(toTimezone)")
     }
 }
 
 
 
-struct ResearchTool: AITool {
+struct ResearchTool: Tool {
     let name = "search_research"
     let description = "Search for medical research papers on a topic"
     
     init() {}
     
-    @AIParameter(description: "Medical topic to search for")
+    @Parameter(description: "Medical topic to search for")
     var topic: String = ""
     
-    @AIParameter(description: "Maximum number of results", .range(1...5))
+    @Parameter(description: "Maximum number of results", .range(1...5))
     var maxResults: Int = 3
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         
@@ -226,6 +226,6 @@ struct ResearchTool: AITool {
         Found 
         """
         
-        return AIToolResult(content: content, metadata: evidence)
+        return ToolResult(content: content, metadata: evidence)
     }
 } 

@@ -2,13 +2,13 @@
 //  ReliableLanguageModelAdapter.swift
 //  AISDKCLI
 //
-//  AILanguageModel adapter that executes via FailoverExecutor and emits pseudo-stream events
+//  LLM adapter that executes via FailoverExecutor and emits pseudo-stream events
 //
 
 import Foundation
 import AISDK
 
-final class ReliableLanguageModelAdapter: AILanguageModel, @unchecked Sendable {
+final class ReliableLanguageModelAdapter: LLM, @unchecked Sendable {
     private let executor: FailoverExecutor
     let modelId: String
     private let providerLabel: String

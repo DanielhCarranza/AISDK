@@ -96,7 +96,7 @@ struct ChatCompanionView: View {
             )
         }
         .task {
-            // Agent setup is now moved to init, so just load sessions
+            // LegacyAgent setup is now moved to init, so just load sessions
             manager.loadChatSessions()
         }
     }

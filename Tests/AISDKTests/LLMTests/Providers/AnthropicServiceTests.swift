@@ -218,7 +218,7 @@ final class AnthropicServiceTests: XCTestCase {
             case .networkError(let code, _):
                 XCTAssertNotNil(code)
             default:
-                break // Other LLM errors are acceptable
+                break // Other LegacyLLM errors are acceptable
             }
         } catch {
             XCTFail("Expected LLMError, got \(error)")

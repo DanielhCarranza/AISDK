@@ -16,12 +16,12 @@ struct ChatDemoView: View {
     @State private var isStreaming = false
     @State private var selectedProvider: ProviderType = .openAI
     
-    // LLM instances
+    // LegacyLLM instances
     let openAIClient = OpenAIProvider(apiKey: AgenticModels.gpt4.apiKey ?? " ")
     let claudeClient = ClaudeProvider(apiKey: AgenticModels.claude.apiKey ?? " ") // Use AgenticModels for API key
     
     // Computed property to get the current provider
-    private var currentProvider: LLM {
+    private var currentProvider: LegacyLLM {
         switch selectedProvider {
         case .openAI:
             return openAIClient
@@ -179,7 +179,7 @@ struct ChatDemoView: View {
                             textOutput = ""
                             do {
                                 // Define the weather tool
-                                struct WeatherTool: AITool {
+                                struct WeatherTool: Tool {
                                     let name = "get_current_weather"
                                     let description = "Get the current weather in a given location"
                                     
@@ -190,14 +190,14 @@ struct ChatDemoView: View {
                                         case fahrenheit
                                     }
 
-                                    @AIParameter(description: "The city and state, e.g. San Francisco, CA")
+                                    @Parameter(description: "The city and state, e.g. San Francisco, CA")
                                     var location: String = ""
                                     
-                                    @AIParameter(description: "Temperature unit")
+                                    @Parameter(description: "Temperature unit")
                                     var unit: TemperatureUnit = .celsius
 
-                                    func execute() async throws -> AIToolResult  {
-                                        return AIToolResult(content: "Weather \(self.location) \(self.unit.rawValue)")
+                                    func execute() async throws -> ToolResult  {
+                                        return ToolResult(content: "Weather \(self.location) \(self.unit.rawValue)")
                                     }
                                 }
                                 
@@ -338,13 +338,13 @@ struct ChatDemoView: View {
                     .disabled(isStreaming)
                 }
                 
-                Button("Weather Tool Agent Test") {
+                Button("Weather Tool LegacyAgent Test") {
                     Task {
-                        textOutput = "Starting Weather Tool Agent Test...\n"
+                        textOutput = "Starting Weather Tool LegacyAgent Test...\n"
                         
                         do {
                             // Define the simple weather tool
-                            struct WeatherToolForAgent: AITool {
+                            struct WeatherToolForAgent: Tool {
                                 let name = "get_current_weather"
                                 let description = "Get the current weather in a given location"
                                 
@@ -355,28 +355,28 @@ struct ChatDemoView: View {
                                     case fahrenheit
                                 }
 
-                                @AIParameter(description: "The city and state, e.g. San Francisco, CA")
+                                @Parameter(description: "The city and state, e.g. San Francisco, CA")
                                 var location: String = ""
                                 
-                                @AIParameter(description: "Temperature unit")
+                                @Parameter(description: "Temperature unit")
                                 var unit: TemperatureUnit = .celsius
 
-                                func execute() async throws -> AIToolResult  {
+                                func execute() async throws -> ToolResult  {
                                     // Add logging to verify execution
                                     print("🌦️ Weather tool executing for location: \(location), unit: \(unit.rawValue)")
-                                    return AIToolResult(content: "Weather for \(self.location): 72°\(self.unit == .celsius ? "C" : "F"), partly cloudy")
+                                    return ToolResult(content: "Weather for \(self.location): 72°\(self.unit == .celsius ? "C" : "F"), partly cloudy")
                                 }
                             }
                             
                             // Initialize an agent with just the weather tool
-                            let agent = try Agent(
+                            let agent = try LegacyAgent(
                                 model: AgenticModels.gpt4,
                                 tools: [WeatherToolForAgent.self],
                                 instructions: "You are a helpful assistant that provides weather information."
                             )
                             
                             // Create test message
-                            let userMessage = ChatMessage(message: .user(content: .text("What's the weather in Boston today?")))
+                            let userMessage = LegacyChatMessage(message: .user(content: .text("What's the weather in Boston today?")))
                             
                             // Test with specific function requirement
                             textOutput += "🧪 TEST: Specific weather function\n"

@@ -79,7 +79,7 @@ struct BasicChatDemo {
             await testAnthropicGenerateObject(provider: anthropicProvider)
         }
         
-        // Test 5: AITool Calling Tests
+        // Test 5: Tool Calling Tests
         await testDirectToolCalls()
         await testToolWithLLM(provider: openAIProvider, providerName: "OpenAI")
         await testAgentWithTools(provider: openAIProvider)
@@ -90,18 +90,18 @@ struct BasicChatDemo {
         print("\n✅ Demo completed!")
         
         do {
-            print("🚀 Testing Agent with OpenAI Provider...")
+            print("🚀 Testing LegacyAgent with OpenAI Provider...")
             
             // Create OpenAI provider (uses smart default: gpt-4o)
             let openai = OpenAIProvider()
             
             // Create agent with the provider
-            let agent = Agent(
+            let agent = LegacyAgent(
                 llm: openai,
                 instructions: "You are a helpful assistant."
             )
             
-            print("✅ Agent created successfully!")
+            print("✅ LegacyAgent created successfully!")
             
             // Test a conversation
             let response = try await agent.send("Hello! What's 2+2?")
@@ -138,7 +138,7 @@ func loadEnvironmentVariables() {
 
 // MARK: - Test Functions
 
-func testBasicChat(provider: LLM, providerName: String) async {
+func testBasicChat(provider: LegacyLLM, providerName: String) async {
     print("\n📝 Testing Basic Chat with \(providerName)...")
     
     do {
@@ -165,7 +165,7 @@ func testBasicChat(provider: LLM, providerName: String) async {
     }
 }
 
-func testStreamingChat(provider: LLM, providerName: String) async {
+func testStreamingChat(provider: LegacyLLM, providerName: String) async {
     print("\n🔄 Testing Streaming Chat with \(providerName)...")
     
     do {
@@ -194,11 +194,11 @@ func testStreamingChat(provider: LLM, providerName: String) async {
     }
 }
 
-func interactiveChat(provider: LLM) async {
+func interactiveChat(provider: LegacyLLM) async {
     print("\n💬 Interactive Chat Mode (type 'quit' to exit)")
     print("   Using OpenAI provider")
     
-    var conversationHistory: [Message] = [
+    var conversationHistory: [LegacyMessage] = [
         .system(content: .text("You are a helpful assistant."))
     ]
     
@@ -252,7 +252,7 @@ func interactiveChat(provider: LLM) async {
 
 // MARK: - Multimodal Test Functions (Phase 1)
 
-func testImageURL(provider: LLM, providerName: String) async {
+func testImageURL(provider: LegacyLLM, providerName: String) async {
     print("\n🖼️ Testing Image URL + Text with \(providerName)...")
     
     do {
@@ -284,7 +284,7 @@ func testImageURL(provider: LLM, providerName: String) async {
     }
 }
 
-func testImageBase64(provider: LLM, providerName: String) async {
+func testImageBase64(provider: LegacyLLM, providerName: String) async {
     print("\n📸 Testing Base64 Image + Text with \(providerName)...")
     
     do {
@@ -320,7 +320,7 @@ func testImageBase64(provider: LLM, providerName: String) async {
     }
 }
 
-func testMultipleImages(provider: LLM, providerName: String) async {
+func testMultipleImages(provider: LegacyLLM, providerName: String) async {
     print("\n🖼️🖼️ Testing Multiple Images with \(providerName)...")
     
     do {
@@ -356,7 +356,7 @@ func testMultipleImages(provider: LLM, providerName: String) async {
 
 // MARK: - JSON & Structured Output Test Functions (Phase 2)
 
-func testJSONMode(provider: LLM, providerName: String) async {
+func testJSONMode(provider: LegacyLLM, providerName: String) async {
     print("\n📝 Testing JSON Mode with \(providerName)...")
     
     do {
@@ -395,7 +395,7 @@ func testJSONMode(provider: LLM, providerName: String) async {
     }
 }
 
-func testStructuredOutput(provider: LLM, providerName: String) async {
+func testStructuredOutput(provider: LegacyLLM, providerName: String) async {
     print("\n🏗️ Testing Structured Output with \(providerName)...")
     
     do {
@@ -446,7 +446,7 @@ func testStructuredOutput(provider: LLM, providerName: String) async {
     }
 }
 
-func testGenerateObjectMethod(provider: LLM, providerName: String) async {
+func testGenerateObjectMethod(provider: LegacyLLM, providerName: String) async {
     print("\n🏗️ Testing Generate Object Method with \(providerName)...")
     
     do {
@@ -615,7 +615,7 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
 // MARK: - Tool Testing Functions (Phase 3)
 
 // Demo tools for testing
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
     
@@ -624,15 +624,15 @@ struct WeatherTool: AITool {
         case fahrenheit
     }
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
     
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
@@ -642,18 +642,18 @@ struct WeatherTool: AITool {
         let conditions = ["sunny", "partly cloudy", "cloudy", "light rain"]
         let condition = conditions.randomElement()!
         
-        return AIToolResult(content: "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)")
+        return ToolResult(content: "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)")
     }
 }
 
-struct CalculatorTool: AITool {
+struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform basic arithmetic calculations"
     
-    @AIParameter(description: "First number")
+    @Parameter(description: "First number")
     var a: Double = 0.0
     
-    @AIParameter(description: "Second number")
+    @Parameter(description: "Second number")
     var b: Double = 0.0
     
     enum Operation: String, Codable, CaseIterable {
@@ -663,12 +663,12 @@ struct CalculatorTool: AITool {
         case divide = "/"
     }
 
-    @AIParameter(description: "Operation")
+    @Parameter(description: "Operation")
     var operation: Operation = .plus
     
     init() {}
     
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
         case .plus: result = a + b
@@ -678,7 +678,7 @@ struct CalculatorTool: AITool {
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
         }
-        return AIToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
+        return ToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 
@@ -686,7 +686,7 @@ func testDirectToolCalls() async {
     print("\n🔧 Testing Direct Tool Calls...")
     
     // Register tools
-    AIToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
+    ToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
     
     // Test Weather Tool
     do {
@@ -719,7 +719,7 @@ func testDirectToolCalls() async {
     print("   ✅ Calculator tool schema generated: \(calcSchema.function?.name ?? "N/A")")
 }
 
-func testToolWithLLM(provider: LLM, providerName: String) async {
+func testToolWithLLM(provider: LegacyLLM, providerName: String) async {
     print("\n⚙️ Testing Tool Calling with \(providerName)...")
     
     do {
@@ -752,7 +752,7 @@ func testToolWithLLM(provider: LLM, providerName: String) async {
                 }
             }
         } else if let content = response.choices.first?.message.content {
-            print("   📄 LLM Response: \(content)")
+            print("   📄 LegacyLLM Response: \(content)")
         }
         
         print("   📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
@@ -762,10 +762,10 @@ func testToolWithLLM(provider: LLM, providerName: String) async {
     }
 }
 
-func testAgentWithTools(provider: LLM) async {
-    print("\n🤖 Testing Agent with Tools...")
-    print("   ℹ️  Agent functionality requires additional setup - skipping for now")
-    print("   📝 This would test agent integration with tools once Agent is properly exposed")
+func testAgentWithTools(provider: LegacyLLM) async {
+    print("\n🤖 Testing LegacyAgent with Tools...")
+    print("   ℹ️  LegacyAgent functionality requires additional setup - skipping for now")
+    print("   📝 This would test agent integration with tools once LegacyAgent is properly exposed")
 }
 
 // MARK: - Helper Functions
