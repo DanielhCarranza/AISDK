@@ -341,6 +341,8 @@ final class BuiltInToolMappingTests: XCTestCase {
                 return "image_generation"
             case .mcp:
                 return "mcp"
+            case .computerUsePreview:
+                return "computer_use_preview"
             case .function:
                 return "function"
             }

@@ -14,6 +14,7 @@ public enum ResponseTool: Codable {
     case imageGeneration(partialImages: Int? = nil)
     case codeInterpreter
     case mcp(serverLabel: String, serverUrl: String, requireApproval: String? = nil, headers: [String: String]? = nil)
+    case computerUsePreview(displayWidth: Int, displayHeight: Int, environment: String?)
     case function(ToolFunction)
     
     enum CodingKeys: String, CodingKey {
@@ -26,6 +27,7 @@ public enum ResponseTool: Codable {
         case imageGeneration = "image_generation"
         case codeInterpreter = "code_interpreter"
         case mcp = "mcp"
+        case computerUsePreview = "computer_use_preview"
         case function = "function"
     }
     
@@ -51,6 +53,13 @@ public enum ResponseTool: Codable {
                 serverUrl: mcpTool.serverUrl,
                 requireApproval: mcpTool.requireApproval,
                 headers: mcpTool.headers
+            )
+        case .computerUsePreview:
+            let cuTool = try ResponseComputerUseTool(from: decoder)
+            self = .computerUsePreview(
+                displayWidth: cuTool.displayWidth,
+                displayHeight: cuTool.displayHeight,
+                environment: cuTool.environment
             )
         case .function:
             let functionTool = try ResponseFunctionTool(from: decoder)
@@ -78,6 +87,13 @@ public enum ResponseTool: Codable {
                 serverUrl: serverUrl,
                 requireApproval: requireApproval,
                 headers: headers
+            )
+            try tool.encode(to: encoder)
+        case .computerUsePreview(let displayWidth, let displayHeight, let environment):
+            let tool = ResponseComputerUseTool(
+                displayWidth: displayWidth,
+                displayHeight: displayHeight,
+                environment: environment
             )
             try tool.encode(to: encoder)
         case .function(let function):
@@ -203,4 +219,23 @@ public struct ResponseFunctionTool: Codable {
     }
 }
 
- 
+/// Computer use preview tool
+public struct ResponseComputerUseTool: Codable {
+    public let type: String = "computer_use_preview"
+    public let displayWidth: Int
+    public let displayHeight: Int
+    public let environment: String?
+
+    public init(displayWidth: Int, displayHeight: Int, environment: String? = nil) {
+        self.displayWidth = displayWidth
+        self.displayHeight = displayHeight
+        self.environment = environment
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case displayWidth = "display_width"
+        case displayHeight = "display_height"
+        case environment
+    }
+}

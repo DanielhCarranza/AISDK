@@ -282,6 +282,18 @@ public actor AnthropicClientAdapter: ProviderClient {
             }
         }
 
+        if let builtInTools = request.builtInTools,
+           builtInTools.contains(where: { $0.kind == "computerUse" }) {
+            let hasZoom = builtInTools.contains(where: {
+                if case .computerUse(let config) = $0 { return config.enableZoom == true }
+                return false
+            })
+            let header = hasZoom ? "computer-use-2025-11-24" : "computer-use-2025-01-24"
+            if !headers.contains(header) {
+                headers.append(header)
+            }
+        }
+
         return headers.isEmpty ? nil : headers.joined(separator: ",")
     }
 
@@ -320,11 +332,49 @@ public actor AnthropicClientAdapter: ProviderClient {
                     guard let toolCallId = message.toolCallId, !toolCallId.isEmpty else {
                         throw ProviderError.invalidRequest("Tool message requires non-empty toolCallId")
                     }
-                    content = [.toolResult(ACAToolResultContent(
-                        type: "tool_result",
-                        toolUseId: toolCallId,
-                        content: text
-                    ))]
+
+                    // Check for computer use result payload
+                    if text.contains("\"__computer_use_result__\""),
+                       let payloadData = text.data(using: .utf8),
+                       let payload = try? JSONDecoder().decode(ComputerUseResultPayload.self, from: payloadData),
+                       payload.type == "__computer_use_result__" {
+                        // Build content blocks for computer use result
+                        var resultBlocks: [[String: ProviderJSONValue]] = []
+                        if let screenshot = payload.screenshot, let mediaType = payload.mediaType {
+                            resultBlocks.append([
+                                "type": .string("image"),
+                                "source": .object([
+                                    "type": .string("base64"),
+                                    "media_type": .string(mediaType),
+                                    "data": .string(screenshot)
+                                ])
+                            ])
+                        }
+                        if let text = payload.text {
+                            resultBlocks.append([
+                                "type": .string("text"),
+                                "text": .string(text)
+                            ])
+                        }
+                        if resultBlocks.isEmpty {
+                            resultBlocks.append([
+                                "type": .string("text"),
+                                "text": .string("Action completed")
+                            ])
+                        }
+                        content = [.computerUseResult(ACAComputerUseResultContent(
+                            type: "tool_result",
+                            toolUseId: toolCallId,
+                            content: resultBlocks,
+                            isError: payload.isError
+                        ))]
+                    } else {
+                        content = [.toolResult(ACAToolResultContent(
+                            type: "tool_result",
+                            toolUseId: toolCallId,
+                            content: text
+                        ))]
+                    }
                 } else {
                     content = [.text(ACATextContent(type: "text", text: text))]
                 }
@@ -525,17 +575,42 @@ public actor AnthropicClientAdapter: ProviderClient {
                         "name": "code_execution"
                     ]))
 
+                case .computerUse(let config):
+                    var toolDict: [String: Any] = [
+                        "name": "computer"
+                    ]
+                    if config.enableZoom == true {
+                        toolDict["type"] = "computer_20251124"
+                        toolDict["enable_zoom"] = true
+                    } else {
+                        toolDict["type"] = "computer_20250124"
+                    }
+                    toolDict["display_width_px"] = config.displayWidth
+                    toolDict["display_height_px"] = config.displayHeight
+                    if let displayNumber = config.displayNumber {
+                        toolDict["display_number"] = displayNumber
+                    }
+                    body.tools?.append(.builtIn(toolDict))
+
+                case .computerUseDefault:
+                    body.tools?.append(.builtIn([
+                        "type": "computer_20250124",
+                        "name": "computer",
+                        "display_width_px": 1024,
+                        "display_height_px": 768
+                    ]))
+
                 case .fileSearch:
                     throw ProviderError.invalidRequest(
-                        "fileSearch is not supported by Anthropic. Supported: webSearch, codeExecution."
+                        "fileSearch is not supported by Anthropic. Supported: webSearch, codeExecution, computerUse."
                     )
                 case .imageGeneration, .imageGenerationDefault:
                     throw ProviderError.invalidRequest(
-                        "imageGeneration is not supported by Anthropic. Supported: webSearch, codeExecution."
+                        "imageGeneration is not supported by Anthropic. Supported: webSearch, codeExecution, computerUse."
                     )
                 case .urlContext:
                     throw ProviderError.invalidRequest(
-                        "urlContext is not supported by Anthropic. Supported: webSearch, codeExecution."
+                        "urlContext is not supported by Anthropic. Supported: webSearch, codeExecution, computerUse."
                     )
                 }
             }
@@ -984,6 +1059,7 @@ private enum ACAContentBlock: Encodable {
     case image(ACAImageContent)
     case toolUse(ACAToolUseContent)
     case toolResult(ACAToolResultContent)
+    case computerUseResult(ACAComputerUseResultContent)
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -995,6 +1071,8 @@ private enum ACAContentBlock: Encodable {
         case .toolUse(let content):
             try container.encode(content)
         case .toolResult(let content):
+            try container.encode(content)
+        case .computerUseResult(let content):
             try container.encode(content)
         }
     }
@@ -1038,6 +1116,31 @@ private struct ACAToolResultContent: Encodable {
         case type
         case toolUseId = "tool_use_id"
         case content
+    }
+}
+
+/// Tool result with rich content blocks (used for computer use results with images)
+private struct ACAComputerUseResultContent: Encodable {
+    let type: String
+    let toolUseId: String
+    let content: [[String: ProviderJSONValue]]
+    let isError: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
+        case isError = "is_error"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(toolUseId, forKey: .toolUseId)
+        try container.encode(content, forKey: .content)
+        if isError {
+            try container.encode(isError, forKey: .isError)
+        }
     }
 }
 
