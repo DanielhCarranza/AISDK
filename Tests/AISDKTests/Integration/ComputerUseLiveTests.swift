@@ -193,7 +193,9 @@ final class ComputerUseLiveTests: XCTestCase {
         )
         let resultJSON = String(data: try JSONEncoder().encode(resultPayload), encoding: .utf8)!
 
-        // Turn 2: Send screenshot result back
+        // Turn 2: Send full conversation with screenshot result.
+        // The provider converts the assistant __computer_use__ tool call into a computer_call
+        // input item, and the tool result into a computer_call_output item.
         let messages: [AIMessage] = [
             .user("Take a screenshot of the screen."),
             .assistant("", toolCalls: [AIMessage.ToolCall(id: cuCall.id, name: cuCall.name, arguments: cuCall.arguments)]),
@@ -319,7 +321,7 @@ final class ComputerUseLiveTests: XCTestCase {
         } catch let error as ProviderError {
             if case .rateLimited = error { throw XCTSkip("Anthropic rate limited") }
             // computer_20251124 may not be available for all models
-            if case .invalidRequest(let msg) = error, msg.contains("not supported") || msg.contains("beta") {
+            if case .invalidRequest(let msg) = error, msg.contains("not support") || msg.contains("beta") {
                 throw XCTSkip("Zoom computer use not available: \(msg)")
             }
             throw error

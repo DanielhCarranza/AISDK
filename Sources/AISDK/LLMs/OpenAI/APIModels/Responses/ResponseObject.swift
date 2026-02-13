@@ -149,6 +149,8 @@ public enum ResponseOutputItem: Codable {
     case codeInterpreterCall(ResponseOutputCodeInterpreterCall)
     case mcpApprovalRequest(ResponseOutputMCPApprovalRequest)
     case computerCall(ResponseOutputComputerCall)
+    /// Unrecognized output type — allows forward compatibility with new API types (e.g. "reasoning")
+    case unknown(String)
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -167,7 +169,12 @@ public enum ResponseOutputItem: Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(OutputType.self, forKey: .type)
+        let typeString = try container.decode(String.self, forKey: .type)
+
+        guard let type = OutputType(rawValue: typeString) else {
+            self = .unknown(typeString)
+            return
+        }
 
         switch type {
         case .message:
@@ -215,6 +222,9 @@ public enum ResponseOutputItem: Codable {
             try mcpRequest.encode(to: encoder)
         case .computerCall(let computerCall):
             try computerCall.encode(to: encoder)
+        case .unknown(let typeString):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(typeString, forKey: .type)
         }
     }
 }
@@ -371,9 +381,21 @@ public struct ResponseOutputComputerCall: Codable {
         public let path: [PathPoint]?
         public let ms: Int?
 
+        public init(type: String, x: Int? = nil, y: Int? = nil, button: String? = nil,
+                    text: String? = nil, keys: [String]? = nil,
+                    scrollX: Int? = nil, scrollY: Int? = nil,
+                    path: [PathPoint]? = nil, ms: Int? = nil) {
+            self.type = type; self.x = x; self.y = y; self.button = button
+            self.text = text; self.keys = keys
+            self.scrollX = scrollX; self.scrollY = scrollY
+            self.path = path; self.ms = ms
+        }
+
         public struct PathPoint: Codable {
             public let x: Int
             public let y: Int
+
+            public init(x: Int, y: Int) { self.x = x; self.y = y }
         }
 
         enum CodingKeys: String, CodingKey {

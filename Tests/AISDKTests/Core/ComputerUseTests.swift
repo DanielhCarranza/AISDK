@@ -412,7 +412,8 @@ final class ComputerUseTests: XCTestCase {
             scrollX: nil, scrollY: nil,
             path: nil, ms: nil,
             safetyChecks: [["id": "sc_1", "code": "warn", "message": "test"]],
-            callId: "cid_789"
+            callId: "cid_789",
+            responseItemId: "cu_item_1"
         )
         let data = try JSONEncoder().encode(payload)
         let decoded = try JSONDecoder().decode(ComputerUseOpenAIPayload.self, from: data)

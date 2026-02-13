@@ -78,7 +78,8 @@ final class ComputerUseAgentTests: XCTestCase {
             path: nil,
             ms: nil,
             safetyChecks: safetyChecks,
-            callId: callId
+            callId: callId,
+            responseItemId: nil
         )
         let data = try! JSONEncoder().encode(payload)
         return String(data: data, encoding: .utf8)!
