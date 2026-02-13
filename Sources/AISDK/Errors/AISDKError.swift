@@ -152,6 +152,7 @@ public enum AgentError: AIError {
     case streamingError(String)
     case underlying(Error)
     case operationCancelled
+    case computerUseHandlerNotConfigured
     public var detailedDescription: String {
         switch self {
         case .invalidModel:
@@ -174,6 +175,8 @@ public enum AgentError: AIError {
             return "Error: \(error.localizedDescription)"
         case .operationCancelled:
             return "Operation was cancelled by a callback handler"
+        case .computerUseHandlerNotConfigured:
+            return "Computer use tool call received but no computerUseHandler is configured on the Agent"
         }
     }
     

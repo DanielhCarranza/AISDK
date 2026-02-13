@@ -479,6 +479,10 @@ public actor GeminiClientAdapter: ProviderClient {
                     throw ProviderError.invalidRequest(
                         "imageGeneration is not supported by Gemini. Supported: webSearch, codeExecution, urlContext."
                     )
+                case .computerUse, .computerUseDefault:
+                    throw ProviderError.invalidRequest(
+                        "computerUse is not supported by Gemini. Supported: webSearch, codeExecution, urlContext."
+                    )
                 }
             }
         }

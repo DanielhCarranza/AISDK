@@ -191,6 +191,8 @@ public enum ResponseInput: Encodable {
 public enum ResponseInputItem: Codable {
     case message(ResponseMessage)
     case functionCallOutput(ResponseFunctionCallOutput)
+    case computerCallOutput(ResponseComputerCallOutput)
+    case computerCall(ResponseInputComputerCall)
     case mcpApprovalResponse(ResponseMCPApprovalResponse)
     case itemReference(ResponseItemReference)
 
@@ -201,6 +203,8 @@ public enum ResponseInputItem: Codable {
     enum ItemType: String, Codable {
         case message = "message"
         case functionCallOutput = "function_call_output"
+        case computerCallOutput = "computer_call_output"
+        case computerCall = "computer_call"
         case mcpApprovalResponse = "mcp_approval_response"
         case itemReference = "item_reference"
     }
@@ -216,6 +220,12 @@ public enum ResponseInputItem: Codable {
         case .functionCallOutput:
             let output = try ResponseFunctionCallOutput(from: decoder)
             self = .functionCallOutput(output)
+        case .computerCallOutput:
+            let output = try ResponseComputerCallOutput(from: decoder)
+            self = .computerCallOutput(output)
+        case .computerCall:
+            let call = try ResponseInputComputerCall(from: decoder)
+            self = .computerCall(call)
         case .mcpApprovalResponse:
             let response = try ResponseMCPApprovalResponse(from: decoder)
             self = .mcpApprovalResponse(response)
@@ -231,11 +241,46 @@ public enum ResponseInputItem: Codable {
             try message.encode(to: encoder)
         case .functionCallOutput(let output):
             try output.encode(to: encoder)
+        case .computerCallOutput(let output):
+            try output.encode(to: encoder)
+        case .computerCall(let call):
+            try call.encode(to: encoder)
         case .mcpApprovalResponse(let response):
             try response.encode(to: encoder)
         case .itemReference(let reference):
             try reference.encode(to: encoder)
         }
+    }
+}
+
+/// Computer call input item for re-sending a previous computer_call in multi-turn conversations.
+public struct ResponseInputComputerCall: Codable {
+    public let type: String
+    public let id: String
+    public let callId: String
+    public let action: ResponseOutputComputerCall.ComputerCallAction
+    public let pendingSafetyChecks: [ResponseOutputComputerCall.PendingSafetyCheck]
+    public let status: String
+
+    public init(
+        id: String,
+        callId: String,
+        action: ResponseOutputComputerCall.ComputerCallAction,
+        pendingSafetyChecks: [ResponseOutputComputerCall.PendingSafetyCheck] = [],
+        status: String = "completed"
+    ) {
+        self.type = "computer_call"
+        self.id = id
+        self.callId = callId
+        self.action = action
+        self.pendingSafetyChecks = pendingSafetyChecks
+        self.status = status
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, id, action, status
+        case callId = "call_id"
+        case pendingSafetyChecks = "pending_safety_checks"
     }
 }
 
@@ -276,6 +321,48 @@ public struct ResponseFunctionCallOutput: Codable {
         case type
         case callId = "call_id"
         case output
+    }
+}
+
+/// Computer call output item (result of executing a computer use action)
+public struct ResponseComputerCallOutput: Codable {
+    public let type: String = "computer_call_output"
+    public let callId: String
+    public let output: ComputerCallOutputContent
+    public let acknowledgedSafetyChecks: [AcknowledgedSafetyCheck]?
+
+    public init(callId: String, output: ComputerCallOutputContent, acknowledgedSafetyChecks: [AcknowledgedSafetyCheck]? = nil) {
+        self.callId = callId
+        self.output = output
+        self.acknowledgedSafetyChecks = acknowledgedSafetyChecks
+    }
+
+    public struct ComputerCallOutputContent: Codable {
+        public let type: String
+        public let imageUrl: String?
+
+        public init(type: String = "computer_screenshot", imageUrl: String? = nil) {
+            self.type = type
+            self.imageUrl = imageUrl
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case imageUrl = "image_url"
+        }
+    }
+
+    public struct AcknowledgedSafetyCheck: Codable {
+        public let id: String
+        public let code: String
+        public let message: String
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case callId = "call_id"
+        case output
+        case acknowledgedSafetyChecks = "acknowledged_safety_checks"
     }
 }
 

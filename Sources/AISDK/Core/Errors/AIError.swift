@@ -778,6 +778,8 @@ public extension AISDKErrorV2 {
             return .from(underlyingError, context: context)
         case .operationCancelled:
             return .cancelled(context: context)
+        case .computerUseHandlerNotConfigured:
+            return .invalidRequest("Computer use tool call received but no computerUseHandler is configured", context: context)
         }
     }
 

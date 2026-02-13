@@ -15,6 +15,7 @@ AISDK is a Swift framework for building AI-powered applications with a unified i
 | [Providers](providers.md) | OpenRouterClient, ProviderClient protocol |
 | [Agents](agents.md) | AIAgentActor, ObservableAgentState, StopCondition |
 | [Tools](tools.md) | AITool protocol, AIToolRegistry, AIToolResult |
+| [Computer Use](computer-use.md) | ComputerUseAction, ComputerUseResult, agent handler |
 | [Reliability](reliability.md) | AdaptiveCircuitBreaker, FailoverExecutor, RetryPolicy |
 | [Generative UI](generative-ui.md) | UICatalog, UITree, Core 8 components |
 | [Errors](errors.md) | AISDKErrorV2, AIErrorCode, ProviderError |
