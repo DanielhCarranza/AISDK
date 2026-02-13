@@ -138,6 +138,11 @@ public actor Agent {
     /// Return `true` to approve, `false` to deny execution.
     public var mcpApprovalHandler: (@Sendable (MCPApprovalContext) async -> Bool)?
 
+    /// Optional callback for executing computer use actions.
+    /// When set, the agent will route computer use tool calls to this handler
+    /// instead of treating them as regular tool calls.
+    public var computerUseHandler: (@Sendable (ComputerUseToolCall) async throws -> ComputerUseResult)?
+
     // MARK: - Skills State
 
     /// Skill configuration for discovering .aidoctor skills
@@ -505,10 +510,15 @@ public actor Agent {
 
             // Build step result
             var toolResults: [AIToolResultData] = []
+
+            // Partition tool calls: computer use vs regular executable
+            let computerUseCalls = hasComputerUseTool
+                ? toolCalls.filter { Self.computerUseToolNames.contains($0.name) }
+                : []
             let executableToolCalls = toolCalls.filter { !builtInToolNameSet.contains($0.name) }
 
-            // Check if we should stop (no tool calls)
-            guard !executableToolCalls.isEmpty else {
+            // Check if we should stop (no actionable tool calls)
+            guard !executableToolCalls.isEmpty || !computerUseCalls.isEmpty else {
                 // No tool calls, emit step finish and we're done
                 let stepResult = AIStepResult(
                     stepIndex: stepIndex,
@@ -525,8 +535,42 @@ public actor Agent {
                 break
             }
 
-            // Execute tool calls
-            let firstToolName = executableToolCalls.first?.name ?? "unknown"
+            // Execute computer use calls through handler
+            for toolCall in computerUseCalls {
+                guard let cuCall = parseComputerUseToolCall(toolCall) else { continue }
+
+                continuation.yield(.computerUseAction(cuCall))
+
+                guard let handler = computerUseHandler else {
+                    let errorResult = AgentError.computerUseHandlerNotConfigured.localizedDescription
+                    let resultData = AIToolResultData(id: toolCall.id, result: errorResult, metadata: nil)
+                    toolResults.append(resultData)
+                    continuation.yield(.toolResult(id: toolCall.id, result: errorResult, metadata: nil))
+                    let errorMessage = AIMessage.tool(errorResult, toolCallId: toolCall.id)
+                    workingMessages.append(errorMessage)
+                    continue
+                }
+
+                do {
+                    let cuResult = try await handler(cuCall)
+                    let encodedResult = encodeComputerUseResult(cuResult, callId: cuCall.callId)
+                    let resultData = AIToolResultData(id: toolCall.id, result: encodedResult, metadata: nil)
+                    toolResults.append(resultData)
+                    continuation.yield(.toolResult(id: toolCall.id, result: encodedResult, metadata: nil))
+                    let toolMessage = AIMessage.tool(encodedResult, toolCallId: toolCall.id)
+                    workingMessages.append(toolMessage)
+                } catch {
+                    let errorResult = "Error: \(error.localizedDescription)"
+                    let resultData = AIToolResultData(id: toolCall.id, result: errorResult, metadata: nil)
+                    toolResults.append(resultData)
+                    continuation.yield(.toolResult(id: toolCall.id, result: errorResult, metadata: nil))
+                    let errorMessage = AIMessage.tool(errorResult, toolCallId: toolCall.id)
+                    workingMessages.append(errorMessage)
+                }
+            }
+
+            // Execute regular tool calls
+            let firstToolName = executableToolCalls.first?.name ?? computerUseCalls.first?.name ?? "unknown"
             currentState = .executingTool(firstToolName)
             await setObservableState(.executingTool(firstToolName))
 
@@ -614,6 +658,13 @@ public actor Agent {
     /// - Parameter messages: The new message history
     public func setMessages(_ messages: [AIMessage]) {
         messageHistory = messages
+    }
+
+    /// Set the computer use handler for executing computer actions.
+    ///
+    /// - Parameter handler: The handler closure, or nil to clear
+    public func setComputerUseHandler(_ handler: (@Sendable (ComputerUseToolCall) async throws -> ComputerUseResult)?) {
+        computerUseHandler = handler
     }
 
     // MARK: - Internal Processing
@@ -725,10 +776,14 @@ public actor Agent {
             workingMessages.append(assistantMessage)
             messageHistory = workingMessages
 
+            // Partition tool calls: computer use vs regular executable
+            let computerUseCalls = hasComputerUseTool
+                ? toolCalls.filter { Self.computerUseToolNames.contains($0.name) }
+                : []
             let executableToolCalls = toolCalls.filter { !builtInToolNameSet.contains($0.name) }
 
-            // Check if we should stop (no tool calls)
-            guard !executableToolCalls.isEmpty else {
+            // Check if we should stop (no actionable tool calls)
+            guard !executableToolCalls.isEmpty || !computerUseCalls.isEmpty else {
                 // No tool calls - build step result and we're done
                 let stepResult = AIStepResult(
                     stepIndex: stepIndex,
@@ -744,12 +799,38 @@ public actor Agent {
                 break
             }
 
-            // Execute tool calls and collect results
-            let firstToolName = executableToolCalls.first?.name ?? "unknown"
+            // Execute computer use calls through handler
+            var toolResults: [AIToolResultData] = []
+            for toolCall in computerUseCalls {
+                guard let cuCall = parseComputerUseToolCall(toolCall) else { continue }
+
+                guard let handler = computerUseHandler else {
+                    let errorResult = AgentError.computerUseHandlerNotConfigured.localizedDescription
+                    toolResults.append(AIToolResultData(id: toolCall.id, result: errorResult, metadata: nil))
+                    let errorMessage = AIMessage.tool(errorResult, toolCallId: toolCall.id)
+                    workingMessages.append(errorMessage)
+                    continue
+                }
+
+                do {
+                    let cuResult = try await handler(cuCall)
+                    let encodedResult = encodeComputerUseResult(cuResult, callId: cuCall.callId)
+                    toolResults.append(AIToolResultData(id: toolCall.id, result: encodedResult, metadata: nil))
+                    let toolMessage = AIMessage.tool(encodedResult, toolCallId: toolCall.id)
+                    workingMessages.append(toolMessage)
+                } catch {
+                    let errorResult = "Error: \(error.localizedDescription)"
+                    toolResults.append(AIToolResultData(id: toolCall.id, result: errorResult, metadata: nil))
+                    let errorMessage = AIMessage.tool(errorResult, toolCallId: toolCall.id)
+                    workingMessages.append(errorMessage)
+                }
+            }
+
+            // Execute regular tool calls and collect results
+            let firstToolName = executableToolCalls.first?.name ?? computerUseCalls.first?.name ?? "unknown"
             currentState = .executingTool(firstToolName)
             await setObservableState(.executingTool(firstToolName))
 
-            var toolResults: [AIToolResultData] = []
             for toolCall in executableToolCalls {
                 do {
                     let toolResult = try await executeToolCall(toolCall)
@@ -1095,9 +1176,92 @@ public actor Agent {
                 names.insert("image_generation")
             case .urlContext:
                 names.insert("url_context")
+            case .computerUse, .computerUseDefault:
+                names.insert("computer")
+                names.insert("computer_use")
+                names.insert("__computer_use__")
             }
         }
         return names
+    }
+
+    /// Names of computer use tool calls that should be routed to the computerUseHandler
+    private static let computerUseToolNames: Set<String> = ["computer", "computer_use", "__computer_use__"]
+
+    /// Whether any of the built-in tools is a computer use tool
+    private var hasComputerUseTool: Bool {
+        builtInTools.contains { $0.kind == "computerUse" }
+    }
+
+    /// Parse a ToolCallResult into a ComputerUseToolCall if it's a computer use call.
+    /// Returns nil if the tool call is not a computer use call.
+    private func parseComputerUseToolCall(_ toolCall: ToolCallResult) -> ComputerUseToolCall? {
+        guard Self.computerUseToolNames.contains(toolCall.name) else { return nil }
+
+        if toolCall.name == "__computer_use__" {
+            // OpenAI sentinel: decode the ComputerUseOpenAIPayload from arguments
+            guard let data = toolCall.arguments.data(using: .utf8),
+                  let payload = try? JSONDecoder().decode(ComputerUseOpenAIPayload.self, from: data) else {
+                return nil
+            }
+            let pathTuples = payload.path?.compactMap { dict -> (x: Int, y: Int)? in
+                guard let x = dict["x"], let y = dict["y"] else { return nil }
+                return (x: x, y: y)
+            }
+            guard let action = ComputerUseAction.fromOpenAI(
+                type: payload.actionType,
+                x: payload.x, y: payload.y,
+                button: payload.button,
+                text: payload.text,
+                keys: payload.keys,
+                scrollX: payload.scrollX, scrollY: payload.scrollY,
+                path: pathTuples,
+                ms: payload.ms
+            ) else { return nil }
+
+            let safetyChecks = payload.safetyChecks?.compactMap { dict -> ComputerUseAction.SafetyCheck? in
+                guard let id = dict["id"], let code = dict["code"], let message = dict["message"] else { return nil }
+                return ComputerUseAction.SafetyCheck(id: id, code: code, message: message)
+            } ?? []
+
+            return ComputerUseToolCall(
+                id: toolCall.id,
+                callId: payload.callId,
+                action: action,
+                safetyChecks: safetyChecks
+            )
+        } else {
+            // Anthropic: parse from JSON arguments
+            guard let data = toolCall.arguments.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let action = ComputerUseAction.fromAnthropic(json) else {
+                return nil
+            }
+            return ComputerUseToolCall(
+                id: toolCall.id,
+                callId: nil,
+                action: action,
+                safetyChecks: []
+            )
+        }
+    }
+
+    /// Encode a ComputerUseResult as a JSON payload for the message pipeline.
+    /// Provider adapters detect the `__computer_use_result__` marker to reconstruct wire format.
+    private func encodeComputerUseResult(_ result: ComputerUseResult, callId: String?) -> String {
+        let payload = ComputerUseResultPayload(
+            type: "__computer_use_result__",
+            screenshot: result.screenshot,
+            mediaType: result.mediaType?.rawValue,
+            text: result.text,
+            isError: result.isError,
+            callId: callId
+        )
+        guard let data = try? JSONEncoder().encode(payload),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{\"type\":\"__computer_use_result__\",\"isError\":true,\"text\":\"Failed to encode result\"}"
+        }
+        return json
     }
 
     /// Build combined tool schemas from native tools and MCP tools.

@@ -332,6 +332,8 @@ public final class LoggingAISDKObserver: AISDKObserver {
             return "heartbeat"
         case .finish(let reason, _):
             return "finish(\(reason.rawValue))"
+        case .computerUseAction(let action):
+            return "computerUseAction(id=\(action.id))"
         case .error:
             // PHI-safe: don't log error description
             return "error"
@@ -375,6 +377,7 @@ extension AIStreamEvent {
         case .stepFinish: return "stepFinish"
         case .heartbeat: return "heartbeat"
         case .finish: return "finish"
+        case .computerUseAction: return "computerUseAction"
         case .error: return "error"
         }
     }

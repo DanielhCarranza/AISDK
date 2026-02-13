@@ -110,7 +110,7 @@ final class OpenAIResponsesProviderUnitTests: XCTestCase {
             case .webSearchPreview: return "web"
             case .fileSearch: return "file"
             case .codeInterpreter: return "code"
-            case .imageGeneration, .mcp, .function: return "other"
+            case .imageGeneration, .mcp, .computerUsePreview, .function: return "other"
             }
         } ?? []
 

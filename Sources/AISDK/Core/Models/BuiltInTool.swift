@@ -13,6 +13,7 @@ import Foundation
 /// | `.fileSearch`     | file_search        | -      | -         |
 /// | `.imageGeneration`| image_generation   | -      | -         |
 /// | `.urlContext`     | -                  | url_context | -     |
+/// | `.computerUse`   | computer_use_prev  | -           | computer_20250124  |
 public enum BuiltInTool: Sendable, Equatable, Hashable {
     /// Web search grounding.
     case webSearch(WebSearchConfig)
@@ -38,6 +39,12 @@ public enum BuiltInTool: Sendable, Equatable, Hashable {
     /// URL context fetching (Gemini only).
     case urlContext
 
+    /// Computer use with explicit configuration (OpenAI Responses, Anthropic).
+    case computerUse(ComputerUseConfig)
+
+    /// Computer use with default configuration (1024x768).
+    case computerUseDefault
+
     /// The canonical tool kind, for deduplication.
     public var kind: String {
         switch self {
@@ -51,6 +58,8 @@ public enum BuiltInTool: Sendable, Equatable, Hashable {
             return "imageGeneration"
         case .urlContext:
             return "urlContext"
+        case .computerUse, .computerUseDefault:
+            return "computerUse"
         }
     }
 }

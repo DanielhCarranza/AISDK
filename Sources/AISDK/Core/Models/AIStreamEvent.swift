@@ -87,6 +87,11 @@ public enum AIStreamEvent: Sendable {
     /// Stream finished with reason and final usage
     case finish(finishReason: AIFinishReason, usage: AIUsage)
 
+    // MARK: - Computer Use Events
+
+    /// A computer use action requested by the model (typed version of tool call)
+    case computerUseAction(ComputerUseToolCall)
+
     /// An error occurred during streaming
     case error(Error)
 }

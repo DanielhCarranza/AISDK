@@ -154,6 +154,18 @@ extension OpenAIProvider {
                     )
                 case .imageGenerationDefault:
                     insertBuiltInTools(kind: tool.kind, tools: [.imageGeneration(partialImages: nil)], preferOrder: true)
+                case .computerUse(let config):
+                    insertBuiltInTools(kind: tool.kind, tools: [
+                        .computerUsePreview(
+                            displayWidth: config.displayWidth,
+                            displayHeight: config.displayHeight,
+                            environment: config.environment?.rawValue
+                        )
+                    ], preferOrder: true)
+                case .computerUseDefault:
+                    insertBuiltInTools(kind: tool.kind, tools: [
+                        .computerUsePreview(displayWidth: 1024, displayHeight: 768, environment: "browser")
+                    ], preferOrder: true)
                 case .urlContext:
                     throw ProviderError.invalidRequest("urlContext is not supported by OpenAI.")
                 }
@@ -179,6 +191,13 @@ extension OpenAIProvider {
             reasoning = nil
         }
 
+        // Auto-enable truncation for computer use (OpenAI requirement)
+        let hasComputerUse = tools.contains(where: {
+            if case .computerUsePreview = $0 { return true }
+            return false
+        })
+        let truncation: String? = hasComputerUse ? "auto" : nil
+
         // Build the request
         return ResponseRequest(
             model: request.model ?? model.name,
@@ -199,7 +218,7 @@ extension OpenAIProvider {
             parallelToolCalls: true,
             serviceTier: openAIOptions?.serviceTier?.rawValue,
             user: nil,
-            truncation: nil,
+            truncation: truncation,
             text: nil
         )
     }
@@ -237,6 +256,29 @@ extension OpenAIProvider {
                     return nil
                 }.joined(separator: "\n")
             }
+
+            // Check for computer use result payload
+            if output.contains("\"__computer_use_result__\""),
+               let payloadData = output.data(using: .utf8),
+               let payload = try? JSONDecoder().decode(ComputerUseResultPayload.self, from: payloadData),
+               payload.type == "__computer_use_result__" {
+                let imageUrl: String?
+                if let screenshot = payload.screenshot, let mediaType = payload.mediaType {
+                    imageUrl = "data:\(mediaType);base64,\(screenshot)"
+                } else {
+                    imageUrl = nil
+                }
+                let acknowledgedChecks: [ResponseComputerCallOutput.AcknowledgedSafetyCheck]? = nil
+                return .computerCallOutput(ResponseComputerCallOutput(
+                    callId: payload.callId ?? toolCallId,
+                    output: ResponseComputerCallOutput.ComputerCallOutputContent(
+                        type: "computer_screenshot",
+                        imageUrl: imageUrl
+                    ),
+                    acknowledgedSafetyChecks: acknowledgedChecks
+                ))
+            }
+
             return .functionCallOutput(ResponseFunctionCallOutput(callId: toolCallId, output: output))
         }
 
@@ -321,6 +363,31 @@ extension OpenAIProvider {
                     id: call.callId,
                     name: call.name,
                     arguments: call.arguments
+                ))
+            case .computerCall(let call):
+                // Convert OpenAI computer_call to a sentinel tool call for Agent routing
+                let action = call.action
+                let safetyChecks = call.pendingSafetyChecks ?? []
+                let payload = ComputerUseOpenAIPayload(
+                    actionType: action.type,
+                    x: action.x, y: action.y,
+                    button: action.button,
+                    text: action.text,
+                    keys: action.keys,
+                    scrollX: action.scrollX, scrollY: action.scrollY,
+                    path: action.path?.map { ["x": $0.x, "y": $0.y] },
+                    ms: action.ms,
+                    safetyChecks: safetyChecks.map {
+                        ["id": $0.id, "code": $0.code, "message": $0.message]
+                    },
+                    callId: call.callId
+                )
+                let argsData = (try? JSONEncoder().encode(payload)) ?? Data()
+                let argsString = String(data: argsData, encoding: .utf8) ?? "{}"
+                toolCalls.append(ToolCallResult(
+                    id: call.callId,
+                    name: "__computer_use__",
+                    arguments: argsString
                 ))
             case .functionCallOutput, .webSearchCall, .imageGenerationCall, .codeInterpreterCall, .mcpApprovalRequest:
                 // These are handled via streaming events or are outputs
