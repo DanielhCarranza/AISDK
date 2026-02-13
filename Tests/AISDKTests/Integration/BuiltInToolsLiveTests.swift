@@ -93,6 +93,13 @@ final class BuiltInToolsLiveTests: XCTestCase {
             response = try await client.execute(request: request)
         } catch let error as ProviderError {
             if case .rateLimited = error { throw XCTSkip("Anthropic rate limited") }
+            let desc = "\(error)"
+            if desc.contains("overloaded") || desc.contains("529") {
+                throw XCTSkip("Anthropic server overloaded (529)")
+            }
+            throw error
+        } catch {
+            if "\(error)".contains("overloaded") || "\(error)".contains("529") { throw XCTSkip("Anthropic server overloaded") }
             throw error
         }
 
@@ -119,6 +126,13 @@ final class BuiltInToolsLiveTests: XCTestCase {
             response = try await client.execute(request: request)
         } catch let error as ProviderError {
             if case .rateLimited = error { throw XCTSkip("Anthropic rate limited") }
+            let desc = "\(error)"
+            if desc.contains("overloaded") || desc.contains("529") {
+                throw XCTSkip("Anthropic server overloaded (529)")
+            }
+            throw error
+        } catch {
+            if "\(error)".contains("overloaded") || "\(error)".contains("529") { throw XCTSkip("Anthropic server overloaded") }
             throw error
         }
 
@@ -144,15 +158,27 @@ final class BuiltInToolsLiveTests: XCTestCase {
         var sources: [AISource] = []
         var textChunks: [String] = []
 
-        for try await event in client.stream(request: request) {
-            switch event {
-            case .source(let source):
-                sources.append(source)
-            case .textDelta(let text):
-                textChunks.append(text)
-            default:
-                break
+        do {
+            for try await event in client.stream(request: request) {
+                switch event {
+                case .source(let source):
+                    sources.append(source)
+                case .textDelta(let text):
+                    textChunks.append(text)
+                default:
+                    break
+                }
             }
+        } catch let error as ProviderError {
+            if case .rateLimited = error { throw XCTSkip("Anthropic rate limited") }
+            let desc = "\(error)"
+            if desc.contains("overloaded") || desc.contains("529") {
+                throw XCTSkip("Anthropic server overloaded (529)")
+            }
+            throw error
+        } catch {
+            if "\(error)".contains("overloaded") || "\(error)".contains("529") { throw XCTSkip("Anthropic server overloaded") }
+            throw error
         }
 
         let fullText = textChunks.joined()

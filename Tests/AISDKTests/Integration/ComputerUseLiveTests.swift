@@ -357,6 +357,13 @@ final class ComputerUseLiveTests: XCTestCase {
             response1 = try await client.execute(request: request1)
         } catch let error as ProviderError {
             if case .rateLimited = error { throw XCTSkip("Anthropic rate limited") }
+            let desc = "\(error)"
+            if desc.contains("overloaded") || desc.contains("529") {
+                throw XCTSkip("Anthropic server overloaded (529)")
+            }
+            throw error
+        } catch {
+            if "\(error)".contains("overloaded") || "\(error)".contains("529") { throw XCTSkip("Anthropic server overloaded") }
             throw error
         }
 
@@ -396,6 +403,13 @@ final class ComputerUseLiveTests: XCTestCase {
             response2 = try await client.execute(request: request2)
         } catch let error as ProviderError {
             if case .rateLimited = error { throw XCTSkip("Anthropic rate limited") }
+            let desc = "\(error)"
+            if desc.contains("overloaded") || desc.contains("529") {
+                throw XCTSkip("Anthropic server overloaded (529)")
+            }
+            throw error
+        } catch {
+            if "\(error)".contains("overloaded") || "\(error)".contains("529") { throw XCTSkip("Anthropic server overloaded") }
             throw error
         }
 

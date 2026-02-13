@@ -42,7 +42,7 @@ final class OpenAIResponsesSessionTests: XCTestCase {
             // Test Response wrapper provides clean access
             XCTAssertNotNil(response.text)
             XCTAssertNotNil(response.id)
-            XCTAssertEqual(response.model, "gpt-4o-mini")
+            XCTAssertTrue(response.model.contains("gpt-4o-mini"), "Expected model containing 'gpt-4o-mini', got: \(response.model)")
             XCTAssertTrue(response.status.isFinal)
             XCTAssertGreaterThan(response.content.count, 0)
             
