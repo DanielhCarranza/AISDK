@@ -232,6 +232,31 @@ let toolType = AIToolRegistry.toolType(forName: "get_weather")
 
 ---
 
+## Built-In Tools
+
+Provider-native tools that execute server-side. Add via `builtInTools` on requests or agents.
+
+```swift
+let request = AITextRequest(
+    messages: [.user("Search the web for Swift concurrency")],
+    model: "gpt-4o",
+    builtInTools: [.webSearchDefault, .codeExecutionDefault]
+)
+```
+
+| Tool | Description | Providers |
+|------|-------------|-----------|
+| `.webSearch` / `.webSearchDefault` | Web search grounding | OpenAI, Anthropic, Gemini |
+| `.codeExecution` / `.codeExecutionDefault` | Server-side code execution | OpenAI, Anthropic, Gemini |
+| `.fileSearch(config)` | Vector store search | OpenAI |
+| `.imageGeneration` / `.imageGenerationDefault` | Image generation | OpenAI |
+| `.urlContext` | URL content fetching | Gemini |
+| `.computerUse` / `.computerUseDefault` | Screen interaction | OpenAI, Anthropic |
+
+For computer use details, see [Computer Use](computer-use.md).
+
+---
+
 ## Notes on Parameters
 
 - `@AIParameter` and `@Parameter` are equivalent. Prefer `@AIParameter` for new tools.
@@ -240,5 +265,6 @@ let toolType = AIToolRegistry.toolType(forName: "get_weather")
 
 ## See Also
 
+- [Computer Use](computer-use.md) - Screen interaction tools
 - [Agents](agents.md) - Using tools with agents
 - [Core Protocols](core-protocols.md)
