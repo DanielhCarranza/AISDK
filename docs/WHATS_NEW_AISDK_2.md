@@ -18,6 +18,8 @@ AISDK 2.0 is a **comprehensive modernization** bringing the Swift AI SDK to feat
 | **Concurrency** | GCD/Completion handlers | Swift Concurrency (async/await) |
 | **Streaming** | Callback-based | `AsyncThrowingStream` with bounded buffers |
 | **State Management** | KVO/Delegates | `@Observable` pattern for SwiftUI |
+| **Sessions** | None | Pluggable persistence (InMemory, File, SQLite) |
+| **Context Management** | None | Auto-compaction (truncate/summarize/sliding window) |
 | **Reliability** | None | Full circuit breaker + failover chain |
 | **UI Generation** | None | Generative UI with json-render pattern |
 | **Telemetry** | None | `AISDKObserver` with tracing |
@@ -213,7 +215,41 @@ observer.onRequestEnd = { result in
 
 ---
 
-### 8. Safe Async Utilities
+### 8. Session Persistence & Context Management
+**Files in `Sources/AISDK/Sessions/`** (16 files, ~2,500 lines)
+
+Full conversation persistence with pluggable storage backends, streaming integration, context compaction, and SwiftUI ViewModels.
+
+| Component | Purpose |
+|-----------|---------|
+| `AISession` | Core session model with messages, checkpoints, metadata |
+| `SessionStore` protocol | Pluggable persistence (InMemory, FileSystem, SQLite) |
+| `ChatViewModel` | `@Observable` ViewModel integrating agent + store + streaming |
+| `SessionListViewModel` | Paginated session list with filtering |
+| `SessionCompactionService` | Context window management (truncate/summarize/sliding window) |
+| `StreamingPersistenceBuffer` | Debounced writes during streaming (500ms) |
+| `SessionTitleGenerator` | LLM-powered auto-titling |
+| `SessionExport` | JSON and Markdown export/import |
+
+**Usage:**
+```swift
+let store = SQLiteSessionStore(path: dbPath)
+let session = try await AISession.create(userId: "user_1", store: store)
+
+let vm = ChatViewModel(agent: myAgent, store: store, session: session)
+await vm.send("Hello!")  // Streams response, persists automatically
+```
+
+**Three built-in stores:**
+```swift
+InMemorySessionStore()            // Tests and previews
+FileSystemSessionStore(directory:) // Simple file-based persistence
+SQLiteSessionStore(path:)          // Production (WAL mode, indexes)
+```
+
+---
+
+### 9. Safe Async Utilities
 **File:** `SafeAsyncStream.swift` (344 lines)
 
 Bounded async streams that prevent memory leaks:
@@ -224,7 +260,7 @@ let stream = SafeAsyncStream<String>(bufferSize: 1000)
 
 ---
 
-### 9. Legacy Adapters (Backward Compatibility)
+### 10. Legacy Adapters (Backward Compatibility)
 **Files in `Sources/AISDK/Core/Adapters/Legacy/`:**
 
 | Adapter | Lines | Purpose |
@@ -288,6 +324,8 @@ let agent = AIAgentActor(model: adapted, tools: [])
 | Circuit Breaker | No | Yes | Better |
 | Failover Chain | No | Yes | Better |
 | Generative UI | Experimental | Core 8 | Yes |
+| Session Persistence | No | 3 built-in stores | Better |
+| Context Compaction | No | 3 strategies | Better |
 | PHI Protection | No | Allowlists | Better |
 
 ---
@@ -321,6 +359,8 @@ let agent = AIAgentActor(model: adapted, tools: [])
 
 ### What's Actually New (Not Just Renamed)
 - **Actor-based concurrency** - Complete rewrite of agent system
+- **Session persistence** - Brand new (3 stores, streaming integration, checkpoints)
+- **Context management** - Brand new (compaction, title generation, export)
 - **Reliability layer** - Brand new (circuit breaker, failover, retry)
 - **Generative UI** - Brand new (json-render pattern)
 - **Provider routing** - Brand new (OpenRouter/LiteLLM abstraction)

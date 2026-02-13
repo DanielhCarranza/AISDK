@@ -77,3 +77,4 @@ let client = OpenRouterClient()
 - [Streaming Basics](02-streaming-basics.md) - Real-time responses
 - [Tool Creation](03-tool-creation.md) - Adding custom tools
 - [Multi-Step Agents](04-multi-step-agents.md) - Complex workflows
+- [Sessions & Persistence](08-sessions.md) - Persist conversations across app launches

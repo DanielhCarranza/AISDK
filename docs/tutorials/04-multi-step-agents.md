@@ -192,7 +192,7 @@ let result = try await researchAgent.execute(
 
 ## Conversation Context Management
 
-Maintain context across interactions:
+For simple, in-memory context tracking:
 
 ```swift
 class ConversationManager {
@@ -204,27 +204,28 @@ class ConversationManager {
     }
 
     func send(_ message: String) async throws -> AIAgentResult {
-        // Add user message to history
         history.append(.user(message))
-
-        // Execute with full history
         let result = try await agent.execute(messages: history)
-
-        // Add assistant response to history
         history.append(.assistant(result.text))
-
         return result
     }
 
     func clearHistory() {
         history.removeAll()
     }
-
-    func setContext(_ messages: [AIMessage]) {
-        history = messages
-    }
 }
 ```
+
+For persistent conversations that survive app restarts, use **Sessions** instead:
+
+```swift
+let store = SQLiteSessionStore(path: dbPath)
+let vm = ChatViewModel(agent: agent, store: store)
+try await vm.createSession(userId: "user_1")
+await vm.send("Hello!")  // Persists automatically
+```
+
+See [Sessions & Persistence](08-sessions.md) for the full guide.
 
 ## Parallel Tool Execution
 
@@ -314,3 +315,4 @@ func executeWithProgress(query: String) async {
 - [Generative UI](05-generative-ui.md) - Dynamic interfaces
 - [Reliability Patterns](06-reliability-patterns.md) - Production hardening
 - [Testing Strategies](07-testing-strategies.md) - Verify agent behavior
+- [Sessions & Persistence](08-sessions.md) - Persist conversations across app launches

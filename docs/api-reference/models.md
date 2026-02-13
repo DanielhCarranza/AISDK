@@ -7,21 +7,36 @@
 Universal message type for LLM conversations.
 
 ```swift
-public struct AIMessage: Sendable, Equatable, Codable {
+public struct AIMessage: Sendable, Equatable, Codable, Identifiable {
+    /// Unique identifier (for SwiftUI lists and session tracking)
+    public var id: String
+
     /// Message role
     public let role: Role
 
-    /// Message content
-    public let content: Content
+    /// Message content (mutable for streaming text accumulation)
+    public var content: Content
 
     /// Optional sender name
     public let name: String?
 
-    /// Tool calls made by assistant
-    public let toolCalls: [ToolCall]?
+    /// Tool calls made by assistant (mutable for streaming tool call deltas)
+    public var toolCalls: [ToolCall]?
 
     /// ID of tool call this message responds to
     public let toolCallId: String?
+
+    // Session properties
+    /// Agent that generated this message (for multi-agent sessions)
+    public var agentId: String?
+    public var agentName: String?
+
+    /// Whether this message is a checkpoint boundary
+    public var isCheckpoint: Bool
+    public var checkpointIndex: Int?
+
+    /// Append text to this message (used during streaming)
+    public mutating func appendText(_ text: String)
 }
 ```
 
@@ -450,3 +465,4 @@ AITextRequest (streaming)
 - [Core Protocols](core-protocols.md) - Protocol definitions
 - [Agents](agents.md) - Agent execution flow
 - [Tools](tools.md) - Tool call handling
+- [Sessions](sessions.md) - Session persistence and AIMessage session properties
