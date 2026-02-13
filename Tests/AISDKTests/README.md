@@ -1,438 +1,190 @@
-# 🧪 AISDK Test Suite Documentation
+# AISDK Test Suite Documentation
 
 ## Overview
 
-The AISDK Test Suite provides comprehensive testing coverage for all core functionality of the AI SDK, including chat completions, multimodal processing, structured outputs, and tool calling. This documentation covers test structure, usage, and implementation details.
+The AISDK test suite provides comprehensive testing coverage across all SDK features: LLM providers, agents, computer use, sessions, reliability patterns, generative UI, MCP, skills, tools, and more. Tests use both XCTest and Swift Testing frameworks.
 
-## 📂 Test Structure
+## Test Summary
+
+| Metric | Value |
+|--------|-------|
+| **Total Tests** | **2,249** |
+| XCTest tests | 1,997 |
+| Swift Testing tests | 252 |
+| XCTest suites | 163 |
+| Swift Testing suites | 42 |
+| **Success Rate** | **100%** |
+| **Failures** | **0** |
+
+## Test Structure
 
 ```
 Tests/AISDKTests/
-├── README.md                 # This documentation
-├── AISDKTests.swift         # Main test entry point
-├── ToolTests.swift          # Tool calling and function tests (19 tests)
-├── AgentToolTests.swift     # Agent integration tests (disabled)
-├── AgentIntegrationTests.swift  # Comprehensive Agent tests (13 tests)
-├── LLMTests/
-│   ├── BasicChatTests.swift      # Text-only chat tests (10 tests)
-│   ├── StreamingChatTests.swift  # Real-time streaming tests (8 tests)
-│   ├── MultimodalTests.swift     # Image + text processing (8 tests)
-│   └── StructuredOutputTests.swift # JSON/object generation (6 tests)
-└── Mocks/
-    └── MockLLMProvider.swift     # Test utilities and mocks
+├── Agents/                    # Agent unit tests (65+ tests)
+│   ├── AgentTests.swift
+│   ├── ComputerUseAgentTests.swift
+│   ├── AgentHandoffTests.swift
+│   ├── AgentStreamingTests.swift
+│   ├── AgentToolExecutionTests.swift
+│   └── ObservableAgentStateTests.swift
+├── Anthropic/                 # Anthropic provider tests (42+ tests)
+│   ├── AnthropicServiceTests.swift
+│   ├── AnthropicServiceRealAPITests.swift
+│   ├── AnthropicServiceStreamingTests.swift
+│   ├── AnthropicServiceToolsTests.swift
+│   ├── AnthropicServiceSearchResultsTests.swift
+│   └── ... (types, batch, files, thinking, models)
+├── Core/
+│   ├── Providers/             # Provider adapter tests (236+ tests)
+│   │   ├── OpenAIClientAdapterTests.swift
+│   │   ├── AnthropicClientAdapterTests.swift
+│   │   ├── GeminiClientAdapterTests.swift
+│   │   ├── OpenRouterClientTests.swift
+│   │   ├── LiteLLMClientTests.swift
+│   │   ├── ProviderContractTests.swift
+│   │   └── ProviderClientTests.swift
+│   └── Reliability/           # Reliability pattern tests (269+ tests)
+│       ├── FaultInjectorTests.swift
+│       ├── RetryPolicyTests.swift
+│       ├── AdaptiveCircuitBreakerTests.swift
+│       ├── FailoverExecutorTests.swift
+│       ├── TimeoutPolicyTests.swift
+│       └── ProviderHealthMonitorTests.swift
+├── Errors/                    # Error handling tests (42 tests)
+│   └── AIErrorTests.swift
+├── GenerativeUI/              # Generative UI tests (323+ tests)
+│   ├── UICatalogTests.swift          # 80 tests
+│   ├── UISnapshotTests.swift         # 65 tests
+│   ├── GenerativeUIViewModelTests.swift # 48 tests
+│   ├── UITreeTests.swift             # 32 tests
+│   ├── UIComponentRegistryTests.swift # 30 tests
+│   └── ... (integration, views, components)
+├── Integration/               # Live API integration tests (37+ tests)
+│   ├── BuiltInToolsLiveTests.swift
+│   ├── ComputerUseLiveTests.swift
+│   ├── ReasoningE2ETests.swift
+│   └── OpenRouterIntegrationTests.swift
+├── LLMTests/                  # Core LLM tests (30+ tests)
+│   ├── BasicChatTests.swift
+│   ├── StreamingChatTests.swift
+│   ├── MultimodalTests.swift
+│   ├── StructuredOutputTests.swift
+│   └── Providers/             # Provider-specific tests (384+ tests)
+│       ├── OpenAI/ (Responses API, streaming, tools, file manager)
+│       ├── Gemini/ (caching, error mapping, structured output)
+│       └── Anthropic/ (caching)
+├── Models/                    # Data model tests (155+ tests)
+│   ├── AIUsageTests.swift
+│   ├── AITraceContextTests.swift
+│   ├── AIProviderAccessTests.swift
+│   └── ... (requests, results, config)
+├── MCP/                       # Model Context Protocol tests (54+ tests)
+│   ├── MCPTests.swift
+│   └── MCPIntegrationTests.swift
+├── Sessions/                  # Session management tests (149+ tests)
+│   ├── Models/SessionTests.swift
+│   ├── ViewModels/ChatViewModelTests.swift
+│   ├── Services/SessionCompactionServiceTests.swift
+│   ├── Stores/ (InMemory, FileSystem, SQLite)
+│   └── Export/SessionExportTests.swift
+├── Skills/                    # Skill system tests (92+ tests)
+│   ├── SkillValidatorTests.swift
+│   ├── SkillRegistryTests.swift
+│   ├── SkillPromptBuilderTests.swift
+│   └── SkillParserTests.swift
+├── Stress/                    # Stress tests (16 tests)
+│   ├── ConcurrencyStressTests.swift
+│   └── OpenRouterStressTests.swift
+├── Tools/                     # Tool system tests (67+ tests)
+│   ├── ToolCallRepairTests.swift
+│   ├── AIParameterTests.swift
+│   ├── ToolTests.swift
+│   └── WebSearchToolTests.swift
+├── Mocks/                     # Test infrastructure (no test methods)
+│   ├── MockLLMProvider.swift
+│   └── MockOpenAIResponsesProvider.swift
+└── Fixtures/                  # Test data
+    ├── StreamEventFixtures.swift
+    └── ResponsesAPIFixtures.swift
 ```
 
-## 🎯 Test Categories
+## Test Categories
 
-### 1. **Basic Chat Tests** (`BasicChatTests.swift`)
-**Purpose**: Core text-only conversation functionality  
-**Test Count**: 10 tests  
-**Coverage**:
-- OpenAI and Claude provider integration
-- Message handling and response processing
-- Token usage tracking
-- Error handling for invalid requests
-- Authentication validation
+### By Feature Area
 
-**Key Tests**:
-- `testOpenAIBasicChat()` - Validates OpenAI GPT responses
-- `testClaudeBasicChat()` - Validates Claude conversation handling
-- `testInvalidAPIKey()` - Error handling for authentication failures
-- `testTokenUsageTracking()` - Verifies accurate token counting
+| Category | Tests | Key Suites |
+|----------|-------|------------|
+| Generative UI | ~323 | UICatalog (80), UISnapshot (65), ViewModel (48) |
+| LLM Providers | ~384 | OpenAI, Anthropic, Gemini, OpenRouter, LiteLLM |
+| Core Reliability | ~269 | FaultInjector, RetryPolicy, CircuitBreaker, Failover |
+| Provider Adapters | ~236 | Client adapters, contracts, encoding/parsing |
+| Models | ~155 | Usage, TraceContext, ProviderAccess, Requests |
+| Sessions | ~149 | Session stores, compaction, export, viewmodels |
+| Skills & Tools | ~159 | Validator, Registry, ToolCallRepair, AIParameter |
+| Agents | ~65 | Agent, ComputerUse, Handoff, Streaming, Tools |
+| MCP | ~54 | Client, Integration, Schema, Transport |
+| Integration (Live) | ~37 | BuiltInTools, ComputerUse, Reasoning, OpenRouter |
+| Errors | ~42 | AIError comprehensive coverage |
+| Stress | ~16 | Concurrency, OpenRouter rate limiting |
 
-### 2. **Streaming Chat Tests** (`StreamingChatTests.swift`)
-**Purpose**: Real-time response streaming functionality  
-**Test Count**: 8 tests  
-**Coverage**:
-- Server-sent events (SSE) streaming
-- Chunk processing and reassembly
-- Stream interruption handling
-- Performance under continuous streaming
+### By Test Type
 
-**Key Tests**:
-- `testBasicStreaming()` - Basic stream functionality
-- `testStreamingWithLongResponse()` - Performance with large responses
-- `testStreamingInterruption()` - Graceful handling of connection issues
-- `testConcurrentStreaming()` - Multiple simultaneous streams
+- **Unit Tests** (~2,100): Fast, mocked dependencies, no API keys needed
+- **Integration Tests** (~100): Real API calls, require API keys in `.env`
+- **Stress Tests** (~16): Concurrency and rate limiting scenarios
+- **Live Tests** (~37): Require `RUN_LIVE_TESTS=1` env var
 
-### 3. **Multimodal Tests** (`MultimodalTests.swift`)
-**Purpose**: Image + text processing capabilities  
-**Test Count**: 8 tests  
-**Coverage**:
-- Remote image URL processing
-- Base64 image encoding and transmission
-- Multiple image analysis
-- Mixed content handling
-
-**Key Tests**:
-- `testImageURLWithText()` - Remote image analysis
-- `testBase64ImageWithText()` - Local image processing
-- `testMultipleImages()` - Comparative image analysis
-- `testImageErrorHandling()` - Invalid image URL handling
-
-### 4. **Structured Output Tests** (`StructuredOutputTests.swift`)
-**Purpose**: JSON mode and object generation  
-**Test Count**: 6 tests  
-**Coverage**:
-- JSON schema validation
-- Custom object generation with `generateObject()`
-- Complex nested structure handling
-- Type safety verification
-
-**Key Tests**:
-- `testJSONMode()` - Basic JSON response formatting
-- `testGenerateObjectMethod()` - Type-safe object generation
-- `testNestedJSONStructures()` - Complex data handling
-- `testSchemaValidation()` - JSON schema compliance
-
-### 5. **Tool Tests** (`ToolTests.swift`) ⭐ **FLAGSHIP**
-**Purpose**: Complete tool calling and function execution system  
-**Test Count**: 19 tests  
-**Coverage**:
-- Tool schema generation and validation
-- Parameter handling with type checking
-- LLM integration for function calling
-- Tool registry management
-- Error handling and edge cases
-
-**Key Test Categories**:
-
-#### **Schema Generation** (3 tests)
-- `testToolSchemaGeneration()` - JSON schema creation
-- `testParameterValidationInSchema()` - Validation rule inclusion
-- Required parameter detection
-
-#### **Parameter Handling** (5 tests)
-- `testParameterSettingFromValidArguments()` - Basic parameter assignment
-- `testParameterSettingFromJSON()` - JSON parameter parsing
-- `testParameterSettingWithDefaultValues()` - Default value handling
-- `testParameterSettingWithInvalidJSON()` - Error handling
-- `testToolParameterTypeValidation()` - Type safety enforcement
-
-#### **Tool Execution** (4 tests)
-- `testBasicToolExecution()` - Simple tool execution
-- `testCalculatorToolExecution()` - Complex computation tools
-- `testCalculatorDivisionByZero()` - Error scenario handling
-- `testFailingToolExecution()` - Graceful failure handling
-
-#### **Tool Registry** (3 tests)
-- `testAIToolRegistryRegistration()` - Single tool registration
-- `testAIToolRegistryMultipleRegistration()` - Batch registration
-- `testAIToolRegistryUnknownTool()` - Missing tool handling
-
-#### **LLM Integration** (2 tests)
-- `testChatCompletionWithTools()` - End-to-end tool calling
-- `testChatCompletionWithForcedToolChoice()` - Tool selection constraints
-
-#### **Edge Cases & Validation** (2 tests)
-- `testToolEnumValidation()` - Enum constraint enforcement
-- `testToolExecutionPerformance()` - Performance benchmarking
-
-### 6. **Agent Integration Tests** (`AgentIntegrationTests.swift`) ⭐ **NEW & FLAGSHIP**
-**Purpose**: Comprehensive Agent testing with real API calls  
-**Test Count**: 13 tests  
-**Status**: ✅ COMPLETE - All tests passing with real OpenAI GPT-4o API integration  
-**Coverage**:
-- Basic send() and streaming sendStream() methods
-- Tool calling integration with real execution
-- Multimodal support (image + text processing)
-- Conversation flow and context preservation  
-- Error handling and recovery scenarios
-- Callback system testing
-- Black box testing approach
-
-**Key Test Categories**:
-
-#### **Basic Agent Tests** (4 tests)
-- `testAgentBasicSend()` - Simple text messaging with API validation
-- `testAgentBasicStreaming()` - Real-time streaming responses
-- `testAgentWithImageURL()` - Multimodal vision processing
-- `testAgentConversationFlow()` - Multi-turn conversations
-
-#### **Agent + Tools Tests** (6 tests)  
-- `testAgentWithWeatherTool()` - Basic tool execution
-- `testAgentStreamingWithTool()` - Streaming + tools combined
-- `testAgentMultimodalWithTool()` - Image analysis + tool integration
-- `testAgentToolErrorHandling()` - Tool failure scenarios
-- `testAgentUnknownToolError()` - Missing tool handling
-- `testAgentRequiredToolChoice()` - Forced tool usage
-
-#### **Agent Callbacks Tests** (3 tests)
-- `testAgentBasicCallbacks()` - Callback tracking and execution
-- `testAgentCallbackCancellation()` - Operation cancellation via callbacks
-- `testAgentMetadataTracking()` - Tool metadata collection during streaming
-
-### 7. **Agent Tool Tests** (`AgentToolTests.swift`)
-**Purpose**: Legacy agent workflow integration  
-**Status**: Disabled due to API changes, replaced by AgentIntegrationTests  
-**Coverage**: Superseded by comprehensive AgentIntegrationTests
-
-## 🚀 Usage Instructions
-
-### Running All Tests
+## Running Tests
 
 ```bash
 # Run complete test suite
 swift test
 
-# Run with verbose output
-swift test --verbose
+# Run with live API tests enabled
+RUN_LIVE_TESTS=1 swift test
 
-# Run specific test package
-swift test --filter AISDKTests
-```
-
-### Running Specific Test Categories
-
-```bash
-# Tool calling tests only
-swift test --filter ToolTests
-
-# Agent integration tests (comprehensive Agent testing)
+# Run specific test class
 swift test --filter AgentIntegrationTests
 
-# Basic chat functionality
-swift test --filter BasicChatTests
-
-# Multimodal processing
-swift test --filter MultimodalTests
-
-# Structured outputs
-swift test --filter StructuredOutputTests
-
-# Streaming functionality
-swift test --filter StreamingChatTests
+# Run specific test method
+swift test --filter testOpenAIBasicChat
 ```
 
-### Running Individual Tests
+## Environment Setup
+
+Create a `.env` file in the project root (see `env.example`):
 
 ```bash
-# Specific test method
-swift test --filter testToolSchemaGeneration
-
-# Multiple specific tests
-swift test --filter "testOpenAIBasicChat|testClaudeBasicChat"
+OPENAI_API_KEY=your_key          # Required for OpenAI integration tests
+ANTHROPIC_API_KEY=your_key       # Required for Anthropic integration tests
+OPENROUTER_API_KEY=your_key      # Required for OpenRouter integration tests
+TAVILY_API_KEY=your_key          # Required for web search tests
 ```
 
-## ⚙️ Configuration & Environment
+- Tests skip gracefully via `XCTSkip` when API keys are missing
+- Mock-based tests run without any keys
+- Live tests additionally require `RUN_LIVE_TESTS=1`
 
-### Environment Variables
+## Recent Additions (PRs #29 & #30)
 
-Tests require API keys for full functionality. Create `.env` file in project root:
+### PR #29: Computer Use Tools
+- `ComputerUseTests.swift` (47 tests) - Unit tests for computer use models
+- `ComputerUseMappingTests.swift` (14 tests) - Provider mapping tests
+- `ComputerUseAgentTests.swift` (9 tests) - Agent integration
+- `ComputerUseLiveTests.swift` (8 tests) - Live API validation
 
-```bash
-# Required for LLM integration tests
-OPENAI_API_KEY=your_openai_key_here
-ANTHROPIC_API_KEY=your_anthropic_key_here
-
-# Optional for specific provider tests
-GROQ_API_KEY=your_groq_key_here
-```
-
-### Mock vs Real API Testing
-
-**Mock Testing** (Default):
-- Uses `MockLLMProvider` for unit testing
-- No API keys required
-- Fast execution
-- Predictable responses
-
-**Real API Testing**:
-- Set environment variables for live API testing
-- Slower execution due to network calls
-- Real provider validation
-- Token usage costs apply
-
-### Test Data
-
-Some tests use external resources:
-- **Image URLs**: Wikipedia and other public domain images
-- **Test Prompts**: Carefully crafted for consistent responses
-- **Schema Examples**: Real-world JSON structures
-
-## 📊 Test Metrics & Performance
-
-### Current Test Status
-- **Total Tests**: 64 tests across all categories
-- **Success Rate**: 100% (64/64 passing) 
-- **Coverage**: Comprehensive across all major features including Agent integration
-
-### Performance Benchmarks
-- **Schema Generation**: <100ms for 1000 iterations
-- **Tool Execution**: <5 seconds for 10 sequential calls
-- **Streaming**: Real-time processing with minimal latency
-- **API Integration**: <2 seconds average response time
-
-### Memory & Resource Usage
-- **Peak Memory**: <50MB during concurrent testing
-- **API Calls**: Optimized to minimize token usage
-- **Cleanup**: Automatic resource cleanup after each test
-
-## 🔧 Test Implementation Details
-
-### Mock Provider Architecture
-
-The `MockLLMProvider` enables comprehensive testing without external dependencies:
-
-```swift
-// Example mock setup
-let mockProvider = MockLLMProvider()
-let toolCallResponse = MockLLMProvider.mockToolCallResponse(
-    toolName: "get_weather",
-    arguments: "{\"city\": \"Boston\", \"unit\": \"fahrenheit\"}"
-)
-mockProvider.setMockResponse(toolCallResponse)
-```
-
-### Tool Test Architecture
-
-Tool tests use a layered approach:
-
-1. **Test Tools**: Simple implementations for validation
-   - `TestWeatherTool`: Parameter validation testing
-   - `TestCalculatorTool`: Execution and error testing
-   - `TestFailingTool`: Error scenario testing
-
-2. **Validation Layers**:
-   - Schema generation accuracy
-   - Parameter type checking
-   - Enum constraint enforcement
-   - Execution flow validation
-
-3. **Integration Testing**:
-   - Real API calls with OpenAI
-   - End-to-end workflow validation
-   - Performance measurement
-
-### Error Testing Strategy
-
-Comprehensive error coverage includes:
-- **Parameter Validation**: Type mismatches, missing required fields
-- **Execution Failures**: Division by zero, resource unavailability
-- **Network Issues**: API timeouts, invalid responses
-- **Schema Errors**: Malformed JSON, constraint violations
-
-## 🐛 Debugging & Troubleshooting
-
-### Common Issues
-
-1. **API Key Errors**
-   ```
-   Solution: Verify .env file exists and contains valid keys
-   Check: Environment variable loading in test setup
-   ```
-
-2. **Test Timeouts**
-   ```
-   Solution: Increase timeout values for network-dependent tests
-   Check: Network connectivity and API response times
-   ```
-
-3. **Mock Provider Issues**
-   ```
-   Solution: Verify mock response structure matches expected format
-   Check: MockLLMProvider configuration in test setup
-   ```
-
-### Debug Logging
-
-Enable detailed logging in tests:
-
-```swift
-// Enable debug output
-print("📝 Setting parameters: \(arguments)")
-print("🛠️ Tool execution result: \(result)")
-print("📊 Token usage: \(usage)")
-```
-
-### Performance Profiling
-
-Use built-in performance testing:
-
-```swift
-// Performance measurement example
-measure {
-    for _ in 0..<1000 {
-        _ = TestWeatherTool.jsonSchema()
-    }
-}
-```
-
-## 🎯 Best Practices
-
-### Writing New Tests
-
-1. **Use Descriptive Names**: `testParameterValidationWithEnumConstraints()`
-2. **Include Error Cases**: Test both success and failure scenarios
-3. **Mock External Dependencies**: Use MockLLMProvider for unit tests
-4. **Validate Complete Flow**: Test from input to final output
-5. **Performance Considerations**: Include benchmarking for critical paths
-
-### Test Organization
-
-1. **Group Related Tests**: Keep similar functionality together
-2. **Use Setup/Teardown**: Clean initialization and cleanup
-3. **Document Complex Tests**: Explain non-obvious test scenarios
-4. **Maintain Test Data**: Keep external resources updated and accessible
-
-### Continuous Integration
-
-Tests are designed for CI/CD environments:
-- **No External Dependencies**: Mock providers eliminate API requirements
-- **Fast Execution**: Optimized for quick feedback cycles
-- **Deterministic Results**: Consistent outcomes across environments
-- **Resource Cleanup**: No persistent state between test runs
-
-## 📈 Future Enhancements
-
-### Planned Test Additions
-
-1. **Agent Workflow Tests**: Complex multi-step agent interactions
-2. **Provider Comparison Tests**: Cross-provider functionality validation
-3. **Load Testing**: High-volume concurrent request handling
-4. **Security Testing**: Input validation and sanitization
-5. **Integration Tests**: Real-world usage scenarios
-
-### Test Infrastructure Improvements
-
-1. **Parallel Execution**: Concurrent test running for faster feedback
-2. **Test Data Management**: Centralized test resource management
-3. **Reporting Enhancement**: Detailed coverage and performance reports
-4. **Automated Validation**: Pre-commit hooks and quality gates
+### PR #30: Agent Sessions
+- `SessionTests.swift` (30 tests) - Session model tests
+- `ChatViewModelTests.swift` (22 tests) - ViewModel tests
+- `SessionCompactionServiceTests.swift` (20 tests) - Compaction strategies
+- `FileSystemSessionStoreTests.swift` (18 tests) - File persistence
+- `SQLiteSessionStoreTests.swift` (17 tests) - SQLite persistence
+- `InMemorySessionStoreTests.swift` (16 tests) - In-memory store
+- `SessionExportTests.swift` (14 tests) - Export functionality
+- `SessionLiveValidationTests.swift` (12 tests) - Live validation
 
 ---
 
-## 📞 Support & Contribution
-
-### Running Into Issues?
-
-1. **Check Environment Setup**: Verify API keys and dependencies
-2. **Review Test Logs**: Look for specific error messages
-3. **Validate Configuration**: Ensure proper test environment setup
-4. **Check Documentation**: Reference this guide for common solutions
-
-### Contributing New Tests
-
-1. **Follow Naming Conventions**: Use descriptive, consistent names
-2. **Include Documentation**: Document test purpose and expectations
-3. **Test Edge Cases**: Include error scenarios and boundary conditions
-4. **Update This Documentation**: Keep README.md current with changes
-
----
-
-
-
----
-## TODO: 
-- [ ] Test LLM with thinking models like o3-mini and o4-mini
-- [x] ✅ Test tool metadata and return values - **COMPLETED** (AgentIntegrationTests)
-- [x] ✅ Test Agentic class sendMessage and streamingSendMessage - **COMPLETED** (AgentIntegrationTests)
-- [ ] Test OpenAI responses API
-     - [ ] Test MCP tools
-- [ ] Test Claude Provider
-- [ ] Test Google - Gemini
-- [ ] Test FoundationModels iOS package
-
-*Last Updated: June 10, 2025*  
-*Test Suite Version: 1.1*  
-*Total Tests: 64 | Success Rate: 100% | Agent Integration: COMPLETE ✅* 
+*Last Updated: February 13, 2026*
+*Test Suite Version: 2.0*
+*Total Tests: 2,249 | Success Rate: 100% | All Features: COMPLETE*

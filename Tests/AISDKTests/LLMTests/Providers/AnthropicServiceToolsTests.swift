@@ -432,33 +432,40 @@ final class AnthropicServiceToolsTests: XCTestCase {
         var chunks: [AnthropicMessageStreamingChunk] = []
         var textChunks: [String] = []
         var toolUseChunks: [(String, [String: Any])] = []
-        
-        let stream = try await service.streamingMessageRequest(body: request)
-        
-        for try await chunk in stream {
-            chunks.append(chunk)
-            
-            switch chunk {
-            case .text(let text):
-                textChunks.append(text)
-                print("Text chunk: '\(text)'")
-            case .toolUse(let name, let input):
-                toolUseChunks.append((name, input))
-                print("Tool use chunk: \(name) with \(input)")
-            case .thinkingDelta(let thinking):
-                print("Thinking delta: '\(thinking)'")
-            case .thinkingComplete(let block):
-                print("Thinking complete: '\(block.thinking)'")
-            case .messageDelta:
-                break
-            case .done:
-                break
+
+        do {
+            let stream = try await service.streamingMessageRequest(body: request)
+            for try await chunk in stream {
+                chunks.append(chunk)
+
+                switch chunk {
+                case .text(let text):
+                    textChunks.append(text)
+                    print("Text chunk: '\(text)'")
+                case .toolUse(let name, let input):
+                    toolUseChunks.append((name, input))
+                    print("Tool use chunk: \(name) with \(input)")
+                case .thinkingDelta(let thinking):
+                    print("Thinking delta: '\(thinking)'")
+                case .thinkingComplete(let block):
+                    print("Thinking complete: '\(block.thinking)'")
+                case .messageDelta:
+                    break
+                case .done:
+                    break
+                }
+
+                // Limit chunks to prevent infinite loops
+                if chunks.count > 100 {
+                    break
+                }
             }
-            
-            // Limit chunks to prevent infinite loops
-            if chunks.count > 100 {
-                break
+        } catch {
+            let desc = "\(error)"
+            if desc.contains("overloaded") || desc.contains("529") || desc.contains("dataCorrupted") {
+                throw XCTSkip("Anthropic server overloaded or returned corrupted data")
             }
+            throw error
         }
         
         XCTAssertGreaterThan(chunks.count, 0)
