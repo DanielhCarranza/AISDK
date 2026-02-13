@@ -95,6 +95,9 @@ public struct Response {
             case .computerCall:
                 // Computer calls are handled via agent routing, not content
                 break
+            case .unknown:
+                // Unrecognized output types are silently skipped
+                break
             }
         }
         

@@ -221,4 +221,6 @@ struct ComputerUseOpenAIPayload: Codable {
     let ms: Int?
     let safetyChecks: [[String: String]]?
     let callId: String?
+    /// The original response item ID (e.g. "cu_...") needed for multi-turn re-serialization
+    let responseItemId: String?
 }

@@ -192,6 +192,7 @@ public enum ResponseInputItem: Codable {
     case message(ResponseMessage)
     case functionCallOutput(ResponseFunctionCallOutput)
     case computerCallOutput(ResponseComputerCallOutput)
+    case computerCall(ResponseInputComputerCall)
     case mcpApprovalResponse(ResponseMCPApprovalResponse)
     case itemReference(ResponseItemReference)
 
@@ -203,6 +204,7 @@ public enum ResponseInputItem: Codable {
         case message = "message"
         case functionCallOutput = "function_call_output"
         case computerCallOutput = "computer_call_output"
+        case computerCall = "computer_call"
         case mcpApprovalResponse = "mcp_approval_response"
         case itemReference = "item_reference"
     }
@@ -221,6 +223,9 @@ public enum ResponseInputItem: Codable {
         case .computerCallOutput:
             let output = try ResponseComputerCallOutput(from: decoder)
             self = .computerCallOutput(output)
+        case .computerCall:
+            let call = try ResponseInputComputerCall(from: decoder)
+            self = .computerCall(call)
         case .mcpApprovalResponse:
             let response = try ResponseMCPApprovalResponse(from: decoder)
             self = .mcpApprovalResponse(response)
@@ -238,11 +243,44 @@ public enum ResponseInputItem: Codable {
             try output.encode(to: encoder)
         case .computerCallOutput(let output):
             try output.encode(to: encoder)
+        case .computerCall(let call):
+            try call.encode(to: encoder)
         case .mcpApprovalResponse(let response):
             try response.encode(to: encoder)
         case .itemReference(let reference):
             try reference.encode(to: encoder)
         }
+    }
+}
+
+/// Computer call input item for re-sending a previous computer_call in multi-turn conversations.
+public struct ResponseInputComputerCall: Codable {
+    public let type: String
+    public let id: String
+    public let callId: String
+    public let action: ResponseOutputComputerCall.ComputerCallAction
+    public let pendingSafetyChecks: [ResponseOutputComputerCall.PendingSafetyCheck]
+    public let status: String
+
+    public init(
+        id: String,
+        callId: String,
+        action: ResponseOutputComputerCall.ComputerCallAction,
+        pendingSafetyChecks: [ResponseOutputComputerCall.PendingSafetyCheck] = [],
+        status: String = "completed"
+    ) {
+        self.type = "computer_call"
+        self.id = id
+        self.callId = callId
+        self.action = action
+        self.pendingSafetyChecks = pendingSafetyChecks
+        self.status = status
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, id, action, status
+        case callId = "call_id"
+        case pendingSafetyChecks = "pending_safety_checks"
     }
 }
 

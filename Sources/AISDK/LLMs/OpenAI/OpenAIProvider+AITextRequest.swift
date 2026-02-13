@@ -238,12 +238,68 @@ extension OpenAIProvider {
         }
 
         // Multiple messages or complex content -> items array
-        let items = messages.compactMap { convertMessageToInputItem($0) }
+        // Use flatMap to allow a single message to expand into multiple input items
+        // (e.g., an assistant message with computer use tool calls becomes a message + computer_call items)
+        let items = messages.flatMap { convertMessageToInputItems($0) }
         return .items(items)
     }
 
-    /// Convert a single message to ResponseInputItem
-    private func convertMessageToInputItem(_ message: AIMessage) -> ResponseInputItem? {
+    /// Convert a single message to one or more ResponseInputItems.
+    ///
+    /// An assistant message with computer use tool calls expands into:
+    /// 1. The assistant message (text content only, if any)
+    /// 2. A `computer_call` item for each `__computer_use__` tool call
+    private func convertMessageToInputItems(_ message: AIMessage) -> [ResponseInputItem] {
+        // For assistant messages with computer use tool calls, emit computer_call items
+        if message.role == .assistant, let toolCalls = message.toolCalls {
+            let cuCalls = toolCalls.filter { $0.name == "__computer_use__" }
+            if !cuCalls.isEmpty {
+                var items: [ResponseInputItem] = []
+
+                // Include the assistant text message if it has content
+                let text: String
+                switch message.content {
+                case .text(let t): text = t
+                case .parts(let parts):
+                    text = parts.compactMap { if case .text(let t) = $0 { return t }; return nil }.joined()
+                }
+                if !text.isEmpty {
+                    items.append(.message(ResponseMessage(role: "assistant", content: [.inputText(ResponseInputText(text: text))])))
+                }
+
+                // Emit a computer_call item for each CU tool call
+                for tc in cuCalls {
+                    if let data = tc.arguments.data(using: .utf8),
+                       let payload = try? JSONDecoder().decode(ComputerUseOpenAIPayload.self, from: data) {
+                        let action = ResponseOutputComputerCall.ComputerCallAction(
+                            type: payload.actionType,
+                            x: payload.x, y: payload.y,
+                            button: payload.button, text: payload.text,
+                            keys: payload.keys,
+                            scrollX: payload.scrollX, scrollY: payload.scrollY,
+                            path: payload.path?.map { ResponseOutputComputerCall.ComputerCallAction.PathPoint(x: $0["x"] ?? 0, y: $0["y"] ?? 0) },
+                            ms: payload.ms
+                        )
+                        items.append(.computerCall(ResponseInputComputerCall(
+                            id: payload.responseItemId ?? tc.id,
+                            callId: payload.callId ?? tc.id,
+                            action: action
+                        )))
+                    }
+                }
+                return items
+            }
+        }
+
+        // Default: delegate to single-item conversion
+        if let item = convertMessageToSingleInputItem(message) {
+            return [item]
+        }
+        return []
+    }
+
+    /// Convert a single message to a single ResponseInputItem (original logic).
+    private func convertMessageToSingleInputItem(_ message: AIMessage) -> ResponseInputItem? {
         // Handle tool results
         if message.role == .tool, let toolCallId = message.toolCallId {
             let output: String
@@ -268,14 +324,14 @@ extension OpenAIProvider {
                 } else {
                     imageUrl = nil
                 }
-                let acknowledgedChecks: [ResponseComputerCallOutput.AcknowledgedSafetyCheck]? = nil
+                // TODO: Forward safety checks from the original computer_call when available
                 return .computerCallOutput(ResponseComputerCallOutput(
                     callId: payload.callId ?? toolCallId,
                     output: ResponseComputerCallOutput.ComputerCallOutputContent(
                         type: "computer_screenshot",
                         imageUrl: imageUrl
                     ),
-                    acknowledgedSafetyChecks: acknowledgedChecks
+                    acknowledgedSafetyChecks: []
                 ))
             }
 
@@ -380,7 +436,8 @@ extension OpenAIProvider {
                     safetyChecks: safetyChecks.map {
                         ["id": $0.id, "code": $0.code, "message": $0.message]
                     },
-                    callId: call.callId
+                    callId: call.callId,
+                    responseItemId: call.id
                 )
                 let argsData = (try? JSONEncoder().encode(payload)) ?? Data()
                 let argsString = String(data: argsData, encoding: .utf8) ?? "{}"
@@ -391,6 +448,9 @@ extension OpenAIProvider {
                 ))
             case .functionCallOutput, .webSearchCall, .imageGenerationCall, .codeInterpreterCall, .mcpApprovalRequest:
                 // These are handled via streaming events or are outputs
+                break
+            case .unknown:
+                // Unrecognized output types are silently skipped
                 break
             }
         }
