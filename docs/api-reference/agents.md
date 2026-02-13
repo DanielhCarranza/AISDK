@@ -401,3 +401,4 @@ for try await event in agent.streamExecute(messages: messages) {
 - [Core Protocols](core-protocols.md) - AIAgent protocol
 - [Tools](tools.md) - Creating tools for agents
 - [Models](models.md) - Message and request types
+- [Sessions](sessions.md) - Persist agent conversations with ChatViewModel

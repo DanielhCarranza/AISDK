@@ -365,6 +365,51 @@ func test_ui_validation_rejects_invalid_component() {
 }
 ```
 
+## Testing Sessions
+
+Use `InMemorySessionStore` for fast, isolated session tests:
+
+```swift
+func test_session_roundtrip() async throws {
+    let store = InMemorySessionStore()
+
+    // Create and persist
+    var session = try await AISession.create(userId: "user_1", store: store)
+    session.messages.append(.user("Hello"))
+    try await store.save(session)
+
+    // Load and verify
+    let loaded = try await store.load(id: session.id)
+    XCTAssertEqual(loaded?.messages.count, 1)
+}
+
+func test_chatViewModel_streaming() async throws {
+    let store = InMemorySessionStore()
+    let mockAgent = MockAgent(responses: [.text("Hi there!")])
+    let vm = ChatViewModel(agent: mockAgent, store: store)
+
+    try await vm.createSession(userId: "user_1")
+    await vm.send("Hello")
+
+    XCTAssertFalse(vm.isStreaming)
+    XCTAssertGreaterThan(vm.session.messages.count, 1)
+}
+
+func test_context_compaction() async throws {
+    let compactor = SessionCompactionService()
+    let policy = ContextPolicy(maxTokens: 100, compactionStrategy: .truncate, minMessagesToKeep: 2)
+
+    let messages = (0..<20).map { AIMessage.user("Message \($0)") }
+
+    XCTAssertTrue(compactor.needsCompaction(messages, policy: policy))
+
+    let compacted = try await compactor.compact(messages, policy: policy)
+    XCTAssertLessThan(compacted.count, messages.count)
+}
+```
+
+---
+
 ## Test Utilities
 
 ### StressTestMetrics
@@ -460,3 +505,4 @@ OPENROUTER_API_KEY=xxx swift test --filter IntegrationTests
 | Memory | Leak detection | WeakRef, autoreleasepool |
 | Integration | Real APIs | XCTSkip for optional |
 | UI | Generative UI | UITree.parse, UICatalog |
+| Sessions | Persistence, streaming | InMemorySessionStore, ChatViewModel |
