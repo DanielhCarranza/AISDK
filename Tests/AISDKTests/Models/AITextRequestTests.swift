@@ -144,6 +144,17 @@ struct AITextRequestTests {
         #expect(original.reasoning == nil)
     }
 
+    @Test("withCaching creates new request with caching config")
+    func testWithCaching() {
+        let original = AITextRequest(messages: [.user("Test")])
+        let caching = AICacheConfig.enabled
+
+        let updated = original.withCaching(caching)
+
+        #expect(updated.caching == caching)
+        #expect(original.caching == nil)
+    }
+
     @Test("with* methods preserve reasoning")
     func testWithMethodsPreserveReasoning() {
         let reasoning = AIReasoningConfig(effort: .high, budgetTokens: 4096)
@@ -154,6 +165,20 @@ struct AITextRequestTests {
         #expect(original.withBufferPolicy(.bounded).reasoning == reasoning)
         #expect(original.withConversationId("conv-1").reasoning == reasoning)
         #expect(original.withProviderOptions(nil).reasoning == reasoning)
+        #expect(original.withCaching(.enabled).reasoning == reasoning)
+    }
+
+    @Test("with* methods preserve caching")
+    func testWithMethodsPreserveCaching() {
+        let caching = AICacheConfig.extended()
+        let original = AITextRequest(messages: [.user("Test")], caching: caching)
+
+        #expect(original.withSensitivity(.sensitive).caching == caching)
+        #expect(original.withAllowedProviders(["openai"]).caching == caching)
+        #expect(original.withBufferPolicy(.bounded).caching == caching)
+        #expect(original.withConversationId("conv-1").caching == caching)
+        #expect(original.withReasoning(.effort(.high)).caching == caching)
+        #expect(original.withProviderOptions(nil).caching == caching)
     }
 }
 

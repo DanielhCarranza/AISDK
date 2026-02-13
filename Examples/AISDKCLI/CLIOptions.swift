@@ -90,6 +90,9 @@ struct CLIOptions {
     /// Built-in tool names to enable (comma-separated via --builtin-tools)
     var builtInToolNames: [String] = []
 
+    /// Enable prompt caching (Anthropic)
+    var cachingEnabled: Bool = false
+
     /// Show help and exit
     var showHelp: Bool = false
 
@@ -190,6 +193,9 @@ struct CLIOptions {
                 }
                 index = betaIndex - 1
 
+            case "--caching":
+                options.cachingEnabled = true
+
             case "--reasoning":
                 if index + 1 < args.count, !args[index + 1].hasPrefix("-") {
                     let effort = args[index + 1].lowercased()
@@ -250,6 +256,10 @@ class RuntimeConfig {
     var pendingVideoMimeType: String?
     var pendingVideoDisplayName: String?
 
+    // Prompt caching (Anthropic)
+    var cachingEnabled: Bool
+    var cachingExtended: Bool
+
     // Unified reasoning (all providers)
     var reasoningEffort: String?
 
@@ -277,6 +287,8 @@ class RuntimeConfig {
         self.thinkingBudget = options.thinkingBudget
         self.betaFeatures = options.betaFeatures
         self.pendingVideoURL = options.videoURL
+        self.cachingEnabled = options.cachingEnabled
+        self.cachingExtended = false
         self.reasoningEffort = options.reasoningEffort
         self.activeBuiltInTools = Self.parseBuiltInToolNames(options.builtInToolNames)
     }

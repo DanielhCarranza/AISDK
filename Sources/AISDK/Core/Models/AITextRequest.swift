@@ -49,6 +49,9 @@ public struct AITextRequest: @unchecked Sendable {
     /// Reasoning/thinking configuration (provider-agnostic)
     public let reasoning: AIReasoningConfig?
 
+    /// Prompt/context caching configuration (provider-agnostic)
+    public let caching: AICacheConfig?
+
     /// Allowed providers for PHI protection (nil allows all)
     public let allowedProviders: Set<String>?
 
@@ -83,6 +86,7 @@ public struct AITextRequest: @unchecked Sendable {
         builtInTools: [BuiltInTool]? = nil,
         responseFormat: ResponseFormat? = nil,
         reasoning: AIReasoningConfig? = nil,
+        caching: AICacheConfig? = nil,
         allowedProviders: Set<String>? = nil,
         sensitivity: DataSensitivity = .standard,
         bufferPolicy: StreamBufferPolicy? = nil,
@@ -101,6 +105,7 @@ public struct AITextRequest: @unchecked Sendable {
         self.builtInTools = builtInTools
         self.responseFormat = responseFormat
         self.reasoning = reasoning
+        self.caching = caching
         self.allowedProviders = allowedProviders
         self.sensitivity = sensitivity
         self.bufferPolicy = bufferPolicy
@@ -193,6 +198,7 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
+            caching: caching,
             allowedProviders: allowedProviders,
             sensitivity: newSensitivity,
             bufferPolicy: bufferPolicy,
@@ -216,6 +222,7 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
+            caching: caching,
             allowedProviders: providers,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
@@ -239,6 +246,7 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
+            caching: caching,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: policy,
@@ -262,6 +270,7 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
+            caching: caching,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
@@ -308,6 +317,30 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
+            caching: caching,
+            allowedProviders: allowedProviders,
+            sensitivity: sensitivity,
+            bufferPolicy: bufferPolicy,
+            metadata: metadata,
+            conversationId: conversationId,
+            providerOptions: providerOptions
+        )
+    }
+
+    /// Create a copy with updated caching configuration
+    func withCaching(_ caching: AICacheConfig?) -> AITextRequest {
+        AITextRequest(
+            messages: messages,
+            model: model,
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP,
+            stop: stop,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseFormat: responseFormat,
+            reasoning: reasoning,
+            caching: caching,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,
@@ -331,6 +364,7 @@ public extension AITextRequest {
             builtInTools: builtInTools,
             responseFormat: responseFormat,
             reasoning: reasoning,
+            caching: caching,
             allowedProviders: allowedProviders,
             sensitivity: sensitivity,
             bufferPolicy: bufferPolicy,

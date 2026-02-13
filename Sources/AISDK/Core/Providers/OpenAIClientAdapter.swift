@@ -987,6 +987,8 @@ private struct OpenAIUsage: Decodable {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
+        case promptTokensDetails = "prompt_tokens_details"
+        case completionTokensDetails = "completion_tokens_details"
         case cachedTokens = "cached_tokens"
         case reasoningTokens = "reasoning_tokens"
     }
@@ -997,14 +999,6 @@ private struct OpenAIUsage: Decodable {
         completionTokens = try container.decode(Int.self, forKey: .completionTokens)
         totalTokens = try container.decode(Int.self, forKey: .totalTokens)
 
-        // Try to decode nested completion_tokens_details for cached/reasoning tokens
-        struct CompletionTokensDetails: Decodable {
-            let reasoningTokens: Int?
-            enum CodingKeys: String, CodingKey {
-                case reasoningTokens = "reasoning_tokens"
-            }
-        }
-
         struct PromptTokensDetails: Decodable {
             let cachedTokens: Int?
             enum CodingKeys: String, CodingKey {
@@ -1012,14 +1006,21 @@ private struct OpenAIUsage: Decodable {
             }
         }
 
-        // Check for details in nested objects
-        if let promptDetails = try? container.decode(PromptTokensDetails.self, forKey: .cachedTokens) {
+        struct CompletionTokensDetails: Decodable {
+            let reasoningTokens: Int?
+            enum CodingKeys: String, CodingKey {
+                case reasoningTokens = "reasoning_tokens"
+            }
+        }
+
+        // Prefer nested details objects (standard OpenAI format), fall back to top-level keys
+        if let promptDetails = try? container.decode(PromptTokensDetails.self, forKey: .promptTokensDetails) {
             cachedTokens = promptDetails.cachedTokens
         } else {
             cachedTokens = try container.decodeIfPresent(Int.self, forKey: .cachedTokens)
         }
 
-        if let completionDetails = try? container.decode(CompletionTokensDetails.self, forKey: .reasoningTokens) {
+        if let completionDetails = try? container.decode(CompletionTokensDetails.self, forKey: .completionTokensDetails) {
             reasoningTokens = completionDetails.reasoningTokens
         } else {
             reasoningTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningTokens)

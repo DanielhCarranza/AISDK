@@ -223,6 +223,7 @@ class CommandHandler {
 
         \(ANSIStyles.bold("Anthropic Commands (--provider anthropic):"))
         \(ANSIStyles.cyan("/thinking [on|off|budget <n>]"))  Extended thinking control
+        \(ANSIStyles.cyan("/caching [on|off|extended]"))     Prompt caching control
         \(ANSIStyles.cyan("/batch [create|status|list|cancel|results]"))  Batch API
         \(ANSIStyles.cyan("/files [upload|list|get|delete|download]"))    Files API
         \(ANSIStyles.cyan("/skills [list|enable|disable]"))  Skills control
@@ -385,6 +386,7 @@ class CommandHandler {
         │ Citations:    \((config.citationsEnabled ? "ON" : "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
         │ Reliable:     \((config.reliabilityEnabled ? "ON" : "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
         │ Reasoning:    \((config.reasoningEffort ?? "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
+        │ Caching:      \((config.cachingEnabled ? (config.cachingExtended ? "Extended" : "ON") : "OFF").padding(toLength: 22, withPad: " ", startingAt: 0))│
         └──────────────────────────────────────┘
 
         """)

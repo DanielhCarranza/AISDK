@@ -640,12 +640,18 @@ class CLIController {
             temperature = runtimeConfig.temperature
         }
 
+        // Build caching config from runtime settings
+        let caching: AICacheConfig? = runtimeConfig.cachingEnabled
+            ? AICacheConfig(retention: runtimeConfig.cachingExtended ? .extended : .standard)
+            : nil
+
         let requestOptions = Agent.RequestOptions(
             maxTokens: runtimeConfig.maxTokens,
             temperature: temperature,
             toolChoice: toolTypes.isEmpty ? nil : .auto,
             responseFormat: buildResponseFormat(),
-            reasoning: reasoning
+            reasoning: reasoning,
+            caching: caching
         )
 
         let languageModel: any LLM
