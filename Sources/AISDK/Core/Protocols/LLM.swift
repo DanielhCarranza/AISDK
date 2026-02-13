@@ -12,34 +12,82 @@ import Foundation
 
 /// Unified message type for the LLM protocol
 /// This bridges between the new unified interface and existing message types
-public struct AIMessage: Sendable, Codable {
+public struct AIMessage: Sendable, Codable, Identifiable {
+    /// Unique identifier for this message
+    public var id: String
+
     /// The role of the message sender
     public let role: Role
 
-    /// The content of the message
-    public let content: Content
+    /// The content of the message (mutable for streaming text accumulation)
+    public var content: Content
 
     /// Optional name for the sender
     public let name: String?
 
-    /// Tool calls made by the assistant (for assistant messages)
-    public let toolCalls: [ToolCall]?
+    /// Tool calls made by the assistant (mutable for streaming tool call accumulation)
+    public var toolCalls: [ToolCall]?
 
     /// Tool call ID (for tool response messages)
     public let toolCallId: String?
 
+    // MARK: - Session Properties
+
+    /// Agent that produced this message (for multi-agent sessions)
+    public var agentId: String?
+
+    /// Agent name for display
+    public var agentName: String?
+
+    /// Whether this message represents a checkpoint
+    public var isCheckpoint: Bool
+
+    /// Checkpoint index (if this is a checkpoint)
+    public var checkpointIndex: Int?
+
     public init(
+        id: String = UUID().uuidString,
         role: Role,
         content: Content,
         name: String? = nil,
         toolCalls: [ToolCall]? = nil,
-        toolCallId: String? = nil
+        toolCallId: String? = nil,
+        agentId: String? = nil,
+        agentName: String? = nil,
+        isCheckpoint: Bool = false,
+        checkpointIndex: Int? = nil
     ) {
+        self.id = id
         self.role = role
         self.content = content
         self.name = name
         self.toolCalls = toolCalls
         self.toolCallId = toolCallId
+        self.agentId = agentId
+        self.agentName = agentName
+        self.isCheckpoint = isCheckpoint
+        self.checkpointIndex = checkpointIndex
+    }
+
+    // MARK: - CodingKeys
+
+    private enum CodingKeys: String, CodingKey {
+        case id, role, content, name, toolCalls, toolCallId
+        case agentId, agentName, isCheckpoint, checkpointIndex
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.role = try container.decode(Role.self, forKey: .role)
+        self.content = try container.decode(Content.self, forKey: .content)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.toolCalls = try container.decodeIfPresent([ToolCall].self, forKey: .toolCalls)
+        self.toolCallId = try container.decodeIfPresent(String.self, forKey: .toolCallId)
+        self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+        self.agentName = try container.decodeIfPresent(String.self, forKey: .agentName)
+        self.isCheckpoint = try container.decodeIfPresent(Bool.self, forKey: .isCheckpoint) ?? false
+        self.checkpointIndex = try container.decodeIfPresent(Int.self, forKey: .checkpointIndex)
     }
 
     // MARK: - Role
@@ -87,10 +135,11 @@ public struct AIMessage: Sendable, Codable {
 
     // MARK: - ToolCall
 
-    public struct ToolCall: Sendable, Codable {
+    public struct ToolCall: Sendable, Codable, Equatable {
         public let id: String
         public let name: String
-        public let arguments: String
+        /// Tool call arguments JSON (mutable for streaming argument accumulation)
+        public var arguments: String
 
         public init(id: String, name: String, arguments: String) {
             self.id = id
@@ -239,6 +288,48 @@ public extension AIMessage {
     static func assistant(_ text: String, toolCalls: [ToolCall]) -> AIMessage {
         let content: Content = text.isEmpty ? .parts([]) : .text(text)
         return AIMessage(role: .assistant, content: content, toolCalls: toolCalls)
+    }
+
+    /// Create an assistant message with agent attribution (for multi-agent sessions)
+    static func assistant(
+        _ text: String,
+        agentId: String?,
+        agentName: String?,
+        toolCalls: [ToolCall]? = nil
+    ) -> AIMessage {
+        let content: Content = text.isEmpty ? .parts([]) : .text(text)
+        return AIMessage(
+            role: .assistant,
+            content: content,
+            toolCalls: toolCalls,
+            agentId: agentId,
+            agentName: agentName
+        )
+    }
+}
+
+// MARK: - AIMessage Session Helpers
+
+public extension AIMessage {
+    /// Get text content as a string (nil if empty)
+    var textContent: String? {
+        let text = content.textValue
+        return text.isEmpty ? nil : text
+    }
+
+    /// Append text to a text-content message (for streaming accumulation)
+    mutating func appendText(_ delta: String) {
+        switch content {
+        case .text(let existing):
+            content = .text(existing + delta)
+        case .parts(var parts):
+            if case .text(let existing) = parts.last {
+                parts[parts.count - 1] = .text(existing + delta)
+            } else {
+                parts.append(.text(delta))
+            }
+            content = .parts(parts)
+        }
     }
 }
 

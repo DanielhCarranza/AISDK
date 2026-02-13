@@ -17,6 +17,7 @@ AISDK is a Swift framework for building AI-powered applications with a unified i
 | [Tools](tools.md) | AITool protocol, AIToolRegistry, AIToolResult |
 | [Computer Use](computer-use.md) | ComputerUseAction, ComputerUseResult, agent handler |
 | [Reliability](reliability.md) | AdaptiveCircuitBreaker, FailoverExecutor, RetryPolicy |
+| [Sessions](sessions.md) | AISession, SessionStore, ChatViewModel, context compaction |
 | [Generative UI](generative-ui.md) | UICatalog, UITree, Core 8 components |
 | [Errors](errors.md) | AISDKErrorV2, AIErrorCode, ProviderError |
 
@@ -29,6 +30,10 @@ AISDK is a Swift framework for building AI-powered applications with a unified i
 │  │ AIAgentActor │  │GenerativeUI  │  │ Custom Tools     │  │
 │  └──────┬───────┘  │  ViewModel   │  └────────┬─────────┘  │
 │         │          └──────┬───────┘           │            │
+│  ┌──────┴──────────────────────────────────────┘            │
+│  │           Sessions & Persistence Layer                   │
+│  │  ChatViewModel │ SessionStore │ CompactionService        │
+│  └──────┬──────────────────────────────────────┐            │
 ├─────────┼─────────────────┼───────────────────┼────────────┤
 │         │     Reliability Layer               │            │
 │  ┌──────┴───────────────────────────┴─────────┴──────┐    │
@@ -105,3 +110,4 @@ AISDK leverages Swift's type system:
 - Start with [Core Protocols](core-protocols.md) for foundational types
 - See [Models](models.md) for request/response structures
 - Check [Agents](agents.md) for building AI workflows
+- See [Sessions](sessions.md) for persistence and context management
