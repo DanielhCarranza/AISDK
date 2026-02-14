@@ -68,6 +68,11 @@ let package = Package(
         .executable(
             name: "AISDKCLI",
             targets: ["AISDKCLI"]
+        ),
+        // Smoke Test App - Layer 1 production validation
+        .executable(
+            name: "SmokeTestApp",
+            targets: ["SmokeTestApp"]
         )
     ],
     dependencies: [
@@ -205,6 +210,11 @@ let package = Package(
             name: "AISDKCLI",
             dependencies: ["AISDK"],
             path: "Examples/AISDKCLI"
+        ),
+        .executableTarget(
+            name: "SmokeTestApp",
+            dependencies: ["AISDK"],
+            path: "Examples/SmokeTestApp"
         )
     ]
 )
