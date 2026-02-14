@@ -59,7 +59,7 @@ final class OpenAIResponsesModelsTests: XCTestCase {
             instructions: "Be helpful",
             tools: [
                 .webSearchPreview,
-                .fileSearch(vectorStoreId: "vs_123"),
+                .fileSearch(vectorStoreIds: ["vs_123"]),
                 .imageGeneration(partialImages: 2),
                 .codeInterpreter,
                 .function(function)
@@ -177,7 +177,7 @@ final class OpenAIResponsesModelsTests: XCTestCase {
 
         let tools: [ResponseTool] = [
             .webSearchPreview,
-            .fileSearch(vectorStoreId: "vs_123"),
+            .fileSearch(vectorStoreIds: ["vs_123"]),
             .imageGeneration(partialImages: 1),
             .codeInterpreter,
             .mcp(serverLabel: "server", serverUrl: "https://mcp.example.com"),
@@ -191,6 +191,8 @@ final class OpenAIResponsesModelsTests: XCTestCase {
         let json = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         XCTAssertEqual(json?.first?["type"] as? String, "web_search_preview")
         XCTAssertEqual(json?[1]["type"] as? String, "file_search")
+        XCTAssertEqual(json?[1]["vector_store_ids"] as? [String], ["vs_123"])
+        XCTAssertNil(json?[1]["vector_store_id"])
         XCTAssertEqual(json?[2]["type"] as? String, "image_generation")
         XCTAssertEqual(json?[3]["type"] as? String, "code_interpreter")
         XCTAssertEqual(json?[4]["type"] as? String, "mcp")

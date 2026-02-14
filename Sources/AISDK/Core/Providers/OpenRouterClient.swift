@@ -374,8 +374,12 @@ public actor OpenRouterClient: ProviderClient {
             throw ProviderError.authenticationFailed(errorMessage)
         case 404:
             let errorMessage = parseErrorMessage(from: data) ?? "Resource not found"
-            // Check if it's a model not found error vs endpoint error
-            if errorMessage.lowercased().contains("model") {
+            // OpenRouter can return 404 "Resource not found" for unavailable model variants.
+            // Normalize this as modelNotFound so callers can handle availability drift deterministically.
+            let normalized = errorMessage.lowercased()
+            if normalized.contains("model")
+                || (normalized.contains("resource") && normalized.contains("not found"))
+                || (normalized.contains("not found") && normalized.contains("provider")) {
                 throw ProviderError.modelNotFound(errorMessage)
             }
             throw ProviderError.invalidRequest("Not found: \(errorMessage)")
