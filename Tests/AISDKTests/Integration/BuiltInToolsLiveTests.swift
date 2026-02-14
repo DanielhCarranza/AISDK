@@ -506,6 +506,10 @@ final class BuiltInToolsLiveTests: XCTestCase {
             result = try await provider.sendTextRequest(request)
         } catch let error as LLMError {
             if case .rateLimitExceeded = error { throw XCTSkip("OpenAI rate limited") }
+            if case .invalidRequest(let message) = error,
+               message.contains("Zero Data Retention") || message.contains("code_interpreter") {
+                throw XCTSkip("OpenAI code_interpreter unavailable for this key: \(message)")
+            }
             // HTTP 400 comes through as LLMError.networkError; common cause is Zero Data Retention
             // policy which blocks code_interpreter (requires temporary container storage)
             if case .networkError(let code, let message) = error, code == 400 {

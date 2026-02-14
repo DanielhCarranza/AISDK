@@ -8,5 +8,5 @@ DerivedData/
 .netrc
 
 # Environment files
-.env
+# .env
 .env.local

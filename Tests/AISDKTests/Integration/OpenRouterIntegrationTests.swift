@@ -122,6 +122,9 @@ final class OpenRouterIntegrationTests: XCTestCase {
     func test_basic_chat_across_models() async throws {
         let client = try createClient()
         let models = modelsUnderTest()
+        var successfulModels: [String] = []
+        var skippedAvailabilityModels: [(model: String, reason: String)] = []
+        var hardFailures: [(model: String, reason: String)] = []
 
         for model in models {
             let request = ProviderRequest(
@@ -140,15 +143,60 @@ final class OpenRouterIntegrationTests: XCTestCase {
                 if case .rateLimited = error {
                     throw XCTSkip("OpenRouter rate limited this test run")
                 }
-                throw error
+                if case .modelNotFound(let message) = error {
+                    skippedAvailabilityModels.append((model, message))
+                    print("⚠️  [\(model)] Skipping unavailable model: \(message)")
+                    continue
+                }
+                if case .invalidRequest(let message) = error {
+                    let lower = message.lowercased()
+                    if lower.contains("not found") || lower.contains("resource not found") || lower.contains("unavailable") {
+                        skippedAvailabilityModels.append((model, message))
+                        print("⚠️  [\(model)] Skipping unavailable model: \(message)")
+                        continue
+                    }
+                }
+                hardFailures.append((model, String(describing: error)))
+                print("❌ [\(model)] Hard failure: \(error)")
+                continue
+            } catch {
+                let description = String(describing: error)
+                let lower = description.lowercased()
+                if lower.contains("not found") || lower.contains("resource not found") || lower.contains("unavailable") {
+                    skippedAvailabilityModels.append((model, description))
+                    print("⚠️  [\(model)] Skipping unavailable model: \(description)")
+                    continue
+                }
+                hardFailures.append((model, description))
+                print("❌ [\(model)] Hard failure: \(description)")
+                continue
             }
             let trimmed = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 print("⚠️  [\(model)] Empty content. Raw length: \(response.content.count). Finish: \(response.finishReason). Tool calls: \(response.toolCalls.count). Usage: \(response.usage?.totalTokens ?? 0)")
             }
-            XCTAssertFalse(trimmed.isEmpty, "Model \(model) should return content")
+            if trimmed.isEmpty {
+                hardFailures.append((model, "Model returned empty content"))
+                continue
+            }
+            successfulModels.append(model)
             print("✅ [\(model)] \(response.content)")
         }
+
+        if !hardFailures.isEmpty {
+            let details = hardFailures
+                .map { "\($0.model): \($0.reason)" }
+                .joined(separator: "\n")
+            XCTFail("OpenRouter hard failures in basic chat across models:\n\(details)")
+        }
+
+        XCTAssertFalse(
+            successfulModels.isEmpty,
+            """
+            No OpenRouter models succeeded.
+            Skipped availability models: \(skippedAvailabilityModels.map { "\($0.model): \($0.reason)" })
+            """
+        )
     }
 
     func test_streaming_response_default_model() async throws {
@@ -208,6 +256,9 @@ final class OpenRouterIntegrationTests: XCTestCase {
         } catch let error as ProviderError {
             if case .rateLimited = error {
                 throw XCTSkip("OpenRouter rate limited this test run")
+            }
+            if case .modelNotFound(let message) = error {
+                throw XCTSkip("Model \(model) not available for this account/region: \(message)")
             }
             if case .invalidRequest(let message) = error,
                message.lowercased().contains("not found") {

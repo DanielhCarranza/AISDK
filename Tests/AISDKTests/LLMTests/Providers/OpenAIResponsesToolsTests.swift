@@ -99,7 +99,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     
     func testCodeInterpreter() async throws {
         if let provider = provider {
-            // Real API test - code_interpreter may be blocked by Zero Data Retention policy
+            // Real API test
             do {
                 let response = try await provider.createResponseWithCodeInterpreter(
                     model: "gpt-4o-mini",
@@ -118,8 +118,8 @@ final class OpenAIResponsesToolsTests: XCTestCase {
 
                 XCTAssertTrue(hasCodeInterpreterTool)
             } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI code_interpreter returned 400 — likely Zero Data Retention policy blocks container usage")
+                if case .invalidRequest(let message) = error, message.contains("Zero Data Retention") {
+                    throw XCTSkip("OpenAI code_interpreter unavailable for this key: \(message)")
                 }
                 throw error
             }
@@ -146,7 +146,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     
     func testCodeInterpreterWithVisualization() async throws {
         if let provider = provider {
-            // Real API test - code_interpreter may be blocked by Zero Data Retention policy
+            // Real API test
             do {
                 let response = try await provider.createResponseWithCodeInterpreter(
                     model: "gpt-4o-mini",
@@ -156,8 +156,8 @@ final class OpenAIResponsesToolsTests: XCTestCase {
                 XCTAssertNotNil(response.outputText)
                 XCTAssertTrue(response.status.isFinal)
             } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI code_interpreter returned 400 — likely Zero Data Retention policy")
+                if case .invalidRequest(let message) = error, message.contains("Zero Data Retention") {
+                    throw XCTSkip("OpenAI code_interpreter unavailable for this key: \(message)")
                 }
                 throw error
             }
@@ -219,22 +219,19 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Create a landscape painting"),
-            tools: [.imageGeneration(partialImages: 2)]
+            tools: [.imageGeneration(partialImages: 2)],
+            stream: true
         )
 
         if let provider = provider {
-            // Real API test - image generation may not be available for all API keys/models
-            do {
-                let response = try await provider.createResponse(request: request)
-
-                XCTAssertNotNil(response.outputText)
-                XCTAssertTrue(response.status.isFinal)
-            } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI image_generation returned 400 — tool may not be available for this API key/model")
+            // Real API test: partial_images requires streaming responses.
+            var receivedChunk = false
+            for try await chunk in provider.createResponseStream(request: request) {
+                if chunk.delta?.outputText != nil || chunk.status != nil {
+                    receivedChunk = true
                 }
-                throw error
             }
+            XCTAssertTrue(receivedChunk)
 
         } else {
             // Mock test
@@ -253,7 +250,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Find information about project requirements"),
-            tools: [.fileSearch(vectorStoreId: vectorStoreId)]
+            tools: [.fileSearch(vectorStoreIds: [vectorStoreId])]
         )
         
         if let provider = provider {
@@ -277,56 +274,27 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     // MARK: - Custom Function Tests
     
     func testCustomFunction() async throws {
-        // Define a weather function
-        let weatherFunction = ToolFunction(
-            name: "get_weather",
-            description: "Get current weather for a location",
-            parameters: Parameters(
-                type: "object",
-                properties: [
-                    "location": PropertyDefinition(
-                        type: "string",
-                        description: "The city and state, e.g. San Francisco, CA"
-                    ),
-                    "unit": PropertyDefinition(
-                        type: "string",
-                        description: "Temperature unit",
-                        enumValues: ["celsius", "fahrenheit"]
-                    )
-                ],
-                required: ["location"]
-            )
-        )
+        let weatherFunction = makeWeatherFunction()
         
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("What's the weather like in New York?"),
-            tools: [.function(weatherFunction)]
+            tools: [.function(weatherFunction)],
+            toolChoice: .required,
+            maxOutputTokens: 200
         )
         
         if let provider = provider {
             // Real API test
-            do {
-                let response = try await provider.createResponse(request: request)
+            let response = try await provider.createResponse(request: request)
+            XCTAssertNotNil(response.id)
+            XCTAssertTrue(response.status.isFinal)
 
-                XCTAssertNotNil(response.id)
-                XCTAssertTrue(response.status.isFinal)
-
-                // Check if function was called
-                let hasFunctionCall = response.output.contains { output in
-                    if case .functionCall = output { return true }
-                    return false
-                }
-
-                if hasFunctionCall {
-                    print("Function was called successfully")
-                }
-            } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI function tool returned 400 — tool may not be available")
-                }
-                throw error
+            let hasFunctionCall = response.output.contains { output in
+                if case .functionCall = output { return true }
+                return false
             }
+            XCTAssertTrue(hasFunctionCall, "Expected function_call output when toolChoice is .required")
 
         } else {
             // Mock test
@@ -345,57 +313,43 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     // MARK: - Multi-Tool Tests
     
     func testMultipleTools() async throws {
+        let weatherFunction = makeWeatherFunction()
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Research AI trends and create a visualization"),
-            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+            tools: [.webSearchPreview, .function(weatherFunction)],
+            toolChoice: .auto
         )
 
         if let provider = provider {
-            // Real API test - some tools may not be available for all API keys
-            do {
-                let response = try await provider.createResponse(request: request)
-
-                XCTAssertNotNil(response.outputText)
-                XCTAssertTrue(response.status.isFinal)
-                XCTAssertEqual(response.tools?.count, 3)
-            } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI multi-tool request returned 400 — some tools may not be available")
-                }
-                throw error
-            }
+            let response = try await provider.createResponse(request: request)
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
+            XCTAssertEqual(response.tools?.count, 2)
 
         } else {
             // Mock test
             let response = try await mockProvider.createResponse(request: request)
             
-            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 3)
+            XCTAssertEqual(mockProvider.lastRequest?.tools?.count, 2)
             XCTAssertNotNil(response.outputText)
         }
     }
     
     func testMultiToolBuilder() async throws {
+        let weatherFunction = makeWeatherFunction()
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Comprehensive analysis task"),
             instructions: "Use all available tools to provide a complete analysis",
-            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+            tools: [.webSearchPreview, .function(weatherFunction)],
+            toolChoice: .auto
         )
 
         if let provider = provider {
-            // Real API test - some tools may not be available for all API keys
-            do {
-                let response = try await provider.createResponse(request: request)
-
-                XCTAssertNotNil(response.outputText)
-                XCTAssertGreaterThan(response.tools?.count ?? 0, 1)
-            } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI multi-tool request returned 400 — some tools may not be available")
-                }
-                throw error
-            }
+            let response = try await provider.createResponse(request: request)
+            XCTAssertNotNil(response.outputText)
+            XCTAssertEqual(response.tools?.count, 2)
 
         } else {
             // Mock test
@@ -412,23 +366,15 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Help me with this task"),
-            tools: [.webSearchPreview, .codeInterpreter],
+            tools: [.webSearchPreview],
             toolChoice: .auto
         )
         
         if let provider = provider {
             // Real API test
-            do {
-                let response = try await provider.createResponse(request: request)
-
-                XCTAssertNotNil(response.outputText)
-                XCTAssertTrue(response.status.isFinal)
-            } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 400 {
-                    throw XCTSkip("OpenAI tool choice auto returned 400 — some tools may not be available for this API key")
-                }
-                throw error
-            }
+            let response = try await provider.createResponse(request: request)
+            XCTAssertNotNil(response.outputText)
+            XCTAssertTrue(response.status.isFinal)
 
         } else {
             // Mock test
@@ -528,4 +474,26 @@ final class OpenAIResponsesToolsTests: XCTestCase {
     private func getOpenAIAPIKey() -> String {
         return ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
     }
-} 
+
+    private func makeWeatherFunction() -> ToolFunction {
+        ToolFunction(
+            name: "get_weather",
+            description: "Get current weather for a location",
+            parameters: Parameters(
+                type: "object",
+                properties: [
+                    "location": PropertyDefinition(
+                        type: "string",
+                        description: "The city and state, e.g. San Francisco, CA"
+                    ),
+                    "unit": PropertyDefinition(
+                        type: "string",
+                        description: "Temperature unit",
+                        enumValues: ["celsius", "fahrenheit"]
+                    )
+                ],
+                required: ["location", "unit"]
+            )
+        )
+    }
+}

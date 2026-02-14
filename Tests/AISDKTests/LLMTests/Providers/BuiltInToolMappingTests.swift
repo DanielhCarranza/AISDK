@@ -265,9 +265,9 @@ final class BuiltInToolMappingTests: XCTestCase {
         )
 
         let responseRequest = try provider.convertToResponseRequest(request)
-        let vectorStoreIds = responseRequest.tools?.compactMap { tool -> String? in
-            if case .fileSearch(let id) = tool { return id }
-            return nil
+        let vectorStoreIds = responseRequest.tools?.flatMap { tool -> [String] in
+            if case .fileSearch(let ids) = tool { return ids }
+            return []
         }
         XCTAssertEqual(vectorStoreIds, ["vs_1", "vs_2"])
     }
@@ -323,9 +323,9 @@ final class BuiltInToolMappingTests: XCTestCase {
         request.providerOptions = options
 
         let responseRequest = try provider.convertToResponseRequest(request)
-        let fileSearchIds = responseRequest.tools?.compactMap { tool -> String? in
-            if case .fileSearch(let id) = tool { return id }
-            return nil
+        let fileSearchIds = responseRequest.tools?.flatMap { tool -> [String] in
+            if case .fileSearch(let ids) = tool { return ids }
+            return []
         }
         XCTAssertEqual(fileSearchIds, ["vs_override"])
 

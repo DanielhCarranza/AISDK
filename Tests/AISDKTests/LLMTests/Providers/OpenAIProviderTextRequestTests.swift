@@ -82,7 +82,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Search my files"),
-            tools: [.fileSearch(vectorStoreId: "vs_123")]
+            tools: [.fileSearch(vectorStoreIds: ["vs_123"])]
         )
 
         _ = try await mockProvider.createResponse(request: request)

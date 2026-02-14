@@ -10,7 +10,7 @@ import Foundation
 /// Built-in tools available in the Responses API
 public enum ResponseTool: Codable {
     case webSearchPreview
-    case fileSearch(vectorStoreId: String)
+    case fileSearch(vectorStoreIds: [String])
     case imageGeneration(partialImages: Int? = nil)
     case codeInterpreter
     case mcp(serverLabel: String, serverUrl: String, requireApproval: String? = nil, headers: [String: String]? = nil)
@@ -40,7 +40,7 @@ public enum ResponseTool: Codable {
             self = .webSearchPreview
         case .fileSearch:
             let fileSearchTool = try ResponseFileSearchTool(from: decoder)
-            self = .fileSearch(vectorStoreId: fileSearchTool.vectorStoreId)
+            self = .fileSearch(vectorStoreIds: fileSearchTool.vectorStoreIds)
         case .imageGeneration:
             let imageGenTool = try ResponseImageGenerationTool(from: decoder)
             self = .imageGeneration(partialImages: imageGenTool.partialImages)
@@ -72,8 +72,8 @@ public enum ResponseTool: Codable {
         case .webSearchPreview:
             let tool = ResponseWebSearchTool()
             try tool.encode(to: encoder)
-        case .fileSearch(let vectorStoreId):
-            let tool = ResponseFileSearchTool(vectorStoreId: vectorStoreId)
+        case .fileSearch(let vectorStoreIds):
+            let tool = ResponseFileSearchTool(vectorStoreIds: vectorStoreIds)
             try tool.encode(to: encoder)
         case .imageGeneration(let partialImages):
             let tool = ResponseImageGenerationTool(partialImages: partialImages)
@@ -115,15 +115,15 @@ public struct ResponseWebSearchTool: Codable {
 /// File search tool
 public struct ResponseFileSearchTool: Codable {
     public let type: String = "file_search"
-    public let vectorStoreId: String
+    public let vectorStoreIds: [String]
     
-    public init(vectorStoreId: String) {
-        self.vectorStoreId = vectorStoreId
+    public init(vectorStoreIds: [String]) {
+        self.vectorStoreIds = vectorStoreIds
     }
     
     enum CodingKeys: String, CodingKey {
         case type
-        case vectorStoreId = "vector_store_id"
+        case vectorStoreIds = "vector_store_ids"
     }
 }
 

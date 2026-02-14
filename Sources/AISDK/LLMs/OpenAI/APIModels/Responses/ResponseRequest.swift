@@ -10,6 +10,8 @@ import Foundation
 /// Request structure for OpenAI Responses API
 /// Matches the body for POST /v1/responses
 public struct ResponseRequest: Encodable {
+    public static let minimumMaxOutputTokens = 16
+
     // Required
     public let model: String
     public let input: ResponseInput
@@ -76,6 +78,15 @@ public struct ResponseRequest: Encodable {
         self.user = user
         self.truncation = truncation
         self.text = text
+    }
+
+    /// Validates known OpenAI Responses API constraints before network submission.
+    public func validate() throws {
+        if let maxOutputTokens, maxOutputTokens < Self.minimumMaxOutputTokens {
+            throw LLMError.invalidRequest(
+                "maxOutputTokens must be at least \(Self.minimumMaxOutputTokens) for OpenAI Responses API."
+            )
+        }
     }
     
     enum CodingKeys: String, CodingKey {

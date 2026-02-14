@@ -124,7 +124,7 @@ extension OpenAIProvider {
         }
 
         if let fileConfig = openAIOptions?.fileSearch, fileConfig.enabled {
-            let fileTools = fileConfig.vectorStoreIds.map { ResponseTool.fileSearch(vectorStoreId: $0) }
+            let fileTools = [ResponseTool.fileSearch(vectorStoreIds: fileConfig.vectorStoreIds)]
             insertBuiltInTools(kind: "fileSearch", tools: fileTools, preferOrder: false)
         }
 
@@ -144,7 +144,7 @@ extension OpenAIProvider {
                     guard !config.vectorStoreIds.isEmpty else {
                         throw ProviderError.invalidRequest("fileSearch requires at least one vectorStoreId for OpenAI.")
                     }
-                    let fileTools = config.vectorStoreIds.map { ResponseTool.fileSearch(vectorStoreId: $0) }
+                    let fileTools = [ResponseTool.fileSearch(vectorStoreIds: config.vectorStoreIds)]
                     insertBuiltInTools(kind: tool.kind, tools: fileTools, preferOrder: true)
                 case .imageGeneration(let config):
                     insertBuiltInTools(
