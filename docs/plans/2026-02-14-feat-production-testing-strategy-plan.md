@@ -264,7 +264,8 @@ jobs:
 
 **Implementation:** Extended `Examples/AISDKTestRunner/` with 4 new test suites, all wired into `main.swift` with new modes (`--mode correctness`, `--mode performance`, `--mode session`, `--mode live-reliability`, `--mode eval`).
 
-**Results (2026-02-14):**
+**Results (2026-02-14):** See [full results document](../results/2026-02-14-layer2-eval-harness-results.md) for detailed metrics, baselines, and reproduction steps.
+
 - Correctness: 18/18 (stream integrity, event ordering, empty streams, tool parsing, error mapping, session roundtrip x3, multi-turn 5-turn)
 - Performance: 7/7 (TTFT p50/p95/p99, tokens/sec, latency p50/p95, memory delta 50 sequential, peak memory 10 concurrent, leak detection x2)
 - SessionEval: 10/10 (roundtrip x3 stores, 100-message history, concurrent appends, list/filter, metadata, status transitions, updateLastMessage, isolation)
@@ -409,60 +410,212 @@ func testStreamDeallocation() async {
 
 ### Phase 3: Breadth (Week 5-6)
 
-#### 3.1 Comprehensive Demo App (Layer 3)
+#### 3.1 SDK Explorer iOS App (Layer 3)
 
-**Purpose:** Full-featured reference app exercising every SDK surface. Doubles as developer documentation and the closest thing to testing in a real app.
+**Purpose:** A real iOS app that runs on simulator and physical device, proving the SDK works end-to-end in the context a developer would actually use it. This is not a test harness with a UI — it's a real AI chat app that validates every SDK feature through actual usage.
 
-**File structure:**
+**Why an iOS app (not CLI):** Layers 1 and 2 are CLI tools that validate the SDK at an API level. But they can't run on iOS simulator/device, can't test SwiftUI integration, and don't validate the UI/UX experience. Layer 3 must run on real devices to prove the SDK works where developers actually ship.
+
+##### Design Decisions
+
+**Agent-first architecture (not chat + agent split):**
+
+A key design question: should chat and agent be separate tabs? No. In a real AI app, the agent *is* the chat. The user talks to an agent that has tools, memory, and capabilities. Separating them is artificial and doesn't reflect how the SDK would actually be used in production. A real developer would build one conversational interface where the agent handles everything — plain conversation, tool calls, multi-turn context — all in one flow.
+
+The app uses a **unified chat powered by an Agent**, where tool use happens naturally within conversation. "What's 5+3?" triggers the calculator tool. "How's the weather in Tokyo?" triggers the weather tool. "Tell me a joke" gets a plain response. This tests more SDK surface in a more realistic way than splitting them into separate views.
+
+**Real-time validation over automated checks:**
+
+Another key question: should session stores, UITree, and compaction be tested as silent automated checks? No — running them as unit-test-style assertions misses the point of Layer 3. Layer 3 is about proving the SDK works *in a real app context*. That means:
+
+- **Session persistence**: The user chats, kills the app, reopens it, and their conversation is still there. That's a real test — not `create() → save() → load() → assert`.
+- **UITree / Generative UI**: The agent returns generative UI and it actually renders inline in the chat. You see it.
+- **Session compaction**: After a long conversation, you can see token counts, trigger compaction, and watch the conversation get summarized while remaining coherent.
+- **Provider switching**: Mid-conversation, switch from OpenAI to Anthropic and keep chatting. Does context carry over?
+
+These should be *experienced through usage*, not just checked off in a test runner. The Diagnostics tab exists only for things that genuinely need programmatic validation (error recovery with bad API keys, store implementation comparison, etc.).
+
+##### Open Questions for Review
+
+These questions should be evaluated by the reviewer to ensure the design is sound:
+
+1. **Agent as the unified interface**: Is it correct that the Agent actor can handle both plain conversation (no tool calls) and tool-augmented responses in a single flow? Or does the SDK's Agent only activate tool loops when tools are registered — meaning a "plain chat" message still goes through the Agent actor but skips the tool loop?
+
+2. **GenerativeUI integration with Agent**: Can the Agent return UITree-renderable responses, or is GenerativeUI a separate rendering pipeline that operates on raw provider responses? This determines whether the Chat tab can show generative UI inline or if it needs special handling.
+
+3. **Session store switching at runtime**: Can the app switch between InMemory, FileSystem, and SQLite session stores mid-session to demonstrate each one? Or should the store type be selected at launch (settings) and persist for the session?
+
+4. **Provider switching message format**: When switching providers mid-conversation, do message formats need normalization (e.g., Anthropic vs OpenAI tool call formats)? If so, does the SDK handle this automatically or does the app need a `MessageFormatAdapter`?
+
+##### App Structure: 3 Tabs
+
+| Tab | What it does | SDK surfaces exercised |
+|-----|-------------|----------------------|
+| **Chat** | Agent-powered streaming chat with tools, provider switching, generative UI | `Agent`, `Tool`, `@Parameter`, `ProviderClient.stream()`, `ProviderLanguageModelAdapter`, multi-turn, `SessionStore`, `UITree` |
+| **Sessions** | Browse, restore, and manage saved conversations; test persistence across app restarts | `SessionStore` (all 3 types), `SessionCompactionService`, session lifecycle |
+| **Diagnostics** | Automated SDK health checks for things that can't be tested through usage | Error recovery, store implementation comparison, UITree parsing edge cases |
+
+##### Project Structure
+
+Follows the existing GenerativeUIDemo pattern: thin Xcode project shell + feature Swift Package + workspace.
 
 ```
-Examples/DemoApp/
-  DemoApp.swift                     # @main App entry
-  Features/
-    ChatView.swift                  # Multi-turn streaming chat
-    AgentView.swift                 # Agent with tools and handoffs
-    GenerativeUIView.swift          # UITree rendering and interaction
-    MCPView.swift                   # MCP server connections
-    SessionView.swift               # Session management (create/restore/export)
-    ProviderPicker.swift            # Switch providers mid-conversation
-    BenchmarkView.swift             # Run benchmarks on-device
-    SkillsView.swift                # Skills system demo
-  Shared/
-    SDKSetup.swift                  # Provider configuration from .env
-    ErrorHandling.swift             # Error display patterns
-    MessageFormatAdapter.swift      # Provider switching message normalization
-  Resources/
-    SampleSkills/                   # Example skills for testing
+Examples/
+  SDKExplorer.xcworkspace/
+    contents.xcworkspacedata          # Links .xcodeproj + package
+
+  SDKExplorer.xcodeproj/
+    project.pbxproj                   # Minimal app target
+
+  SDKExplorer/
+    SDKExplorerApp.swift              # @main entry point
+    Assets.xcassets/                  # Asset catalog
+
+  SDKExplorerConfig/
+    Shared.xcconfig                   # Bundle ID, deployment target
+    Debug.xcconfig                    # Debug settings
+    Release.xcconfig                  # Release settings
+    SDKExplorer.entitlements          # App sandbox
+
+  SDKExplorerPackage/
+    Package.swift                     # Feature package, depends on AISDK
+    Sources/SDKExplorerFeature/
+      ContentView.swift               # Tab bar container
+      Chat/
+        ChatView.swift                # Agent-powered streaming chat
+        MessageRow.swift              # Message bubble component (text + tool calls + generative UI)
+      Sessions/
+        SessionsView.swift            # Session browser and manager
+        SessionDetail.swift           # View/restore a saved session
+      Diagnostics/
+        DiagnosticsView.swift         # Health check runner + results UI
+      Shared/
+        SDKConfig.swift               # Provider setup, env loading
+        DemoTools.swift               # WeatherTool + CalculatorTool (for agent)
 ```
 
-**Feature coverage matrix:**
+##### Tab 1: Chat (Agent-Powered)
 
-| Feature | SDK Surface Exercised | Layer 3 Test |
-|---------|----------------------|-------------|
-| Multi-turn chat (streaming) | `LLM.streamText()`, message history | ChatView |
-| Agent with tool loop | `Agent.execute()`, `maxSteps`, tool execution | AgentView |
-| Agent handoffs | `AgentHandoff` (shared/forked/independent modes) | AgentView |
-| Generative UI | `GenerativeUIViewModel`, `GenerativeUIView`, `UITree` | GenerativeUIView |
-| MCP connections | `MCPClient`, `MCPServerConfiguration` | MCPView |
-| Session persistence | `SessionStore` (all 3 implementations) | SessionView |
-| Session compaction | `SessionCompactionService` | SessionView |
-| Skills system | `SkillRegistry`, `SkillParser`, `SkillPromptBuilder` | SkillsView |
-| Provider switching | Changing LLM mid-conversation, message normalization | ProviderPicker |
-| Error recovery | Network errors during stream, retry UI | ErrorHandling |
-| Background/foreground | Stream interruption on app background | All views |
-| Network transitions | WiFi to cellular during stream | All views |
+The primary tab. A real streaming AI chat where the user talks to an Agent.
 
-**DX validation checklist (manual, run with a fresh developer):**
+**What's visible:**
+- **Provider picker** in toolbar (segmented: OpenAI / Anthropic / Gemini)
+- **Message bubbles** — user messages (blue), assistant messages (gray), tool call indicators (inline)
+- **Streaming tokens** appear in real-time
+- **Tool activity** shown inline: "Calling calculator(5, 3, +) → 8.00" rendered as a subtle card within the conversation flow
+- **Generative UI** rendered inline when the agent returns UITree-compatible responses
 
-- [ ] Can a new developer get the app running in < 5 minutes?
-- [ ] Are error messages actionable (not just "request failed")?
-- [ ] Is provider switching intuitive?
-- [ ] Does streaming feel smooth (no UI jank)?
-- [ ] Is the API surface predictable (no surprising behaviors)?
-- [ ] Does autocomplete/documentation appear correctly in Xcode?
+**SDK APIs exercised:**
+- `ProviderLanguageModelAdapter(client:modelId:)` — wraps ProviderClient into LLM for Agent
+- `Agent(model:tools:instructions:)` — agent actor with tool loop
+- `agent.execute(messages:)` → `AIAgentResult`
+- `Tool` protocol with `@Parameter` property wrapper
+- `ProviderClient.stream()` via the adapter (streaming tokens)
+- `SessionStore.appendMessage()` / `.save()` — auto-saves after each exchange
+- Provider switching: changing the underlying `ProviderClient` and `modelId` mid-session
 
-**Package.swift changes:**
-- Add `DemoApp` as executable target depending on `AISDK`
+**Tools available to the agent:**
+- `CalculatorTool`: `@Parameter a: Double`, `@Parameter b: Double`, `@Parameter operation: Operation` (enum: +, -, *, /)
+- `WeatherTool`: `@Parameter city: String` → simulated weather data with renderable UI
+
+**Real-time validation through usage:**
+- Multi-turn conversation: Does the agent maintain context across turns?
+- Tool calling: Does the agent correctly identify when to use tools?
+- Streaming: Do tokens appear smoothly without UI jank?
+- Provider switching: Can you switch from OpenAI to Anthropic mid-conversation and keep chatting?
+- Session auto-save: Close the app, reopen, is the conversation still there?
+
+##### Tab 2: Sessions
+
+Browse and manage saved conversations. Tests session persistence as a real feature, not an abstract test.
+
+**What's visible:**
+- **Session list** showing all saved conversations with titles, dates, message counts
+- **Session detail** view to read back a saved conversation
+- **Restore** button to continue a saved conversation in the Chat tab
+- **Store switcher** (settings gear) to change the backing store (InMemory / FileSystem / SQLite)
+- **Compaction controls**: token count display, "Compact" button that summarizes long conversations
+- **Delete** individual sessions
+
+**SDK APIs exercised:**
+- `InMemorySessionStore`, `FileSystemSessionStore(directory:)`, `SQLiteSessionStore(path:)`
+- `SessionStore.list()`, `.load()`, `.save()`, `.delete()`
+- `SessionCompactionService.estimateTokens()`
+- `SessionCompactionService.compact()` (if available)
+
+**Real-time validation through usage:**
+- Kill the app → reopen → are sessions still there? (FileSystem/SQLite only)
+- Switch to a different store type → sessions from that store appear
+- Compact a long conversation → token count decreases, conversation summary is coherent
+- Restore a session → Chat tab loads with full message history, can continue chatting
+
+##### Tab 3: Diagnostics
+
+Automated checks for things that can't be tested through normal usage.
+
+**What's visible:**
+- **"Run All Tests" button** that executes programmatic checks
+- **Results list** with pass/fail icons, duration, and error messages
+- **Individual test re-run** by tapping a failed test
+
+**Tests:**
+
+| Test | What it validates | How |
+|------|------------------|-----|
+| Provider Health | Each configured provider responds | Send "Say hi" to each, verify non-empty response |
+| Error Recovery | Bad API key returns error, no crash | Use invalid key, assert error is `ProviderError` |
+| UITree Parse (valid) | Valid JSON → correct UITree nodes | `UITree.parse(from:)` with known-good JSON |
+| UITree Parse (invalid) | Invalid JSON throws error, no crash | `UITree.parse(from:)` with malformed JSON |
+| Store Roundtrip (InMemory) | Create → save → load roundtrip | Assert loaded session matches saved session |
+| Store Roundtrip (FileSystem) | Same with disk persistence | Same assertion + verify file exists on disk |
+| Store Roundtrip (SQLite) | Same with SQLite backend | Same assertion |
+| Token Estimation | Estimate tokens for known message set | `SessionCompactionService.estimateTokens()` returns > 0 |
+
+##### Feature Coverage Matrix
+
+| Plan Requirement | How Exercised | Where |
+|-----------------|--------------|-------|
+| Multi-turn chat (streaming) | Real streaming chat with message history | Chat tab |
+| Agent with tool loop | Agent actor executes tools autonomously | Chat tab |
+| Session persistence | Real: close app → reopen → conversation persists | Sessions tab |
+| Session compaction | Real: see token counts, trigger compaction, verify coherence | Sessions tab |
+| Provider switching | Real: switch provider mid-conversation | Chat tab |
+| GenerativeUI (UITree) | Real: agent returns renderable UI inline | Chat tab |
+| Error recovery | Automated: bad key test, graceful error display | Diagnostics tab |
+| UITree parsing | Automated: valid/invalid JSON edge cases | Diagnostics tab |
+| Store implementations | Automated: roundtrip comparison across all 3 stores | Diagnostics tab |
+| On-device testing | Runs on iOS simulator and physical device | All tabs |
+| UI/UX validation | Real SwiftUI chat interface with streaming | Chat tab |
+
+##### Files to Create (15 total)
+
+1. `Examples/SDKExplorerPackage/Package.swift` — Feature package depending on AISDK
+2. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/ContentView.swift` — Tab bar container
+3. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Chat/ChatView.swift` — Agent-powered streaming chat
+4. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Chat/MessageRow.swift` — Message bubble component
+5. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Sessions/SessionsView.swift` — Session browser
+6. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Sessions/SessionDetail.swift` — Session detail/restore
+7. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Diagnostics/DiagnosticsView.swift` — Health checks
+8. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/SDKConfig.swift` — Provider setup, env loading
+9. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/DemoTools.swift` — Calculator + Weather tools
+10. `Examples/SDKExplorer/SDKExplorerApp.swift` — @main entry point
+11. `Examples/SDKExplorer/Assets.xcassets/Contents.json` — Asset catalog root
+12. `Examples/SDKExplorer/Assets.xcassets/AccentColor.colorset/Contents.json` — Accent color
+13. `Examples/SDKExplorer/Assets.xcassets/AppIcon.appiconset/Contents.json` — App icon
+14. `Examples/SDKExplorerConfig/Shared.xcconfig` — Bundle ID, deployment target
+15. `Examples/SDKExplorer.xcodeproj/project.pbxproj` — Xcode project file
+16. `Examples/SDKExplorer.xcworkspace/contents.xcworkspacedata` — Workspace linking project + package
+
+##### Verification
+
+1. **Build**: Open `Examples/SDKExplorer.xcworkspace` in Xcode, build for iOS simulator
+2. **Chat tab**: Select a provider, send a message, verify streaming tokens appear
+3. **Tool call**: Ask "What's 5 + 3?", verify tool call indicator appears then result
+4. **Provider switch**: Switch from OpenAI to Anthropic, send message, verify it works
+5. **Session persistence**: Chat, kill app, reopen, verify conversation is still there
+6. **Session compaction**: Long conversation → check token count → compact → verify summary
+7. **Diagnostics**: Tap "Run All Tests", verify all pass (green checkmarks)
+8. **Device**: Build and run on physical iOS device
 
 #### 3.2 Chaos Testing
 
@@ -600,6 +753,7 @@ The following gaps were identified during spec analysis. Each is addressed in th
 
 ### Internal References
 
+- Layer 2 Results: `docs/results/2026-02-14-layer2-eval-harness-results.md`
 - Brainstorm: `docs/brainstorms/2026-02-14-production-testing-strategy-brainstorm.md`
 - Existing contract tests: `Tests/AISDKTests/Core/Providers/ProviderContractTests.swift`
 - Existing test runner: `Examples/AISDKTestRunner/`
