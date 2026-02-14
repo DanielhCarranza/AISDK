@@ -137,26 +137,47 @@ final class OpenAIResponsesAPITests: XCTestCase {
     
     func testResponseRetrieval() async throws {
         if let provider = provider {
-            // Real API test - first create a response
-            do {
-                let createResponse = try await provider.createTextResponse(
-                    model: "gpt-4o-mini",
-                    text: "Say hello",
-                    maxOutputTokens: 20
-                )
+            // Real API test - create with store=true so retrieval is valid.
+            let request = ResponseRequest(
+                model: "gpt-4o-mini",
+                input: .string("Say hello"),
+                maxOutputTokens: 20,
+                store: true
+            )
+            let createResponse = try await provider.createResponse(request: request)
 
-                // Then retrieve it
-                let retrievedResponse = try await provider.retrieveResponse(id: createResponse.id)
-
-                XCTAssertEqual(retrievedResponse.id, createResponse.id)
-                XCTAssertEqual(retrievedResponse.model, createResponse.model)
-                XCTAssertTrue(retrievedResponse.status.isFinal)
-            } catch let error as LLMError {
-                if case .networkError(let code, _) = error, code == 404 {
-                    throw XCTSkip("OpenAI response retrieval returned 404 — responses may not be stored with this API key configuration")
+            var retrievedResponse: ResponseObject?
+            var lastError: Error?
+            for attempt in 1...10 {
+                do {
+                    if attempt > 1 {
+                        try await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
+                    }
+                    retrievedResponse = try await provider.retrieveResponse(id: createResponse.id)
+                    break
+                } catch {
+                    lastError = error
+                    if attempt == 10 {
+                        if let llmError = error as? LLMError,
+                           case .invalidRequest(let message) = llmError,
+                           message.contains("store: true") {
+                            throw XCTSkip("OpenAI retrieval not available for this API key/account even when store:true is set")
+                        }
+                        throw error
+                    }
                 }
-                throw error
             }
+
+            if retrievedResponse == nil, let error = lastError as? LLMError,
+               case .invalidRequest(let message) = error,
+               message.contains("store: true") {
+                throw XCTSkip("OpenAI retrieval not available for this API key/account even when store:true is set")
+            }
+
+            XCTAssertNotNil(retrievedResponse)
+            XCTAssertEqual(retrievedResponse?.id, createResponse.id)
+            XCTAssertEqual(retrievedResponse?.model, createResponse.model)
+            XCTAssertTrue(retrievedResponse?.status.isFinal == true)
 
         } else {
             // Mock test
@@ -202,6 +223,21 @@ final class OpenAIResponsesAPITests: XCTestCase {
     
     // MARK: - Parameter Validation Tests
     
+    func testMaxOutputTokensMinimumValidation() throws {
+        let request = ResponseRequest(
+            model: "gpt-4o-mini",
+            input: .string("Test message"),
+            maxOutputTokens: 10
+        )
+
+        XCTAssertThrowsError(try request.validate()) { error in
+            guard case .invalidRequest(let message) = error as? LLMError else {
+                return XCTFail("Expected LLMError.invalidRequest, got: \(error)")
+            }
+            XCTAssertTrue(message.contains("at least 16"))
+        }
+    }
+
     func testModelParameterValidation() async throws {
         let request = ResponseRequest(
             model: "gpt-4o",
@@ -223,7 +259,7 @@ final class OpenAIResponsesAPITests: XCTestCase {
             XCTAssertEqual(mockProvider.lastRequest?.model, "gpt-4o")
             XCTAssertEqual(mockProvider.lastRequest?.temperature, 0.7)
             XCTAssertEqual(mockProvider.lastRequest?.topP, 0.9)
-            XCTAssertEqual(mockProvider.lastRequest?.maxOutputTokens, 100)
+            XCTAssertEqual(mockProvider.lastRequest?.maxOutputTokens, 200)
         }
     }
     

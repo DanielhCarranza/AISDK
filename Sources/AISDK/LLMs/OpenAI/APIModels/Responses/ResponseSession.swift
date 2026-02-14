@@ -235,7 +235,7 @@ public enum ResponseBuiltInTool: ToolConvertible {
         case .imageGeneration(let partialImages):
             return .imageGeneration(partialImages: partialImages)
         case .fileSearch(let vectorStoreId):
-            return .fileSearch(vectorStoreId: vectorStoreId)
+            return .fileSearch(vectorStoreIds: [vectorStoreId])
         case .mcp(let serverLabel, let serverUrl, let requireApproval, let headers):
             return .mcp(serverLabel: serverLabel, serverUrl: serverUrl, requireApproval: requireApproval, headers: headers)
         }
