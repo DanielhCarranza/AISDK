@@ -435,25 +435,40 @@ Another key question: should session stores, UITree, and compaction be tested as
 
 These should be *experienced through usage*, not just checked off in a test runner. The Diagnostics tab exists only for things that genuinely need programmatic validation (error recovery with bad API keys, store implementation comparison, etc.).
 
-##### Open Questions for Review
+##### Architecture Decisions (Resolved)
 
-These questions should be evaluated by the reviewer to ensure the design is sound:
-
-1. **Agent as the unified interface**: Is it correct that the Agent actor can handle both plain conversation (no tool calls) and tool-augmented responses in a single flow? Or does the SDK's Agent only activate tool loops when tools are registered — meaning a "plain chat" message still goes through the Agent actor but skips the tool loop?
-
-2. **GenerativeUI integration with Agent**: Can the Agent return UITree-renderable responses, or is GenerativeUI a separate rendering pipeline that operates on raw provider responses? This determines whether the Chat tab can show generative UI inline or if it needs special handling.
-
-3. **Session store switching at runtime**: Can the app switch between InMemory, FileSystem, and SQLite session stores mid-session to demonstrate each one? Or should the store type be selected at launch (settings) and persist for the session?
-
-4. **Provider switching message format**: When switching providers mid-conversation, do message formats need normalization (e.g., Anthropic vs OpenAI tool call formats)? If so, does the SDK handle this automatically or does the app need a `MessageFormatAdapter`?
+1. **Unified Agent runtime for all chat traffic**
+   - Plain chat and tool-augmented responses both flow through one `Agent` path.
+   - Tool loop is active when tools are registered; plain conversation still uses the same runtime.
+2. **Generative UI handled in chat rendering layer**
+   - Agent output is rendered as text by default.
+   - If output contains UITree payloads, `MessageRow` renders UI cards inline in the same transcript.
+3. **Session store switching allowed at session boundary**
+   - Store selection is configurable in Sessions tab settings.
+   - Active session must be ended/restored before switching store to avoid cross-store mutation ambiguity.
+4. **Provider switching handled at SDK abstraction boundary**
+   - Conversation state is stored in normalized SDK message types.
+   - Provider-specific wire-format translation stays inside provider adapters; app does not implement a custom `MessageFormatAdapter`.
 
 ##### App Structure: 3 Tabs
 
 | Tab | What it does | SDK surfaces exercised |
 |-----|-------------|----------------------|
-| **Chat** | Agent-powered streaming chat with tools, provider switching, generative UI | `Agent`, `Tool`, `@Parameter`, `ProviderClient.stream()`, `ProviderLanguageModelAdapter`, multi-turn, `SessionStore`, `UITree` |
-| **Sessions** | Browse, restore, and manage saved conversations; test persistence across app restarts | `SessionStore` (all 3 types), `SessionCompactionService`, session lifecycle |
-| **Diagnostics** | Automated SDK health checks for things that can't be tested through usage | Error recovery, store implementation comparison, UITree parsing edge cases |
+| **Chat** | Unified agent chat plus mission cards for deterministic high-signal demos | `Agent`, `Tool`, `@Parameter`, `ProviderClient.stream()`, `ProviderLanguageModelAdapter`, `SessionStore`, `UITree` |
+| **Sessions** | Persistence, continuity, and compaction management with explicit store boundaries | `SessionStore` (all 3 types), `SessionCompactionService`, session lifecycle |
+| **Diagnostics** | Programmatic checks + evidence export for repeatable stakeholder validation | Provider health, error mapping, store parity, UITree parsing, stream ordering |
+
+##### Mission Catalog (Chat tab)
+
+Mission cards make demos repeatable and prove behavior end-to-end:
+
+| Mission | What it proves | Expected result |
+|---------|---------------|-----------------|
+| `CrossProviderContinuation` | Provider switch mid-thread while preserving context | User switches provider and conversation remains coherent |
+| `ToolReasoningChain` | Agent can choose and sequence tools autonomously | Multiple tool calls complete with correct final response |
+| `GenerativeUICard` | Generative UI payloads render inline in transcript | UITree card appears in chat bubble without breaking stream |
+| `LongContextCompaction` | Long history can be compacted and still used | Token count drops and follow-up responses remain on-topic |
+| `FailureRecovery` | Recovery behavior under invalid key / timeout paths | Actionable error, no crash, next valid request succeeds |
 
 ##### Project Structure
 
@@ -492,6 +507,8 @@ Examples/
       Shared/
         SDKConfig.swift               # Provider setup, env loading
         DemoTools.swift               # WeatherTool + CalculatorTool (for agent)
+        MissionCatalog.swift          # Prompt-driven mission definitions
+        EvidenceExporter.swift        # JSON + markdown evidence bundle export
 ```
 
 ##### Tab 1: Chat (Agent-Powered)
@@ -504,6 +521,7 @@ The primary tab. A real streaming AI chat where the user talks to an Agent.
 - **Streaming tokens** appear in real-time
 - **Tool activity** shown inline: "Calling calculator(5, 3, +) → 8.00" rendered as a subtle card within the conversation flow
 - **Generative UI** rendered inline when the agent returns UITree-compatible responses
+- **Mission cards** for deterministic scenario playback
 
 **SDK APIs exercised:**
 - `ProviderLanguageModelAdapter(client:modelId:)` — wraps ProviderClient into LLM for Agent
@@ -513,6 +531,7 @@ The primary tab. A real streaming AI chat where the user talks to an Agent.
 - `ProviderClient.stream()` via the adapter (streaming tokens)
 - `SessionStore.appendMessage()` / `.save()` — auto-saves after each exchange
 - Provider switching: changing the underlying `ProviderClient` and `modelId` mid-session
+- Prompt-only mission behavior changes without code path changes
 
 **Tools available to the agent:**
 - `CalculatorTool`: `@Parameter a: Double`, `@Parameter b: Double`, `@Parameter operation: Operation` (enum: +, -, *, /)
@@ -524,6 +543,7 @@ The primary tab. A real streaming AI chat where the user talks to an Agent.
 - Streaming: Do tokens appear smoothly without UI jank?
 - Provider switching: Can you switch from OpenAI to Anthropic mid-conversation and keep chatting?
 - Session auto-save: Close the app, reopen, is the conversation still there?
+- Emergent capability: open-ended request succeeds or logs a clear parity gap
 
 ##### Tab 2: Sessions
 
@@ -548,6 +568,7 @@ Browse and manage saved conversations. Tests session persistence as a real featu
 - Switch to a different store type → sessions from that store appear
 - Compact a long conversation → token count decreases, conversation summary is coherent
 - Restore a session → Chat tab loads with full message history, can continue chatting
+- Cold start continuity → app relaunch restores last active session context
 
 ##### Tab 3: Diagnostics
 
@@ -557,6 +578,7 @@ Automated checks for things that can't be tested through normal usage.
 - **"Run All Tests" button** that executes programmatic checks
 - **Results list** with pass/fail icons, duration, and error messages
 - **Individual test re-run** by tapping a failed test
+- **Export Evidence** button to save reproducible demo artifacts
 
 **Tests:**
 
@@ -570,6 +592,55 @@ Automated checks for things that can't be tested through normal usage.
 | Store Roundtrip (FileSystem) | Same with disk persistence | Same assertion + verify file exists on disk |
 | Store Roundtrip (SQLite) | Same with SQLite backend | Same assertion |
 | Token Estimation | Estimate tokens for known message set | `SessionCompactionService.estimateTokens()` returns > 0 |
+| Stream Event Ordering | `.start` -> `.textDelta`+ -> `.finish` sequence | Validate strict event order on one live stream |
+
+##### Action Parity Matrix (Agent-native requirement)
+
+Every meaningful UI action must be achievable by the Agent runtime using available tools and message/state primitives.
+
+| User-visible action | Agent capability path |
+|--------------------|-----------------------|
+| Send a plain message | `agent.execute(messages:)` with no tool call |
+| Ask for calculation | `Agent` selects `CalculatorTool` |
+| Ask for weather | `Agent` selects `WeatherTool` |
+| Continue across provider change | Same normalized conversation messages + new provider adapter |
+| Save/restore conversation | `SessionStore.save()` / `SessionStore.load()` |
+| Compact long context | `SessionCompactionService.estimateTokens()` + `compact()` flow |
+| Render dynamic card | Message parsed as UITree and rendered inline |
+
+##### Composability and Emergent Capability Proofs
+
+- **Prompt-only composability check:** At least one mission behavior must be altered by prompt text only, with no Swift code change.
+- **Emergent capability check:** Run one open-ended domain request that is not hardcoded as a mission; pass if successful, otherwise log parity gap with missing capability.
+
+##### Evidence Bundle Schema
+
+Diagnostics exports a timestamped bundle to a local app-accessible directory:
+
+```json
+{
+  "timestamp": "2026-02-14T18:00:00Z",
+  "appVersion": "0.1.0",
+  "device": "iPhone16,2",
+  "osVersion": "iOS 18.2",
+  "missions": [
+    {
+      "name": "CrossProviderContinuation",
+      "provider": "openai->anthropic",
+      "pass": true,
+      "latencyMs": 1420,
+      "retries": 0,
+      "tokenUsage": { "input": 210, "output": 84 }
+    }
+  ],
+  "diagnostics": {
+    "providerHealth": "pass",
+    "storeParity": "pass",
+    "uiTreeParse": "pass",
+    "streamOrdering": "pass"
+  }
+}
+```
 
 ##### Feature Coverage Matrix
 
@@ -577,6 +648,9 @@ Automated checks for things that can't be tested through normal usage.
 |-----------------|--------------|-------|
 | Multi-turn chat (streaming) | Real streaming chat with message history | Chat tab |
 | Agent with tool loop | Agent actor executes tools autonomously | Chat tab |
+| Agent-native parity | Action parity matrix verified for all visible actions | Chat + Sessions |
+| Composability | Mission behavior changed by prompt-only edit | Chat tab |
+| Emergent capability | Open-ended request not hardcoded as feature | Chat tab |
 | Session persistence | Real: close app → reopen → conversation persists | Sessions tab |
 | Session compaction | Real: see token counts, trigger compaction, verify coherence | Sessions tab |
 | Provider switching | Real: switch provider mid-conversation | Chat tab |
@@ -584,10 +658,11 @@ Automated checks for things that can't be tested through normal usage.
 | Error recovery | Automated: bad key test, graceful error display | Diagnostics tab |
 | UITree parsing | Automated: valid/invalid JSON edge cases | Diagnostics tab |
 | Store implementations | Automated: roundtrip comparison across all 3 stores | Diagnostics tab |
+| Evidence export | Automated: JSON + markdown bundle for each run | Diagnostics tab |
 | On-device testing | Runs on iOS simulator and physical device | All tabs |
 | UI/UX validation | Real SwiftUI chat interface with streaming | Chat tab |
 
-##### Files to Create (15 total)
+##### Files to Create (18 total)
 
 1. `Examples/SDKExplorerPackage/Package.swift` — Feature package depending on AISDK
 2. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/ContentView.swift` — Tab bar container
@@ -598,13 +673,15 @@ Automated checks for things that can't be tested through normal usage.
 7. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Diagnostics/DiagnosticsView.swift` — Health checks
 8. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/SDKConfig.swift` — Provider setup, env loading
 9. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/DemoTools.swift` — Calculator + Weather tools
-10. `Examples/SDKExplorer/SDKExplorerApp.swift` — @main entry point
-11. `Examples/SDKExplorer/Assets.xcassets/Contents.json` — Asset catalog root
-12. `Examples/SDKExplorer/Assets.xcassets/AccentColor.colorset/Contents.json` — Accent color
-13. `Examples/SDKExplorer/Assets.xcassets/AppIcon.appiconset/Contents.json` — App icon
-14. `Examples/SDKExplorerConfig/Shared.xcconfig` — Bundle ID, deployment target
-15. `Examples/SDKExplorer.xcodeproj/project.pbxproj` — Xcode project file
-16. `Examples/SDKExplorer.xcworkspace/contents.xcworkspacedata` — Workspace linking project + package
+10. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/MissionCatalog.swift` — Mission definitions and prompts
+11. `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/EvidenceExporter.swift` — Evidence bundle writer
+12. `Examples/SDKExplorer/SDKExplorerApp.swift` — @main entry point
+13. `Examples/SDKExplorer/Assets.xcassets/Contents.json` — Asset catalog root
+14. `Examples/SDKExplorer/Assets.xcassets/AccentColor.colorset/Contents.json` — Accent color
+15. `Examples/SDKExplorer/Assets.xcassets/AppIcon.appiconset/Contents.json` — App icon
+16. `Examples/SDKExplorerConfig/Shared.xcconfig` — Bundle ID, deployment target
+17. `Examples/SDKExplorer.xcodeproj/project.pbxproj` — Xcode project file
+18. `Examples/SDKExplorer.xcworkspace/contents.xcworkspacedata` — Workspace linking project + package
 
 ##### Verification
 
@@ -614,8 +691,11 @@ Automated checks for things that can't be tested through normal usage.
 4. **Provider switch**: Switch from OpenAI to Anthropic, send message, verify it works
 5. **Session persistence**: Chat, kill app, reopen, verify conversation is still there
 6. **Session compaction**: Long conversation → check token count → compact → verify summary
-7. **Diagnostics**: Tap "Run All Tests", verify all pass (green checkmarks)
-8. **Device**: Build and run on physical iOS device
+7. **Composability proof**: Edit one mission prompt only, rerun mission, verify behavior change without code changes
+8. **Emergent capability proof**: Run one non-hardcoded open-ended prompt, capture result or logged parity gap
+9. **Diagnostics**: Tap "Run All Tests", verify all pass (green checkmarks)
+10. **Evidence export**: Tap "Export Evidence", verify JSON + markdown artifacts are generated
+11. **Device**: Build and run on physical iOS device
 
 #### 3.2 Chaos Testing
 
@@ -668,12 +748,12 @@ The following gaps were identified during spec analysis. Each is addressed in th
 | Gap | Resolution |
 |-----|-----------|
 | OpenAI Responses API not tested separately | Layer 1 and Layer 4 both test Chat Completions AND Responses API paths |
-| Agent handoffs untested against real providers | Layer 3 Demo App includes AgentView with handoff demos |
-| MCP and Skills have zero test coverage | Layer 3 adds MCPView and SkillsView |
+| Agent handoffs untested against real providers | Layer 3 Chat missions include multi-step `ToolReasoningChain` and cross-provider continuation |
+| MCP and Skills have zero test coverage | Deferred from Layer 3 app scope; covered by existing SDK tests and future dedicated mobile scenarios |
 | Stream event ordering not validated | Layer 2 adds `assertStreamOrdering()` eval |
 | No numeric performance baselines | Layer 2 establishes baselines from 7-day data collection |
 | No flaky test mitigation | Retry-once + consecutive-failure alerting policy defined |
-| Provider switching message normalization untested | Layer 3 ProviderPicker + MessageFormatAdapter |
+| Provider switching message normalization untested | Layer 3 uses SDK-normalized conversation state + provider adapter boundary; no app-level format adapter |
 
 ### Known Limitations (Deferred)
 
@@ -706,7 +786,9 @@ The following gaps were identified during spec analysis. Each is addressed in th
 - [x] Smoke Test App runs all 5 test categories and reports pass/fail in < 30 seconds
 - [ ] Contract tests validate response schema, streaming format, tool calls, and error format for all 4 primary providers
 - [x] Eval harness produces structured reports with correctness, performance, and reliability metrics
-- [ ] Demo App exercises all 12 feature categories from the coverage matrix
+- [ ] Demo app exercises all categories in the Layer 3 coverage matrix
+- [ ] Demo app mission catalog (`CrossProviderContinuation`, `ToolReasoningChain`, `GenerativeUICard`, `LongContextCompaction`, `FailureRecovery`) runs successfully on simulator and device
+- [ ] Action parity matrix is complete for all user-visible Layer 3 flows
 - [ ] Contract test CI workflow runs daily and notifies on consecutive failures
 
 ### Non-Functional Requirements
@@ -723,6 +805,9 @@ The following gaps were identified during spec analysis. Each is addressed in th
 - [ ] Contract tests have zero false-positive alerts over 7 consecutive days
 - [ ] Eval harness baselines committed to `benchmarks/baselines.json`
 - [ ] Demo app DX checklist completed by at least one developer who didn't write the SDK
+- [ ] Prompt-only composability proof completed (mission behavior change with no code change)
+- [ ] Emergent capability scenario completed (pass or logged parity gap)
+- [ ] Evidence bundle export validated (JSON + markdown) for at least one simulator run and one device run
 
 ---
 
@@ -763,6 +848,7 @@ The following gaps were identified during spec analysis. Each is addressed in th
 - Session stores: `Sources/AISDK/Sessions/`
 - Skipped tests analysis: `docs/plans/2026-02-14-skipped-live-tests-status.md`
 - CI workflow: `.github/workflows/ci.yml`
+- Layer 3 demo runbook: `docs/runbooks/layer3-sdk-explorer-demo-runbook.md`
 
 ### External References
 

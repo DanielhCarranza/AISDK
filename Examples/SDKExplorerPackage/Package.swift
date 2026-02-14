@@ -1,0 +1,26 @@
+// swift-tools-version: 6.1
+// The swift-tools-version declares the minimum version of Swift required to build this package.
+
+import PackageDescription
+
+let package = Package(
+    name: "SDKExplorerFeature",
+    platforms: [.iOS(.v18)],
+    products: [
+        .library(
+            name: "SDKExplorerFeature",
+            targets: ["SDKExplorerFeature"]
+        ),
+    ],
+    dependencies: [
+        .package(name: "dublin", path: "../../")
+    ],
+    targets: [
+        .target(
+            name: "SDKExplorerFeature",
+            dependencies: [
+                .product(name: "AISDK", package: "dublin")
+            ]
+        )
+    ]
+)
