@@ -505,11 +505,11 @@ Tests/AISDKTests/Helpers/StreamSimulation.swift                     # UI stream 
 - [x] Existing `RenderableTool` continues to work (backward compatible)
 
 ### Phase 3: Bidirectional State
-- [ ] Interactive components emit `UIStateChangeEvent` on value change
-- [ ] State changes propagate through `UIStateChangeHandler` callback
-- [ ] Agent receives state changes and can respond with new patches
-- [ ] State change events include component name, value, and timestamp
-- [ ] Action allowlisting still works alongside state changes
+- [x] Interactive components emit `UIStateChangeEvent` on value change
+- [x] State changes propagate through `UIStateChangeHandler` callback
+- [x] Agent receives state changes and can respond with new patches
+- [x] State change events include component name, value, and timestamp
+- [x] Action allowlisting still works alongside state changes
 
 ### Phase 4: Polish
 - [ ] Dashboard example demonstrates progressive SpecStream rendering

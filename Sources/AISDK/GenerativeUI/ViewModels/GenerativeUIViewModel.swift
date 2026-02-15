@@ -478,6 +478,22 @@ public final class GenerativeUIViewModel {
         isLoading = false
     }
 
+    // MARK: - Bidirectional State
+
+    /// Handler called when interactive components emit state changes
+    public var onStateChange: UIStateChangeHandler?
+
+    /// Handle a state change from an interactive component.
+    ///
+    /// Updates the internal UIState and notifies the registered handler.
+    /// The handler can forward the event to the agent for reactive responses.
+    ///
+    /// - Parameter event: The state change event from the component
+    public func handleStateChange(_ event: UIStateChangeEvent) {
+        // Notify the registered handler
+        onStateChange?(event)
+    }
+
     // MARK: - State Accessors
 
     /// Whether the ViewModel has a tree to display
