@@ -484,25 +484,25 @@ Tests/AISDKTests/Helpers/StreamSimulation.swift                     # UI stream 
 ## Acceptance Criteria
 
 ### Phase 1: SpecStream + Agent Bridge
-- [ ] `SpecPatch` correctly encodes/decodes all 6 RFC 6902 operations
-- [ ] `SpecStreamCompiler` handles partial JSONL chunks across boundaries
-- [ ] Malformed JSONL lines are logged and skipped (no halt)
-- [ ] `.uiPatch(SpecPatchBatch)` event integrates with existing AIStreamEvent enum
-- [ ] `GenerativeUIViewModel` subscribes to mixed `AIStreamEvent` streams
-- [ ] Text deltas and UI patches are correctly routed
-- [ ] 60fps batching continues to work with patch-based updates
-- [ ] `UIState` resolves `$path` expressions against nested state dictionaries
-- [ ] `$cond` conditional expressions evaluate correctly
-- [ ] Path validation prevents patches targeting outside `/elements`, `/state`, `/root`
-- [ ] `swift build` passes, `swift test` passes
+- [x] `SpecPatch` correctly encodes/decodes all 6 RFC 6902 operations
+- [x] `SpecStreamCompiler` handles partial JSONL chunks across boundaries
+- [x] Malformed JSONL lines are logged and skipped (no halt)
+- [x] `.uiPatch(SpecPatchBatch)` event integrates with existing AIStreamEvent enum
+- [x] `GenerativeUIViewModel` subscribes to mixed `AIStreamEvent` streams
+- [x] Text deltas and UI patches are correctly routed
+- [x] 60fps batching continues to work with patch-based updates
+- [x] `UIState` resolves `$path` expressions against nested state dictionaries
+- [x] `$cond` conditional expressions evaluate correctly
+- [x] Path validation prevents patches targeting outside `/elements`, `/state`, `/root`
+- [x] `swift build` passes, `swift test` passes
 
 ### Phase 2: UITool Protocol
-- [ ] Simple `UITool` conformance works with just `body` property
-- [ ] `LifecycleUITool` renders correct view for each phase
-- [ ] `UIToolRenderer` manages lifecycle (loading -> executing -> complete/error)
-- [ ] Agent detects `UITool` conformance and attaches rendering metadata
-- [ ] Default views provide reasonable UX without customization
-- [ ] Existing `RenderableTool` continues to work (backward compatible)
+- [x] Simple `UITool` conformance works with just `body` property
+- [x] `LifecycleUITool` renders correct view for each phase
+- [x] `UIToolRenderer` manages lifecycle (loading -> executing -> complete/error)
+- [x] Agent detects `UITool` conformance and attaches rendering metadata
+- [x] Default views provide reasonable UX without customization
+- [x] Existing `RenderableTool` continues to work (backward compatible)
 
 ### Phase 3: Bidirectional State
 - [ ] Interactive components emit `UIStateChangeEvent` on value change

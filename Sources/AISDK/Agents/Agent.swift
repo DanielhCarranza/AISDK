@@ -928,6 +928,18 @@ public actor Agent {
         ) {
             try await toolToExecute.execute()
         }
+
+        // Attach UITool metadata if the tool conforms to UITool
+        #if canImport(SwiftUI)
+        if configuredTool is any UITool {
+            return ToolResult(
+                content: result.content,
+                metadata: UIToolResultMetadata(toolTypeName: String(describing: toolType)),
+                artifacts: result.artifacts
+            )
+        }
+        #endif
+
         return result
     }
 
