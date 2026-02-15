@@ -1,7 +1,7 @@
 ---
 title: "Generative UI: SpecStream, UITool Protocol & Bidirectional State"
 type: feat
-status: active
+status: completed
 date: 2026-02-15
 branch: aisdk-2.0-modernization
 spec: "docs/brainstorms/2026-02-15-generative-ui-brainstorm.md"
@@ -514,7 +514,7 @@ Tests/AISDKTests/Helpers/StreamSimulation.swift                     # UI stream 
 ### Phase 4: Polish
 - [ ] Dashboard example demonstrates progressive SpecStream rendering
 - [ ] Form example demonstrates UITool with bidirectional state
-- [ ] `GenerativeUIView` renders `UISpec` with `$path` resolution
+- [x] `GenerativeUIView` renders `UISpec` with `$path` resolution
 
 ---
 
