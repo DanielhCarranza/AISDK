@@ -42,6 +42,9 @@ class CLIController {
     /// Terminal UI renderer
     private let uiRenderer: TerminalUIRenderer
 
+    /// SpecStream compiler for progressive UI rendering
+    private var specCompiler = SpecStreamCompiler()
+
     /// Built-in tool types
     private var builtInTools: [Tool.Type] = []
 
@@ -73,11 +76,17 @@ class CLIController {
 
         // Initialize built-in tools
         if runtimeConfig.toolsEnabled {
-            self.builtInTools = [
+            var tools: [Tool.Type] = [
                 WeatherTool.self,
                 CalculatorTool.self,
-                WebSearchTool.self
+                WebSearchTool.self,
+                DashboardStreamTool.self,
+                StateChangeDemoTool.self,
             ]
+            #if canImport(SwiftUI)
+            tools.append(WeatherDashboardTool.self)
+            #endif
+            self.builtInTools = tools
         }
     }
 
@@ -463,6 +472,7 @@ class CLIController {
 
         streamRenderer.reset()
         reasoningRenderer.reset()
+        specCompiler.reset()
 
         do {
             let agent = buildAgent(client: client, modelId: model)
@@ -558,7 +568,7 @@ class CLIController {
                     if result.lowercased().hasPrefix("error:") {
                         toolRenderer.showError(id: id, error: result)
                     } else {
-                        toolRenderer.showResult(id: id, result: result)
+                        toolRenderer.showResult(id: id, result: result, metadata: metadata)
                     }
                     if let searchMeta = metadata as? WebSearchMetadata {
                         sources.append(contentsOf: searchMeta.sources)
@@ -598,6 +608,14 @@ class CLIController {
                             url: url,
                             snippet: aiSource.snippet
                         ))
+                    }
+
+                case .uiPatch(let patchBatch):
+                    stopSpinnerIfNeeded()
+                    if let tree = specCompiler.apply(patchBatch) {
+                        if let rendered = try? uiRenderer.render(tree: tree) {
+                            print("\n" + rendered)
+                        }
                     }
 
                 default:

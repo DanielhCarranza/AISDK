@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AISDK
 
 /// Status of a tool call
 enum ToolCallStatus {
@@ -112,7 +113,7 @@ class ToolCallRenderer {
     }
 
     /// Called when tool execution completes with result
-    func showResult(id: String, result: String) {
+    func showResult(id: String, result: String, metadata: (any ToolMetadata)? = nil) {
         // Stop spinner if running
         spinners[id]?.stop()
         spinners.removeValue(forKey: id)
@@ -130,7 +131,24 @@ class ToolCallRenderer {
 
         let duration = info.endTime!.timeIntervalSince(info.startTime)
 
-        print(ANSIStyles.green("   ✓ Result: ") + formatResult(result))
+        // Detect UITool metadata
+        if let uiMeta = metadata as? UIToolResultMetadata {
+            print(ANSIStyles.cyan("   UITool: ") + ANSIStyles.bold(uiMeta.toolTypeName))
+            print(ANSIStyles.dim("     has UI view: \(uiMeta.hasUIView)"))
+
+            // Try to render result as UITree
+            if let data = result.data(using: .utf8),
+               let tree = try? UITree.parse(from: data) {
+                let renderer = TerminalUIRenderer()
+                if let rendered = try? renderer.render(tree: tree) {
+                    print(rendered)
+                }
+            } else {
+                print(ANSIStyles.green("   ✓ Result: ") + formatResult(result))
+            }
+        } else {
+            print(ANSIStyles.green("   ✓ Result: ") + formatResult(result))
+        }
 
         if verbose {
             print(ANSIStyles.dim("   Duration: \(String(format: "%.2f", duration))s"))
