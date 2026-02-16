@@ -12,15 +12,27 @@ import AISDK
 
 // MARK: - Entry Point
 
-// Bridge async code to sync main
-let semaphore = DispatchSemaphore(value: 0)
-
-Task {
-    await runCLI()
-    semaphore.signal()
+// Check for generative-ui-demo early — it needs MainActor (via RunLoop),
+// while the interactive CLI uses a semaphore that blocks the main thread.
+if CommandLine.arguments.contains("generative-ui-demo") {
+    var finished = false
+    Task {
+        await runGenerativeUIDemo()
+        finished = true
+        CFRunLoopStop(CFRunLoopGetMain())
+    }
+    while !finished {
+        RunLoop.current.run(mode: .default, before: .distantFuture)
+    }
+} else {
+    // Bridge async code to sync main
+    let semaphore = DispatchSemaphore(value: 0)
+    Task {
+        await runCLI()
+        semaphore.signal()
+    }
+    semaphore.wait()
 }
-
-semaphore.wait()
 
 // MARK: - Main CLI Runner
 
@@ -284,5 +296,6 @@ func printUsage() {
         swift run AISDKCLI --system "You are a Python expert"
         swift run AISDKCLI --provider gemini --video demo
         swift run AISDKCLI --video https://example.com/clip.mp4
+        swift run AISDKCLI generative-ui-demo
     """)
 }

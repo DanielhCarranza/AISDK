@@ -87,6 +87,12 @@ public enum AIStreamEvent: Sendable {
     /// Stream finished with reason and final usage
     case finish(finishReason: AIFinishReason, usage: AIUsage)
 
+    // MARK: - Generative UI Events
+
+    /// UI specification patch for progressive generative UI rendering.
+    /// Contains a batch of RFC 6902 JSON Patch operations to apply incrementally to a UITree.
+    case uiPatch(SpecPatchBatch)
+
     // MARK: - Computer Use Events
 
     /// A computer use action requested by the model (typed version of tool call)

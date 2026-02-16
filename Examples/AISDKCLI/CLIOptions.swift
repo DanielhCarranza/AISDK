@@ -93,6 +93,9 @@ struct CLIOptions {
     /// Enable prompt caching (Anthropic)
     var cachingEnabled: Bool = false
 
+    /// Run generative UI demo and exit
+    var runGenerativeUIDemo: Bool = false
+
     /// Show help and exit
     var showHelp: Bool = false
 
@@ -218,6 +221,9 @@ struct CLIOptions {
                 } else {
                     print(ANSIStyles.warning("--builtin-tools requires comma-separated names: websearch,code,urlcontext"))
                 }
+
+            case "generative-ui-demo":
+                options.runGenerativeUIDemo = true
 
             default:
                 if arg.hasPrefix("-") {

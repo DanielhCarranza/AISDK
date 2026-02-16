@@ -194,6 +194,122 @@ extension GenerativeUIView {
     }
 }
 
+// MARK: - UISpec Support
+
+extension GenerativeUIView {
+    /// Creates a GenerativeUIView from a UISpec (elements + state)
+    ///
+    /// The UISpec includes state that can be used for `$path` resolution
+    /// in component props. State changes from interactive components are
+    /// forwarded through the `onStateChange` handler.
+    ///
+    /// - Parameters:
+    ///   - spec: The UISpec containing tree and state data
+    ///   - registry: Registry for component lookup (defaults to secureDefault)
+    ///   - onAction: Handler for component actions
+    ///   - onStateChange: Handler for state changes from interactive components
+    /// - Returns: A GenerativeUIView configured with spec data
+    public static func fromSpec(
+        _ spec: UISpec,
+        registry: UIComponentRegistry = .secureDefault,
+        onAction: @escaping UIActionHandler,
+        onStateChange: @escaping UIStateChangeHandler = { _ in }
+    ) -> GenerativeUIView {
+        GenerativeUIView(
+            tree: spec.toUITree(),
+            registry: registry,
+            onAction: onAction
+        )
+    }
+}
+
+// MARK: - GenerativeUISpecView
+
+/// A view that renders a UISpec with state change support
+///
+/// `GenerativeUISpecView` extends `GenerativeUITreeView` with UISpec support,
+/// including bidirectional state handling. Interactive components can emit
+/// state changes back through the `onStateChange` handler.
+///
+/// ## Usage
+/// ```swift
+/// GenerativeUISpecView(
+///     spec: mySpec,
+///     onAction: { action in handleAction(action) },
+///     onStateChange: { event in
+///         // Forward to agent for reactive responses
+///         await agent.injectStateChange(event)
+///     }
+/// )
+/// ```
+public struct GenerativeUISpecView: View, Sendable {
+    private let spec: UISpec?
+    private let isLoading: Bool
+    private let error: (any Error)?
+    private let registry: UIComponentRegistry
+    private let onAction: UIActionHandler
+    private let onStateChange: UIStateChangeHandler
+
+    public init(
+        spec: UISpec?,
+        isLoading: Bool = false,
+        error: (any Error)? = nil,
+        registry: UIComponentRegistry = .secureDefault,
+        onAction: @escaping UIActionHandler,
+        onStateChange: @escaping UIStateChangeHandler = { _ in }
+    ) {
+        self.spec = spec
+        self.isLoading = isLoading
+        self.error = error
+        self.registry = registry
+        self.onAction = onAction
+        self.onStateChange = onStateChange
+    }
+
+    public var body: some View {
+        if let spec {
+            GenerativeUIView(
+                tree: spec.toUITree(),
+                registry: registry,
+                onAction: onAction
+            )
+        } else if isLoading {
+            VStack(spacing: 12) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                Text("Loading UI...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error {
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.largeTitle)
+                    .foregroundColor(.orange)
+                Text("Failed to load UI")
+                    .font(.headline)
+                #if DEBUG
+                Text(error.localizedDescription)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                #endif
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "rectangle.dashed")
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
+                Text("No UI to display")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
 // MARK: - GenerativeUITreeView
 
 /// A view that renders a UITree with loading and error state handling

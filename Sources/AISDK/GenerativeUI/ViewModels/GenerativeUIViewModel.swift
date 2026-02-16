@@ -396,6 +396,78 @@ public final class GenerativeUIViewModel {
         }
     }
 
+    // MARK: - Mixed AIStreamEvent Subscription
+
+    /// Subscribe to a mixed text+UI stream from an agent.
+    ///
+    /// Routes `.textDelta` events to the `onText` callback and `.uiPatch` events
+    /// to the internal `SpecStreamCompiler` for incremental UITree building.
+    /// Uses the existing 60fps batching for tree updates.
+    ///
+    /// - Parameters:
+    ///   - stream: A mixed stream of `AIStreamEvent` values
+    ///   - compiler: The compiler to use for patch application (default: new instance)
+    ///   - onText: Callback for text delta events (called on MainActor)
+    ///
+    /// ## Example
+    /// ```swift
+    /// let eventStream = agent.streamExecute(messages: messages)
+    /// await viewModel.subscribe(
+    ///     toEvents: eventStream,
+    ///     onText: { text in textBuffer += text }
+    /// )
+    /// ```
+    public func subscribe(
+        toEvents stream: AsyncThrowingStream<AIStreamEvent, Error>,
+        compiler: SpecStreamCompiler = SpecStreamCompiler(),
+        onText: @escaping @MainActor (String) -> Void = { _ in }
+    ) async {
+        cancelPendingUpdates()
+
+        isLoading = true
+        error = nil
+
+        do {
+            for try await event in stream {
+                guard !Task.isCancelled else { break }
+
+                switch event {
+                case .textDelta(let text):
+                    onText(text)
+
+                case .uiPatch(let batch):
+                    if let newTree = compiler.apply(batch) {
+                        scheduleUpdate(UITreeUpdate(type: .replaceTree(newTree)))
+                    }
+
+                default:
+                    // Other events (toolCall, usage, etc.) are passed through
+                    break
+                }
+            }
+        } catch {
+            if !(error is CancellationError) && !Task.isCancelled {
+                self.error = error
+            }
+        }
+
+        // Flush pending updates before changing loading state
+        flushPendingUpdates()
+        isLoading = false
+    }
+
+    /// Start a mixed event stream subscription in the background
+    public func startSubscription(
+        toEvents stream: AsyncThrowingStream<AIStreamEvent, Error>,
+        compiler: SpecStreamCompiler = SpecStreamCompiler(),
+        onText: @escaping @MainActor (String) -> Void = { _ in }
+    ) {
+        cancelSubscription()
+        subscriptionTask = Task { [weak self] in
+            await self?.subscribe(toEvents: stream, compiler: compiler, onText: onText)
+        }
+    }
+
     /// Cancel the current stream subscription
     ///
     /// Note: This does NOT cancel pending batched updates. Use `clear()` if you
@@ -404,6 +476,22 @@ public final class GenerativeUIViewModel {
         subscriptionTask?.cancel()
         subscriptionTask = nil
         isLoading = false
+    }
+
+    // MARK: - Bidirectional State
+
+    /// Handler called when interactive components emit state changes
+    public var onStateChange: UIStateChangeHandler?
+
+    /// Handle a state change from an interactive component.
+    ///
+    /// Updates the internal UIState and notifies the registered handler.
+    /// The handler can forward the event to the agent for reactive responses.
+    ///
+    /// - Parameter event: The state change event from the component
+    public func handleStateChange(_ event: UIStateChangeEvent) {
+        // Notify the registered handler
+        onStateChange?(event)
     }
 
     // MARK: - State Accessors

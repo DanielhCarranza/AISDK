@@ -332,6 +332,8 @@ public final class LoggingAISDKObserver: AISDKObserver {
             return "heartbeat"
         case .finish(let reason, _):
             return "finish(\(reason.rawValue))"
+        case .uiPatch(let batch):
+            return "uiPatch(count=\(batch.patches.count))"
         case .computerUseAction(let action):
             return "computerUseAction(id=\(action.id))"
         case .error:
@@ -377,6 +379,7 @@ extension AIStreamEvent {
         case .stepFinish: return "stepFinish"
         case .heartbeat: return "heartbeat"
         case .finish: return "finish"
+        case .uiPatch: return "uiPatch"
         case .computerUseAction: return "computerUseAction"
         case .error: return "error"
         }

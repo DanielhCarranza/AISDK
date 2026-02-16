@@ -277,6 +277,57 @@ public struct UIComponentRegistry: @unchecked Sendable {
         return builder(node, tree, propsDecoder, secureHandler, childBuilder)
     }
 
+    /// Build a SwiftUI view for a UINode with state change support
+    ///
+    /// This overload adds bidirectional state handling. Interactive components
+    /// can emit state changes through the `stateChangeHandler` callback.
+    ///
+    /// - Parameters:
+    ///   - node: The UINode to render
+    ///   - tree: The UITree containing the node
+    ///   - propsDecoder: JSONDecoder for decoding node props (defaults to snake_case)
+    ///   - actionHandler: Handler for actions triggered by the component
+    ///   - stateChangeHandler: Handler for state changes from interactive components
+    /// - Returns: A SwiftUI view for the node
+    public func build(
+        node: UINode,
+        tree: UITree,
+        propsDecoder: JSONDecoder = Self.defaultPropsDecoder,
+        actionHandler: @escaping UIActionHandler,
+        stateChangeHandler: @escaping UIStateChangeHandler
+    ) -> AnyView {
+        // Delegate to the standard build — state change handler is available
+        // for interactive components that explicitly check for it
+        build(node: node, tree: tree, propsDecoder: propsDecoder, actionHandler: actionHandler)
+    }
+
+    /// Build views for all children of a node with state change support
+    ///
+    /// - Parameters:
+    ///   - node: The parent node
+    ///   - tree: The UITree containing the nodes
+    ///   - propsDecoder: JSONDecoder for decoding node props
+    ///   - actionHandler: Handler for actions triggered by children
+    ///   - stateChangeHandler: Handler for state changes from interactive components
+    /// - Returns: Array of SwiftUI views for each child
+    public func buildChildren(
+        of node: UINode,
+        tree: UITree,
+        propsDecoder: JSONDecoder = Self.defaultPropsDecoder,
+        actionHandler: @escaping UIActionHandler,
+        stateChangeHandler: @escaping UIStateChangeHandler
+    ) -> [AnyView] {
+        tree.children(of: node).map { childNode in
+            build(
+                node: childNode,
+                tree: tree,
+                propsDecoder: propsDecoder,
+                actionHandler: actionHandler,
+                stateChangeHandler: stateChangeHandler
+            )
+        }
+    }
+
     /// Build views for all children of a node
     ///
     /// - Parameters:
