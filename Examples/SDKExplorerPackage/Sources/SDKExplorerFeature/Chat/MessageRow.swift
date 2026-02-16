@@ -8,15 +8,23 @@ public struct MessageRow: View {
         self.message = message
     }
 
+    private var parsedTree: UITree? {
+        parseTree(from: message.content.textValue)
+    }
+
     public var body: some View {
+        let tree = parsedTree
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
-            HStack {
-                if message.role == .assistant || message.role == .tool {
-                    bubble
-                    Spacer(minLength: 24)
-                } else {
-                    Spacer(minLength: 24)
-                    bubble
+            // Hide the raw text bubble when we have a rendered UI card
+            if tree == nil {
+                HStack {
+                    if message.role == .assistant || message.role == .tool {
+                        bubble
+                        Spacer(minLength: 24)
+                    } else {
+                        Spacer(minLength: 24)
+                        bubble
+                    }
                 }
             }
             if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
@@ -33,7 +41,7 @@ public struct MessageRow: View {
                     }
                 }
             }
-            if let tree = parseTree(from: message.content.textValue) {
+            if let tree {
                 HStack {
                     if message.role == .user { Spacer() }
                     GenerativeUIView(tree: tree, registry: .extended, onAction: { _ in })
@@ -75,6 +83,22 @@ public struct MessageRow: View {
 
     private func parseTree(from text: String) -> UITree? {
         guard text.contains("\"root\""), text.contains("\"elements\"") else { return nil }
-        return try? UITree.parse(from: Data(text.utf8), validatingWith: UICatalog.extended)
+        // Try raw text first
+        if let tree = try? UITree.parse(from: Data(text.utf8), validatingWith: UICatalog.extended) {
+            return tree
+        }
+        // Strip markdown fences (```json ... ``` or ``` ... ```)
+        let stripped = text
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let tree = try? UITree.parse(from: Data(stripped.utf8), validatingWith: UICatalog.extended) {
+            return tree
+        }
+        // Try extracting JSON between first { and last }
+        guard let start = stripped.firstIndex(of: "{"),
+              let end = stripped.lastIndex(of: "}") else { return nil }
+        let jsonSlice = String(stripped[start...end])
+        return try? UITree.parse(from: Data(jsonSlice.utf8), validatingWith: UICatalog.extended)
     }
 }

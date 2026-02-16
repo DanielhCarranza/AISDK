@@ -3,14 +3,33 @@ import AISDK
 
 public struct CalculatorTool: Tool {
     public enum Operation: String, Codable, CaseIterable, Sendable {
-        case add = "+"
-        case subtract = "-"
-        case multiply = "*"
-        case divide = "/"
+        case add = "add"
+        case subtract = "subtract"
+        case multiply = "multiply"
+        case divide = "divide"
+
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self).lowercased()
+            switch raw {
+            case "add", "+", "plus":
+                self = .add
+            case "subtract", "-", "minus":
+                self = .subtract
+            case "multiply", "*", "times", "x":
+                self = .multiply
+            case "divide", "/":
+                self = .divide
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: try decoder.singleValueContainer(),
+                    debugDescription: "Unknown operation: \(raw). Use: add, subtract, multiply, divide, +, -, *, /"
+                )
+            }
+        }
     }
 
     public var name: String { "calculator" }
-    public var description: String { "Perform arithmetic operations on two numbers." }
+    public var description: String { "Perform arithmetic operations on two numbers. Operations: add (+), subtract (-), multiply (*), divide (/)." }
 
     @Parameter(description: "First number")
     public var a: Double = 0
@@ -18,7 +37,7 @@ public struct CalculatorTool: Tool {
     @Parameter(description: "Second number")
     public var b: Double = 0
 
-    @Parameter(description: "Operation (+, -, *, /)")
+    @Parameter(description: "Operation: add, subtract, multiply, or divide")
     public var operation: Operation = .add
 
     public init() {}

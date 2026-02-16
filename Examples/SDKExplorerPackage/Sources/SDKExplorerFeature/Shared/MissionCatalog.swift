@@ -28,17 +28,18 @@ public enum MissionCatalog {
         MissionCard(
             kind: .toolReasoningChain,
             title: "Tool reasoning chain",
-            prompt: "Use tools to compute: ((5 + 3) * 4) - 6, then explain briefly."
+            prompt: "Use the calculator tool step by step: first compute 5 + 3, then multiply that result by 4, then subtract 6. Show each step."
         ),
         MissionCard(
             kind: .generativeUICard,
             title: "Generative UI card",
             prompt: """
-            Return ONLY valid json-render JSON, no markdown.
-            Build a compact dashboard card with:
-            - a title text
-            - a metric
-            - a badge
+            Build me a villain HQ dashboard as a generative UI card. Include: \
+            a Card titled "Killgrave Command Center" with style "elevated", \
+            containing a vertical Stack with: a Metric showing revenue of 2500000 in currency format with trend up and change 18.5, \
+            a Badge saying "All Systems Online" with variant success, \
+            and a Progress bar at 0.87 labeled "World Domination" with color accent and showValue true. \
+            Return ONLY the raw json-render JSON object, no markdown, no explanation.
             """
         ),
         MissionCard(

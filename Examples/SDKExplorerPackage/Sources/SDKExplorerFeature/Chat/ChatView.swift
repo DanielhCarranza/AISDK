@@ -1,8 +1,10 @@
 import SwiftUI
+import AISDK
 
 public struct ChatView: View {
     @ObservedObject var runtime: ExplorerRuntime
     @State private var input = ""
+    @State private var showHistory = false
 
     public init(runtime: ExplorerRuntime) {
         self.runtime = runtime
@@ -19,6 +21,25 @@ public struct ChatView: View {
             }
             .padding(.horizontal, 12)
             .navigationTitle("KillgraveAI")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showHistory = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await runtime.startNewChat() }
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                }
+            }
+            .sheet(isPresented: $showHistory) {
+                ChatHistorySheet(runtime: runtime, isPresented: $showHistory)
+            }
         }
     }
 
@@ -105,6 +126,108 @@ public struct ChatView: View {
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+}
+
+// MARK: - Chat History Sheet
+
+struct ChatHistorySheet: View {
+    @ObservedObject var runtime: ExplorerRuntime
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if runtime.sessions.isEmpty {
+                    ContentUnavailableView(
+                        "No Sessions",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("Start chatting to create a session.")
+                    )
+                } else {
+                    ForEach(runtime.sessions) { session in
+                        Button {
+                            Task {
+                                await runtime.restore(session: session)
+                                isPresented = false
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                providerIcon(for: session)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.title ?? "Untitled")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .lineLimit(1)
+                                    HStack(spacing: 6) {
+                                        Text("\(session.messageCount) msgs")
+                                        Text("·")
+                                        Text(session.lastActivityAt, style: .relative)
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .onDelete { offsets in
+                        Task {
+                            for index in offsets {
+                                let session = runtime.sessions[index]
+                                await runtime.delete(session: session)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Chat History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await runtime.startNewChat() }
+                        isPresented = false
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                }
+            }
+        }
+    }
+
+    private func providerIcon(for session: SessionSummary) -> some View {
+        let title = session.title ?? ""
+        let (icon, color) = providerStyle(from: title)
+        return Image(systemName: icon)
+            .font(.title3)
+            .foregroundStyle(color)
+            .frame(width: 32, height: 32)
+            .background(color.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func providerStyle(from title: String) -> (String, Color) {
+        let lower = title.lowercased()
+        if lower.contains("openai") {
+            return ("brain", .green)
+        } else if lower.contains("anthropic") {
+            return ("sparkle", .orange)
+        } else if lower.contains("gemini") {
+            return ("wand.and.stars", .blue)
+        } else {
+            return ("bubble.left.fill", .gray)
         }
     }
 }

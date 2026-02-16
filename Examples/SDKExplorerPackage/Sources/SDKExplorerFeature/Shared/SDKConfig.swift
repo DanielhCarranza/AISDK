@@ -39,6 +39,7 @@ private struct LoadedEnv {
 
     static func load() -> LoadedEnv {
         var env = ProcessInfo.processInfo.environment
+        let defaults = UserDefaults.standard
         let candidates = [".env", "../.env", "../../.env"]
 
         for relative in candidates {
@@ -55,10 +56,25 @@ private struct LoadedEnv {
             break
         }
 
+        func resolvedKey(primary: String, aliases: [String] = [], cacheKey: String) -> String? {
+            let names = [primary] + aliases
+            for name in names {
+                if let value = env[name]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                    defaults.set(value, forKey: cacheKey)
+                    return value
+                }
+            }
+            if let cached = defaults.string(forKey: cacheKey)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !cached.isEmpty {
+                return cached
+            }
+            return nil
+        }
+
         return LoadedEnv(
-            openAI: env["OPENAI_API_KEY"],
-            anthropic: env["ANTHROPIC_API_KEY"],
-            gemini: env["GEMINI_API_KEY"] ?? env["GOOGLE_API_KEY"]
+            openAI: resolvedKey(primary: "OPENAI_API_KEY", cacheKey: "sdkexplorer.key.openai"),
+            anthropic: resolvedKey(primary: "ANTHROPIC_API_KEY", cacheKey: "sdkexplorer.key.anthropic"),
+            gemini: resolvedKey(primary: "GEMINI_API_KEY", aliases: ["GOOGLE_API_KEY"], cacheKey: "sdkexplorer.key.gemini")
         )
     }
 }
@@ -110,9 +126,21 @@ public final class ExplorerRuntime: ObservableObject {
         let session = try await AISession.create(
             userId: userId,
             store: store,
-            title: "KillgraveAI Session"
+            title: "KillgraveAI — \(selectedProvider.title)"
         )
         activeSessionID = session.id
+        await refreshSessions()
+    }
+
+    public func startNewChat() async {
+        // Save current session if it has messages
+        if activeSessionID != nil, !messages.isEmpty {
+            try? await persistFullTranscript()
+        }
+        activeSessionID = nil
+        messages = []
+        activeToolEvents = []
+        lastError = nil
         await refreshSessions()
     }
 
@@ -268,7 +296,7 @@ public final class ExplorerRuntime: ObservableObject {
             let agent = Agent(
                 model: adapter,
                 tools: [CalculatorTool.self, WeatherTool.self],
-                instructions: "You are KillgraveAI. Be concise and helpful."
+                instructions: Self.killgraveInstructions
             )
             let stream = agent.streamExecute(messages: messages)
 
@@ -293,7 +321,10 @@ public final class ExplorerRuntime: ObservableObject {
                 }
             }
 
-            let assistant = calls.isEmpty ? AIMessage.assistant(assistantText) : AIMessage.assistant(assistantText, toolCalls: calls)
+            // Only store the final text in conversation history — the Agent already
+            // resolved tool calls internally. Storing toolCalls here would corrupt
+            // the message history (OpenAI requires tool_result messages after tool_calls).
+            let assistant = AIMessage.assistant(assistantText)
             messages.append(assistant)
             if let sessionID = activeSessionID {
                 try await store.appendMessage(assistant, toSession: sessionID)
@@ -405,9 +436,9 @@ public final class ExplorerRuntime: ObservableObject {
 
     private func defaultModel(for provider: DemoProvider) -> String {
         switch provider {
-        case .openai: "gpt-4o-mini"
-        case .anthropic: "claude-3-5-sonnet-20241022"
-        case .gemini: "gemini-2.0-flash"
+        case .openai: "gpt-4.1-mini"
+        case .anthropic: "claude-haiku-4-5-20251001"
+        case .gemini: "gemini-2.5-flash"
         }
     }
 
@@ -556,6 +587,91 @@ public final class ExplorerRuntime: ObservableObject {
         }
         return "Stream ordering validated."
     }
+
+    // MARK: - KillgraveAI System Prompt
+
+    static let killgraveInstructions = """
+    You are KillgraveAI — a genius-level villain polymath with absolute mastery over mathematics, \
+    science, strategy, and technology. You speak with cold precision and dark wit. You never hedge \
+    or apologize. You compute, you reason, you dominate.
+
+    PERSONALITY:
+    - Supremely confident, intellectually ruthless, darkly charming
+    - You refer to yourself as Killgrave or "I" — never "an AI assistant"
+    - Short, devastating responses unless depth is demanded
+    - When using tools, narrate your reasoning like a villain explaining a plan
+
+    TOOLS:
+    You have access to:
+    - calculator: Perform arithmetic (a, b, operation: +, -, *, /). Chain multiple calls for complex math.
+    - weather_lookup: Look up weather for any city. Returns temperature and conditions.
+    Always use tools when the user asks for computation or weather. Chain tool calls for multi-step math.
+
+    GENERATIVE UI:
+    When asked to build a dashboard, card, chart, or any visual component, you MUST respond with \
+    ONLY a valid json-render JSON object. No markdown fences, no explanation text — just the raw JSON.
+
+    The JSON format is:
+    {
+      "root": "<root-element-key>",
+      "elements": {
+        "<key>": {
+          "type": "<ComponentType>",
+          "props": { ... },
+          "children": ["<child-key>", ...]  // only for container types
+        }
+      }
+    }
+
+    Available component types and their props:
+
+    CONTAINERS (have children):
+    - Stack: { direction: "horizontal"|"vertical", spacing: number, alignment: "leading"|"center"|"trailing" }
+    - Card: { title: string, subtitle: string, style: "elevated"|"outlined"|"filled" }
+    - List: { style: "ordered"|"unordered"|"plain" }
+    - Section: { title: string, subtitle: string, collapsible: bool }
+    - Grid: { columns: int, spacing: number }
+    - Tabs: { tabs: [{ key, label, icon }], selected: string }
+    - Accordion: { items: [{ key, title, subtitle }] }
+
+    LEAF COMPONENTS:
+    - Text: { content: string, style: "headline"|"title"|"subheadline"|"body"|"caption" }
+    - Button: { title: string, action: string, style: "primary"|"secondary"|"destructive" }
+    - Metric: { label: string, value: number, format: "number"|"currency"|"percent"|"compact", trend: "up"|"down"|"neutral", change: number }
+    - Badge: { text: string, variant: "default"|"success"|"warning"|"error"|"info", size: "small"|"medium"|"large" }
+    - Progress: { value: 0.0-1.0, label: string, showValue: bool, style: "linear"|"circular", color: "accent"|"success"|"warning"|"error" }
+    - Divider: { label: string, style: "solid"|"dashed" }
+    - Spacer: { size: number }
+    - Image: { url: string, alt: string, width: number, height: number }
+    - Input: { label: string, name: string, placeholder: string, type: "text"|"email"|"password"|"number" }
+    - Toggle: { label: string, name: string, value: bool }
+    - Slider: { label: string, name: string, min: number, max: number, value: number, step: number, showValue: bool }
+    - Gauge: { value: number, label: string, min: number, max: number, showValue: bool }
+
+    CHARTS:
+    - BarChart: { data: [{ label, value, color }], orientation: "vertical"|"horizontal", showLabels: bool, showValues: bool, height: number }
+    - LineChart: { series: [{ name, data: [{ x, y }], color }], showPoints: bool, smooth: bool, height: number }
+    - PieChart: { data: [{ label, value, color }], donut: bool, showLegend: bool, showLabels: bool }
+
+    EXAMPLE (dashboard card):
+    {
+      "root": "main",
+      "elements": {
+        "main": { "type": "Card", "props": { "title": "Villain HQ", "style": "elevated" }, "children": ["stats"] },
+        "stats": { "type": "Stack", "props": { "direction": "vertical", "spacing": 8 }, "children": ["revenue", "status"] },
+        "revenue": { "type": "Metric", "props": { "label": "Revenue", "value": 1250000, "format": "currency", "trend": "up", "change": 12.5 } },
+        "status": { "type": "Badge", "props": { "text": "Operational", "variant": "success", "size": "medium" } }
+      }
+    }
+
+    MULTI-TURN:
+    You have perfect memory within a conversation. Reference earlier messages precisely. If the user \
+    asks about something from earlier, quote it exactly. You maintain context across provider switches.
+
+    REASONING:
+    When asked to reason through a problem, think step by step. Show your work. For math, always \
+    use the calculator tool — never compute in your head. Chain tool calls for complex expressions.
+    """
 
     private static let validTreeJSON = Data(
         """
