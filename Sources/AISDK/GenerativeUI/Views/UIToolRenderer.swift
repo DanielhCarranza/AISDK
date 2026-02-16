@@ -147,6 +147,7 @@ public struct AnyUIToolRenderer: View {
     private let arguments: Data
     @State private var phase: UIToolPhase = .loading
     @State private var hasStarted = false
+    @State private var configuredToolBody: AnyView?
 
     public init(toolType: any UITool.Type, arguments: Data) {
         self.toolType = toolType
@@ -170,7 +171,11 @@ public struct AnyUIToolRenderer: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
 
             case .complete(let result):
-                DefaultUIToolView(toolName: toolType.init().name, result: result)
+                if let configuredToolBody {
+                    configuredToolBody
+                } else {
+                    DefaultUIToolView(toolName: toolType.init().name, result: result)
+                }
 
             case .error(let error):
                 UIToolErrorView(error: error)
@@ -190,10 +195,18 @@ public struct AnyUIToolRenderer: View {
             var tool = toolType.init()
             let configured = try tool.validateAndSetParameters(arguments)
             let result = try await configured.execute()
+            configuredToolBody = extractBody(configured)
             phase = .complete(result: result)
         } catch {
             phase = .error(error)
         }
+    }
+
+    /// Extract the custom body from a configured UITool via a generic helper
+    /// that opens the existential type.
+    private func extractBody(_ tool: some Tool) -> AnyView? {
+        guard let uiTool = tool as? any UITool else { return nil }
+        return AnyView(uiTool.body)
     }
 }
 

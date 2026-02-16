@@ -91,6 +91,8 @@ public final class ExplorerRuntime: ObservableObject {
     @Published public var missionEvidence: [MissionEvidence] = []
     @Published public var diagnostics: [DiagnosticCheckResult] = []
     @Published public var exportLocation: String?
+    @Published public var streamingSpec: UISpec?
+    @Published public var uitoolResults: [(toolName: String, arguments: String)] = []
 
     public let userId = "killgrave-demo-user"
 
@@ -146,6 +148,29 @@ public final class ExplorerRuntime: ObservableObject {
 
     public func sendMessage(_ text: String) async {
         await runMessage(text, provider: selectedProvider, recordMission: nil)
+    }
+
+    public func handleStateChange(_ event: UIStateChangeEvent) async {
+        let displayValue: String
+        if let s = event.value.stringValue {
+            // Parse "key:value" format from interactive components
+            if let colonIdx = s.firstIndex(of: ":") {
+                let key = String(s[s.startIndex..<colonIdx])
+                let val = String(s[s.index(after: colonIdx)...])
+                displayValue = "\(key) = \(val)"
+            } else {
+                displayValue = "\(event.componentName) = \(s)"
+            }
+        } else if let d = event.value.doubleValue {
+            displayValue = "\(event.componentName) = \(String(format: "%.1f", d))"
+        } else if let i = event.value.intValue {
+            displayValue = "\(event.componentName) = \(i)"
+        } else if let b = event.value.boolValue {
+            displayValue = "\(event.componentName) = \(b ? "true" : "false")"
+        } else {
+            displayValue = "\(event.componentName) = null"
+        }
+        activeToolEvents.append("State change: \(displayValue)")
     }
 
     public func runMission(_ mission: MissionCard) async {
@@ -283,6 +308,8 @@ public final class ExplorerRuntime: ObservableObject {
         lastError = nil
         let started = Date()
         activeToolEvents = []
+        streamingSpec = nil
+        uitoolResults = []
 
         do {
             try await ensureSession()
@@ -296,13 +323,17 @@ public final class ExplorerRuntime: ObservableObject {
             let agent = Agent(
                 model: adapter,
                 tools: [CalculatorTool.self, WeatherTool.self],
-                instructions: Self.killgraveInstructions
+                instructions: Self.killgraveInstructions,
+                progressiveRendering: .enabled
             )
             let stream = agent.streamExecute(messages: messages)
+            let compiler = SpecStreamCompiler()
 
             var assistantText = ""
             var calls: [AIMessage.ToolCall] = []
             var usage = AIUsage.zero
+            var lastToolName = ""
+            var lastToolArgs = ""
 
             for try await event in stream {
                 switch event {
@@ -310,10 +341,24 @@ public final class ExplorerRuntime: ObservableObject {
                     assistantText += delta
                 case .toolCallStart(_, let name):
                     activeToolEvents.append("Calling \(name)")
+                    lastToolName = name
                 case .toolCall(_, let name, let arguments):
                     calls.append(AIMessage.ToolCall(id: UUID().uuidString, name: name, arguments: arguments))
-                case .toolResult(_, let result, _):
+                    lastToolName = name
+                    lastToolArgs = arguments
+                case .toolResult(_, let result, let metadata):
                     activeToolEvents.append("Tool result: \(result)")
+                    if let uiMeta = metadata as? UIToolResultMetadata, uiMeta.hasUIView {
+                        uitoolResults.append((toolName: lastToolName, arguments: lastToolArgs))
+                    }
+                case .uiPatch(let batch):
+                    if let spec = compiler.applyReturningSpec(batch) {
+                        streamingSpec = spec
+                        // Yield one render frame so SwiftUI can display the intermediate state.
+                        // Without this, the MainActor loop processes all events without yielding,
+                        // and SwiftUI only renders the final state (card pops in all at once).
+                        try? await Task.sleep(for: .milliseconds(16))
+                    }
                 case .usage(let eventUsage):
                     usage = eventUsage
                 default:
@@ -324,6 +369,9 @@ public final class ExplorerRuntime: ObservableObject {
             // Only store the final text in conversation history — the Agent already
             // resolved tool calls internally. Storing toolCalls here would corrupt
             // the message history (OpenAI requires tool_result messages after tool_calls).
+            // Clear progressive rendering spec — the final MessageRow will render the card
+            streamingSpec = nil
+
             let assistant = AIMessage.assistant(assistantText)
             messages.append(assistant)
             if let sessionID = activeSessionID {

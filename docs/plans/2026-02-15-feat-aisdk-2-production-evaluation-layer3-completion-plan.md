@@ -1,7 +1,7 @@
 ---
 title: "AISDK 2.0 Production Evaluation & Layer 3 Completion"
 type: feat
-status: active
+status: phase2-active
 date: 2026-02-15
 ---
 
@@ -47,9 +47,13 @@ Use XcodeBuildMCP as the primary execution layer for Layer 3 evaluation to reduc
    - `app_regression` (SDK Explorer behavior)
    - `assertion_mismatch` (expectation/evidence mismatch)
 
-### Phase 1: Complete Layer 3 Verification
+### Phase 1: Complete Layer 3 Verification — COMPLETE
 
-#### 1.1 Fix Toolbar Buttons Not Appearing
+> **Status:** All Phase 1 items complete. Results in `docs/results/2026-02-16-layer3-eval-results.md`.
+> Q1-Q16 executed across all 3 providers. 114/114 unit tests pass. 3 SDK bugs found and fixed.
+> Progressive Rendering Bridge implemented and verified (ProgressiveJSONParser + MainActor yielding fix).
+
+#### 1.1 Fix Toolbar Buttons Not Appearing — DONE
 
 **Root Cause Analysis:**
 
@@ -69,7 +73,7 @@ The `ContentView.swift` wraps `ChatView` inside a `TabView` (lines 9-24). This i
 
 **Verification:** Build and run on simulator. Both toolbar buttons (clock icon leading, pencil icon trailing) must be visible. Tap clock icon -> ChatHistorySheet appears. Tap pencil icon -> new chat starts.
 
-#### 1.2 Handle API Keys and Uncommitted Changes
+#### 1.2 Handle API Keys and Uncommitted Changes — DONE
 
 **Before testing:**
 
@@ -83,7 +87,7 @@ The `ContentView.swift` wraps `ChatView` inside a `TabView` (lines 9-24). This i
 - `docs/references/layer3-test-questions.md`
 - `docs/references/model-selection-guide.md`
 
-#### 1.3 Run Test Question Bank (Q1-Q16)
+#### 1.3 Run Test Question Bank (Q1-Q16) — DONE
 
 Execute all 16 test questions across 3 providers following the sequence in `docs/references/layer3-test-questions.md`:
 
@@ -116,7 +120,7 @@ Execute all 16 test questions across 3 providers following the sequence in `docs
 
 **Dependency handling:** If Q2 or Q3 fails, mark Q7 as `SKIP (dependency failed)`.
 
-#### 1.3a Automated Scenario Execution via XcodeBuildMCP
+#### 1.3a Automated Scenario Execution via XcodeBuildMCP — DONE (manual execution)
 
 Run all Layer 3 evaluation scenarios using XcodeBuildMCP-driven flows defined in `.xcodebuildmcp/evaluation-config.yaml`.
 
@@ -131,7 +135,7 @@ Run all Layer 3 evaluation scenarios using XcodeBuildMCP-driven flows defined in
 - Screenshot set under `docs/results/layer3/artifacts/screenshots/<scenario>/`
 - Logs under `docs/results/layer3/artifacts/logs/<scenario>/`
 
-#### 1.3b Generative UI Regression Track
+#### 1.3b Generative UI Regression Track — DONE
 
 Expand current Generative UI checks into a dedicated matrix covering:
 
@@ -142,13 +146,14 @@ Expand current Generative UI checks into a dedicated matrix covering:
 
 Record each check with explicit evidence links (screenshot + corresponding log snippet).
 
-#### 1.4 Physical Device Verification
+#### 1.4 Physical Device Verification — DEFERRED (separate phase after Phase 3)
 
-Run a subset on physical device to validate on-device behavior:
+> Moved to its own phase. Will run a subset on physical device after the evaluation report is complete.
+
 - Q1 (streaming), Q2 (tool calling), Q4 (Generative UI) on one provider (OpenAI recommended — cheapest after Gemini but most reliable)
 - Verify app launches, tab navigation works, toolbar buttons visible
 
-#### 1.5 Document Results
+#### 1.5 Document Results — DONE
 
 Create `docs/results/layer3-test-results.md` with columns:
 - Question ID, Provider, Pass/Fail, Duration (ms), Token Usage, Error Message, Notes
@@ -158,7 +163,7 @@ Add scenario-level section:
 
 ---
 
-### Phase 2: Comprehensive SDK Evaluation
+### Phase 2: Comprehensive SDK Evaluation — ACTIVE
 
 #### Evaluation Methodology
 
@@ -264,7 +269,15 @@ Use Phase 1 Q1-Q10 results (same questions across all 3 providers) to identify:
 
 **Test using:** Sessions tab in SDK Explorer + existing unit tests in `Tests/AISDKTests/Session/`
 
-#### G. Visualization & Agent UX — Thought -> Tool -> Response
+#### G. Visualization & Agent UX — Thought -> Tool -> Response (PRIORITY)
+
+> **Known issue identified during Phase 1:** The SDKExplorer renders tool activity as a flat, always-visible text list at the bottom of the chat, with the answer at the top. There is no reasoning/thinking visibility and no collapse-after-completion behavior. This is an **app-level UI problem** — the SDK already emits all necessary streaming events (`reasoningStart/Delta/Finish`, `toolCallStart/Delta/Finish`, `toolResult`, `textDelta`). See `.context/phase2-evaluation-handoff.md` for full diagnosis and screenshots.
+>
+> **Before scoring this axis, the agent should:**
+> 1. Research state-of-the-art agentic UX (Claude, ChatGPT, Grok) for streaming thought → tool → response patterns
+> 2. Determine if the fix is purely app-level (expected: yes) or requires SDK changes
+> 3. Implement the fix in the SDKExplorer app
+> 4. Then score the axis post-fix
 
 Evaluate whether SDK Explorer demonstrates the expected agent interaction paradigm in a way that is observable and debuggable.
 
@@ -278,7 +291,8 @@ Evaluate whether SDK Explorer demonstrates the expected agent interaction paradi
 1. Reasoning lifecycle visibility (`reasoningStart`, `reasoningDelta`, `reasoningFinish`)
 2. Tool lifecycle visibility (`toolCallStart`, `toolCallDelta`, `toolCall/toolCallFinish`, `toolResult`)
 3. Final response ordering and coherence after tool execution
-4. Evidence quality: each claim must include screenshot + event/log excerpt
+4. Collapsible activity sections (expanded during streaming, collapsed after completion)
+5. Evidence quality: each claim must include screenshot + event/log excerpt
 
 **Output format:**
 - Mark each capability as `Implemented`, `Partial`, or `Missing`
@@ -462,3 +476,17 @@ Branch: jmush16/prod-test-strategy
 - `Examples/SDKExplorerPackage/Sources/SDKExplorerFeature/Shared/SDKConfig.swift` — Runtime configuration
 - `Sources/AISDK/Reliability/` — Reliability layer to verify
 - `Tests/AISDKTests/` — Test suite to analyze
+
+---
+
+## Execution Order (Updated 2026-02-16)
+
+1. ~~Phase 1: Layer 3 Verification~~ — **COMPLETE**
+2. **Phase 2: Comprehensive SDK Evaluation (A-G)** — ACTIVE
+   - Priority: Axis G (Agentic UX fix) first, then A-F in parallel
+3. **Phase 3: Evaluation Report** — after Phase 2
+4. **Phase 4: Physical Device Testing** — after Phase 3 (moved from 1.4)
+5. **Phase 5: Documentation Overhaul** — final step
+   - Must serve both developers (easy start, customization guides) AND AI agents (full system understanding, machine-readable)
+   - Agents will be the primary engineers building with this SDK; humans give the repo to agents
+   - Handoff doc: `.context/phase2-evaluation-handoff.md`

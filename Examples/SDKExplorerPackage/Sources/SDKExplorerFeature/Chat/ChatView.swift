@@ -71,8 +71,37 @@ public struct ChatView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(runtime.messages) { message in
-                        MessageRow(message: message)
+                        MessageRow(message: message) { event in
+                            Task { await runtime.handleStateChange(event) }
+                        }
                             .id(message.id)
+                    }
+                    // Render UITool cards inline after the last assistant message
+                    if !runtime.uitoolResults.isEmpty, runtime.messages.last?.role != .user {
+                        ForEach(runtime.uitoolResults.indices, id: \.self) { idx in
+                            let entry = runtime.uitoolResults[idx]
+                            HStack {
+                                uitoolView(toolName: entry.toolName, arguments: entry.arguments)
+                                Spacer()
+                            }
+                        }
+                    }
+                    // Progressive rendering: show streaming spec inline as it builds
+                    if let spec = runtime.streamingSpec {
+                        HStack {
+                            GenerativeUISpecView(
+                                spec: spec,
+                                onAction: { _ in },
+                                onStateChange: { event in
+                                    Task { await self.runtime.handleStateChange(event) }
+                                }
+                            )
+                            .padding(8)
+                            .background(.thinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            Spacer()
+                        }
+                        .id("streaming-spec")
                     }
                 }
                 .padding(.vertical, 8)
@@ -92,7 +121,7 @@ public struct ChatView: View {
     private var toolActivity: some View {
         Group {
             if !runtime.activeToolEvents.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Tool activity")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -103,6 +132,18 @@ public struct ChatView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func uitoolView(toolName: String, arguments: String) -> some View {
+        let toolTypes: [any Tool.Type] = [CalculatorTool.self, WeatherTool.self]
+        if let toolType = toolTypes.first(where: { $0.init().name == toolName }),
+           let uiToolType = toolType as? any UITool.Type {
+            AnyUIToolRenderer(
+                toolType: uiToolType,
+                arguments: Data(arguments.utf8)
+            )
         }
     }
 

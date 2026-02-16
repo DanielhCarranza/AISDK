@@ -117,6 +117,9 @@ public actor Agent {
     /// Maximum number of tool execution rounds
     private let maxToolRounds: Int
 
+    /// Progressive rendering mode for converting text deltas to UI patches
+    private let progressiveRendering: ProgressiveRenderingMode
+
     /// Unique identifier for this agent
     public nonisolated let agentId: String
 
@@ -232,6 +235,7 @@ public actor Agent {
         stopCondition: StopCondition = .stepCount(20),
         timeout: TimeoutPolicy = .default,
         maxToolRounds: Int = 10,
+        progressiveRendering: ProgressiveRenderingMode = .disabled,
         name: String? = nil,
         agentId: String? = nil
     ) {
@@ -247,6 +251,7 @@ public actor Agent {
         self.stopCondition = stopCondition
         self.timeout = timeout
         self.maxToolRounds = maxToolRounds
+        self.progressiveRendering = progressiveRendering
         self.name = name
         self.agentId = agentId ?? UUID().uuidString
         self.observableState = ObservableAgentState()
@@ -434,6 +439,8 @@ public actor Agent {
             var toolCallBuilders: [String: ToolCallBuilder] = [:]
             var stepUsage = AIUsage.zero
             var finishReason: AIFinishReason = .unknown
+            let progressiveParser: ProgressiveJSONParser? = progressiveRendering == .enabled
+                ? ProgressiveJSONParser() : nil
 
             do {
                 let stream = model.streamText(request: request)
@@ -445,6 +452,11 @@ public actor Agent {
                     case .textDelta(let delta):
                         stepText += delta
                         continuation.yield(.textDelta(delta))
+                        if let batches = progressiveParser?.feed(delta) {
+                            for batch in batches {
+                                continuation.yield(.uiPatch(batch))
+                            }
+                        }
 
                     case .toolCallStart(let id, let name):
                         toolCallBuilders[id] = ToolCallBuilder(id: id, name: name)
@@ -658,6 +670,18 @@ public actor Agent {
     /// - Parameter messages: The new message history
     public func setMessages(_ messages: [AIMessage]) {
         messageHistory = messages
+    }
+
+    /// Inject a UI state change into the agent's message history.
+    ///
+    /// When interactive generative UI components (Toggle, Slider, Input) change value,
+    /// the state change is injected as a system message so the agent can react on the
+    /// next execution cycle.
+    ///
+    /// - Parameter event: The state change event from an interactive UI component
+    public func injectStateChange(_ event: UIStateChangeEvent) {
+        let description = "User changed \(event.componentName) at path \(event.path) to \(event.value)"
+        messageHistory.append(.system(description))
     }
 
     /// Set the computer use handler for executing computer actions.
@@ -1665,6 +1689,16 @@ private final class AIOperation: @unchecked Sendable {
 }
 
 // MARK: - StopCondition
+
+/// Progressive rendering mode for converting text deltas to UI patches.
+public enum ProgressiveRenderingMode: Sendable {
+    /// Progressive rendering disabled (default). UI specs pop in fully formed.
+    case disabled
+
+    /// Progressive rendering enabled. Text deltas containing Generative UI JSON
+    /// are parsed incrementally and emitted as `.uiPatch` events for smooth rendering.
+    case enabled
+}
 
 /// Stop conditions for the agent loop
 public enum StopCondition: Sendable {

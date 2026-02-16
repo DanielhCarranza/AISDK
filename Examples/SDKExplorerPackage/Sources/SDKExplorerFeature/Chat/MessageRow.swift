@@ -3,9 +3,11 @@ import AISDK
 
 public struct MessageRow: View {
     let message: AIMessage
+    var onStateChange: ((UIStateChangeEvent) -> Void)?
 
-    public init(message: AIMessage) {
+    public init(message: AIMessage, onStateChange: ((UIStateChangeEvent) -> Void)? = nil) {
         self.message = message
+        self.onStateChange = onStateChange
     }
 
     private var parsedTree: UITree? {
@@ -44,7 +46,27 @@ public struct MessageRow: View {
             if let tree {
                 HStack {
                     if message.role == .user { Spacer() }
-                    GenerativeUIView(tree: tree, registry: .extended, onAction: { _ in })
+                    GenerativeUIView(tree: tree, registry: .extended, onAction: { action in
+                        // Forward actions as state change events if handler is present
+                        if let handler = onStateChange {
+                            // Parse "key:value" format from interactive components
+                            let componentName: String
+                            let statePath: String
+                            if let colonIdx = action.firstIndex(of: ":") {
+                                componentName = String(action[action.startIndex..<colonIdx])
+                                statePath = "/state/\(componentName)"
+                            } else {
+                                componentName = action
+                                statePath = "/state/lastAction"
+                            }
+                            let event = UIStateChangeEvent(
+                                componentName: componentName,
+                                path: statePath,
+                                value: SpecValue(action)
+                            )
+                            handler(event)
+                        }
+                    })
                         .padding(8)
                         .background(.thinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 10))

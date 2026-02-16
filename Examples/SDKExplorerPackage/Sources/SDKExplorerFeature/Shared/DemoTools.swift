@@ -1,5 +1,8 @@
 import Foundation
 import AISDK
+#if canImport(SwiftUI)
+import SwiftUI
+#endif
 
 public struct CalculatorTool: Tool {
     public enum Operation: String, Codable, CaseIterable, Sendable {
@@ -78,3 +81,29 @@ public struct WeatherTool: Tool {
         return ToolResult(content: payload)
     }
 }
+
+// MARK: - UITool Conformance
+
+#if canImport(SwiftUI)
+extension WeatherTool: UITool {
+    public var body: some View {
+        let clean = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let temp = max(8, min(31, 14 + clean.count))
+        let cond = clean.count.isMultiple(of: 2) ? "Cloudy" : "Sunny"
+        HStack(spacing: 12) {
+            Image(systemName: cond == "Sunny" ? "sun.max.fill" : "cloud.fill")
+                .font(.title)
+                .foregroundStyle(cond == "Sunny" ? .yellow : .gray)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(clean.isEmpty ? "Unknown" : clean)
+                    .font(.headline)
+                Text("\(temp)\u{00B0}C, \(cond)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+#endif

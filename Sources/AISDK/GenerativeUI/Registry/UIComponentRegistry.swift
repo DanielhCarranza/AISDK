@@ -559,12 +559,12 @@ extension UIComponentRegistry {
 
     /// Register all interactive component views in the registry
     private static func registerInteractiveComponents(in registry: inout UIComponentRegistry) {
-        registry.register("Toggle") { node, _, decoder, _, _ in
-            GenerativeToggleView(node: node, decoder: decoder)
+        registry.register("Toggle") { node, _, decoder, handler, _ in
+            GenerativeToggleView(node: node, decoder: decoder, onAction: handler)
         }
 
-        registry.register("Slider") { node, _, decoder, _, _ in
-            GenerativeSliderView(node: node, decoder: decoder)
+        registry.register("Slider") { node, _, decoder, handler, _ in
+            GenerativeSliderView(node: node, decoder: decoder, onAction: handler)
         }
 
         registry.register("Stepper") { node, _, decoder, _, _ in
@@ -1587,12 +1587,14 @@ private struct GenerativeGaugeView: View {
 private struct GenerativeToggleView: View {
     let node: UINode
     let decoder: JSONDecoder
+    let onAction: UIActionHandler
     @State private var isOn = false
     @State private var didInitialize = false
 
     var body: some View {
         let props = try? decoder.decode(ToggleComponentDefinition.Props.self, from: node.propsData)
         let label = props?.label ?? "Toggle"
+        let name = props?.name ?? "toggle"
 
         Toggle(label, isOn: $isOn)
             .disabled(props?.disabled ?? false)
@@ -1603,18 +1605,24 @@ private struct GenerativeToggleView: View {
                     didInitialize = true
                 }
             }
+            .onChange(of: isOn) { _, newValue in
+                guard didInitialize else { return }
+                onAction("\(name):\(newValue)")
+            }
     }
 }
 
 private struct GenerativeSliderView: View {
     let node: UINode
     let decoder: JSONDecoder
+    let onAction: UIActionHandler
     @State private var value: Double = 0
     @State private var didInitialize = false
 
     var body: some View {
         let props = try? decoder.decode(SliderComponentDefinition.Props.self, from: node.propsData)
         let label = props?.label ?? "Slider"
+        let name = props?.name ?? "slider"
         let minValue = props?.min ?? 0
         let maxValue = props?.max ?? 1
         let step = props?.step
@@ -1643,6 +1651,10 @@ private struct GenerativeSliderView: View {
                 value = props?.value ?? minValue
                 didInitialize = true
             }
+        }
+        .onChange(of: value) { _, newValue in
+            guard didInitialize else { return }
+            onAction("\(name):\(String(format: "%.1f", newValue))")
         }
     }
 }

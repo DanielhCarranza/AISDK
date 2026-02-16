@@ -440,10 +440,10 @@ public actor GeminiClientAdapter: ProviderClient {
                     description = nil
                 }
 
-                // Convert parameters
+                // Convert parameters — strip fields unsupported by Gemini's function calling API
                 let parameters: [String: ProviderJSONValue]?
                 if case .object(let params)? = functionDict["parameters"] {
-                    parameters = params
+                    parameters = GeminiClientAdapter.stripUnsupportedSchemaFields(params)
                 } else {
                     parameters = nil
                 }
@@ -579,6 +579,42 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         return hasConfig ? config : nil
+    }
+
+    /// Recursively strips JSON Schema fields unsupported by Gemini's function calling API.
+    /// Gemini uses a restricted OpenAPI 3.0 subset that rejects fields like `additionalProperties`.
+    private static let unsupportedFunctionSchemaFields: Set<String> = [
+        "additionalProperties", "patternProperties",
+        "$ref", "allOf", "oneOf",
+        "definitions", "$defs",
+        "if", "then", "else", "not",
+        "$schema", "title", "default"
+    ]
+
+    private nonisolated static func stripUnsupportedSchemaFields(
+        _ schema: [String: ProviderJSONValue]
+    ) -> [String: ProviderJSONValue] {
+        var cleaned = schema
+        for field in unsupportedFunctionSchemaFields {
+            cleaned.removeValue(forKey: field)
+        }
+
+        // Recursively clean nested property schemas
+        if case .object(let properties)? = cleaned["properties"] {
+            cleaned["properties"] = .object(properties.mapValues { value in
+                if case .object(let nested) = value {
+                    return .object(stripUnsupportedSchemaFields(nested))
+                }
+                return value
+            })
+        }
+
+        // Clean array item schemas
+        if case .object(let items)? = cleaned["items"] {
+            cleaned["items"] = .object(stripUnsupportedSchemaFields(items))
+        }
+
+        return cleaned
     }
 
     /// Validates a JSON schema against Gemini's supported subset
