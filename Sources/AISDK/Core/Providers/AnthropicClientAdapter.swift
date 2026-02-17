@@ -44,6 +44,7 @@ public actor AnthropicClientAdapter: ProviderClient {
     private let anthropicVersion: String
     private let betaConfiguration: BetaConfiguration
     private let thinkingBudgetOverride: Int?
+    private let retryPolicy: RetryPolicy
 
     // MARK: - State
 
@@ -81,13 +82,15 @@ public actor AnthropicClientAdapter: ProviderClient {
     ///   - baseURL: Optional custom base URL (defaults to https://api.anthropic.com)
     ///   - session: Optional URLSession for dependency injection
     ///   - anthropicVersion: API version string (defaults to 2023-06-01)
+    /// - Parameter retryPolicy: Retry policy for transient failures (default: 3 retries with exponential backoff)
     public init(
         apiKey: String,
         baseURL: URL? = nil,
         session: URLSession? = nil,
         anthropicVersion: String? = nil,
         betaConfiguration: BetaConfiguration = .none,
-        thinkingBudgetOverride: Int? = nil
+        thinkingBudgetOverride: Int? = nil,
+        retryPolicy: RetryPolicy = .default
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
@@ -95,6 +98,7 @@ public actor AnthropicClientAdapter: ProviderClient {
         self.anthropicVersion = anthropicVersion ?? Self.defaultAnthropicVersion
         self.betaConfiguration = betaConfiguration
         self.thinkingBudgetOverride = thinkingBudgetOverride
+        self.retryPolicy = retryPolicy
     }
 
     // MARK: - Health & Status
@@ -165,7 +169,9 @@ public actor AnthropicClientAdapter: ProviderClient {
         let startTime = Date()
         let httpRequest = try buildHTTPRequest(for: request, streaming: false)
 
-        let (data, response) = try await performRequest(httpRequest, timeout: request.timeout)
+        let (data, response) = try await RetryExecutor(policy: retryPolicy).execute {
+            try await self.performRequest(httpRequest, timeout: request.timeout)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")
@@ -782,7 +788,10 @@ public actor AnthropicClientAdapter: ProviderClient {
     ) async throws {
         let httpRequest = try buildHTTPRequest(for: request, streaming: true)
 
-        let (bytes, response) = try await session.bytes(for: httpRequest)
+        let streamRetry = RetryPolicy(maxRetries: 1, baseDelay: .milliseconds(500))
+        let (bytes, response) = try await RetryExecutor(policy: streamRetry).execute {
+            try await self.session.bytes(for: httpRequest)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")

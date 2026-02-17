@@ -53,6 +53,17 @@ public actor SessionCompactionService {
         return estimated >= threshold
     }
 
+    /// Check if a session needs compaction, preferring provider-reported token counts when available.
+    ///
+    /// When `usage` is provided, uses the exact `promptTokens` from the provider response
+    /// instead of heuristic estimation. Falls back to heuristic when usage is unavailable.
+    public func needsCompaction(_ messages: [AIMessage], usage: AIUsage?, policy: ContextPolicy) -> Bool {
+        guard let maxTokens = policy.maxTokens else { return false }
+        let estimated = usage?.promptTokens ?? estimateTokens(messages)
+        let threshold = Int(Double(maxTokens) * policy.compactionThreshold)
+        return estimated >= threshold
+    }
+
     // MARK: - Compaction
 
     /// Compact messages according to the given policy.

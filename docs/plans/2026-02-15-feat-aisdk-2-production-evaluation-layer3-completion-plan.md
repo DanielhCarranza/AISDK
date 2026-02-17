@@ -1,7 +1,7 @@
 ---
 title: "AISDK 2.0 Production Evaluation & Layer 3 Completion"
 type: feat
-status: phase2-active
+status: phase4-pending
 date: 2026-02-15
 ---
 
@@ -16,7 +16,7 @@ Complete the Layer 3 SDK Explorer iOS app verification, then conduct a comprehen
 
 ## Problem Statement
 
-AISDK 2.0 adds 45,197 lines (21,237 source + 23,960 tests) with 8 new subsystems. While the foundation layer (2,250 unit tests), Layer 1 (smoke tests), and Layer 2 (eval harness) are complete, the following remain unvalidated:
+AISDK 2.0 adds 45,197 lines (21,237 source + 23,960 tests) with 8 new subsystems. While the foundation layer (2,397 tests post-evaluation), Layer 1 (smoke tests), and Layer 2 (eval harness) are complete, the following remain unvalidated:
 
 1. The SDK Explorer iOS app (Layer 3) has a toolbar bug and hasn't been exercised with the full test question bank
 2. No systematic evaluation has been conducted to determine if all 8 subsystems are production-ready
@@ -163,7 +163,13 @@ Add scenario-level section:
 
 ---
 
-### Phase 2: Comprehensive SDK Evaluation — ACTIVE
+### Phase 2: Comprehensive SDK Evaluation — COMPLETE
+
+> **Status:** All 6 evaluation axes (A-F) scored with evidence from parallel exploration agents.
+> Axis G (Agentic Activity View) completed in prior session.
+> Two critical fixes applied: RetryExecutor wired into all 3 provider adapters + auto-compaction wired into agent loop.
+> Final scores: all 8 subsystems at 4/5 or above (average 4.1/5). Verdict: GO for production.
+> See `docs/results/aisdk-2.0-evaluation-report.md` for full report.
 
 #### Evaluation Methodology
 
@@ -224,7 +230,7 @@ Evaluate by attempting to answer: "Can a developer go from zero to working chat 
 
 #### C. Test Coverage — Where Are the Gaps?
 
-1. Run `swift test` and verify 2,250 tests pass
+1. Run `swift test` and verify 2,397 tests pass
 2. Categorize tests by subsystem and type (unit / integration / live)
 3. Identify subsystems with thin coverage
 4. Check if reliability tests actually test failure scenarios (not just happy paths)
@@ -300,7 +306,12 @@ Evaluate whether SDK Explorer demonstrates the expected agent interaction paradi
 
 ---
 
-### Phase 3: Produce Evaluation Report
+### Phase 3: Produce Evaluation Report — COMPLETE
+
+> **Status:** Evaluation report written to `docs/results/aisdk-2.0-evaluation-report.md`.
+> Critical fixes applied and verified: RetryExecutor in 3 provider adapters, auto-compaction in agent loop.
+> 25 new tests added (16 retry + 9 auto-compaction). 2,397 total tests pass. 0 new failures.
+> Handoff doc: `.context/phase2-3-evaluation-complete.md`
 
 Create `docs/results/aisdk-2.0-evaluation-report.md` with the following structure:
 
@@ -414,31 +425,31 @@ Branch: jmush16/prod-test-strategy
 
 ### Functional Requirements
 
-- [ ] Toolbar buttons visible and functional in SDK Explorer on iOS 18.0 simulator
-- [ ] API keys removed from xcscheme, loaded from .env only
-- [ ] All uncommitted changes committed to `jmush16/prod-test-strategy`
-- [ ] Q1-Q16 executed across all 3 providers with documented pass/fail
-- [ ] XcodeBuildMCP scenarios executed with stored artifacts
-- [ ] Generative UI regression matrix executed and documented
-- [ ] Cross-provider context test (Q7) executed
-- [ ] Physical device test subset completed
-- [ ] All 8 subsystems evaluated with 1-5 scores
-- [ ] API ergonomics assessment completed
-- [ ] Test coverage gaps identified and documented
-- [ ] Provider compatibility matrix documented
-- [ ] Reliability layer integration verified (wired up or not)
-- [ ] Session management stores tested
-- [ ] Thought -> tool call -> final response capability audit completed (`Implemented`/`Partial`/`Missing`)
+- [x] Toolbar buttons visible and functional in SDK Explorer on iOS 18.0 simulator
+- [x] API keys removed from xcscheme, loaded from .env only
+- [x] All uncommitted changes committed to `jmush16/prod-test-strategy`
+- [x] Q1-Q16 executed across all 3 providers with documented pass/fail
+- [x] XcodeBuildMCP scenarios executed with stored artifacts
+- [x] Generative UI regression matrix executed and documented
+- [x] Cross-provider context test (Q7) executed
+- [ ] Physical device test subset completed — **DEFERRED to Phase 4**
+- [x] All 8 subsystems evaluated with 1-5 scores
+- [x] API ergonomics assessment completed
+- [x] Test coverage gaps identified and documented
+- [x] Provider compatibility matrix documented
+- [x] Reliability layer integration verified — **wired up (RetryExecutor in all 3 adapters)**
+- [x] Session management stores tested
+- [x] Thought -> tool call -> final response capability audit completed (`Implemented`/`Partial`/`Missing`)
 
 ### Quality Gates
 
-- [ ] `swift test` passes (2,250 tests)
-- [ ] `swift build` succeeds
-- [ ] No API keys in committed code
-- [ ] Evaluation report follows defined structure
-- [ ] All scorecard ratings have evidence-based rationale
-- [ ] Automation rerun reproducibility demonstrated (same config, same branch)
-- [ ] No critical regression in agent UX visibility or Generative UI rendering
+- [x] `swift test` passes (2,397 tests — 2,071 XCTest + 326 Swift Testing)
+- [x] `swift build` succeeds
+- [x] No API keys in committed code
+- [x] Evaluation report follows defined structure
+- [x] All scorecard ratings have evidence-based rationale
+- [x] Automation rerun reproducibility demonstrated (same config, same branch)
+- [x] No critical regression in agent UX visibility or Generative UI rendering
 
 ## Dependencies & Prerequisites
 
@@ -482,11 +493,13 @@ Branch: jmush16/prod-test-strategy
 ## Execution Order (Updated 2026-02-16)
 
 1. ~~Phase 1: Layer 3 Verification~~ — **COMPLETE**
-2. **Phase 2: Comprehensive SDK Evaluation (A-G)** — ACTIVE
-   - Priority: Axis G (Agentic UX fix) first, then A-F in parallel
-3. **Phase 3: Evaluation Report** — after Phase 2
-4. **Phase 4: Physical Device Testing** — after Phase 3 (moved from 1.4)
-5. **Phase 5: Documentation Overhaul** — final step
+2. ~~Phase 2: Comprehensive SDK Evaluation (A-G)~~ — **COMPLETE** (all 8 subsystems 4/5+, average 4.1/5)
+3. ~~Phase 3: Evaluation Report + Critical Fixes~~ — **COMPLETE** (report + retry wiring + auto-compaction + 25 new tests)
+4. **Phase 4: Physical Device Testing** — PENDING
+   - Run subset on physical iOS device: Q1 (streaming), Q2 (tool calling), Q4 (Generative UI)
+   - Verify app launch, tab navigation, toolbar buttons on real hardware
+5. **Phase 5: Documentation Overhaul** — PENDING
    - Must serve both developers (easy start, customization guides) AND AI agents (full system understanding, machine-readable)
    - Agents will be the primary engineers building with this SDK; humans give the repo to agents
-   - Handoff doc: `.context/phase2-evaluation-handoff.md`
+   - PHI encryption getting-started guide for app developers
+   - Handoff docs: `.context/phase2-evaluation-handoff.md`, `.context/phase2-3-evaluation-complete.md`

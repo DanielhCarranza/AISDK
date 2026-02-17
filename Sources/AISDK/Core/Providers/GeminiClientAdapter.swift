@@ -40,6 +40,7 @@ public actor GeminiClientAdapter: ProviderClient {
 
     private let apiKey: String
     private let session: URLSession
+    private let retryPolicy: RetryPolicy
 
     // MARK: - State
 
@@ -71,14 +72,17 @@ public actor GeminiClientAdapter: ProviderClient {
     ///   - apiKey: Google AI API key
     ///   - baseURL: Optional custom base URL (defaults to https://generativelanguage.googleapis.com/v1beta)
     ///   - session: Optional URLSession for dependency injection
+    /// - Parameter retryPolicy: Retry policy for transient failures (default: 3 retries with exponential backoff)
     public init(
         apiKey: String,
         baseURL: URL? = nil,
-        session: URLSession? = nil
+        session: URLSession? = nil,
+        retryPolicy: RetryPolicy = .default
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
         self.session = session ?? .shared
+        self.retryPolicy = retryPolicy
     }
 
     // MARK: - Health & Status
@@ -120,7 +124,9 @@ public actor GeminiClientAdapter: ProviderClient {
         let startTime = Date()
         let httpRequest = try await buildHTTPRequest(for: request, streaming: false)
 
-        let (data, response) = try await performRequest(httpRequest, timeout: request.timeout)
+        let (data, response) = try await RetryExecutor(policy: retryPolicy).execute {
+            try await self.performRequest(httpRequest, timeout: request.timeout)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")
@@ -877,7 +883,10 @@ public actor GeminiClientAdapter: ProviderClient {
     ) async throws {
         let httpRequest = try await buildHTTPRequest(for: request, streaming: true)
 
-        let (bytes, response) = try await session.bytes(for: httpRequest)
+        let streamRetry = RetryPolicy(maxRetries: 1, baseDelay: .milliseconds(500))
+        let (bytes, response) = try await RetryExecutor(policy: streamRetry).execute {
+            try await self.session.bytes(for: httpRequest)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")

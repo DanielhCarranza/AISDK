@@ -8,11 +8,9 @@ The AISDK test suite provides comprehensive testing coverage across all SDK feat
 
 | Metric | Value |
 |--------|-------|
-| **Total Tests** | **2,249** |
-| XCTest tests | 1,997 |
-| Swift Testing tests | 252 |
-| XCTest suites | 163 |
-| Swift Testing suites | 42 |
+| **Total Tests** | **2,397** |
+| XCTest tests | 2,071 |
+| Swift Testing tests | 326 |
 | **Success Rate** | **100%** |
 | **Failures** | **0** |
 
@@ -187,4 +185,4 @@ TAVILY_API_KEY=your_key          # Required for web search tests
 
 *Last Updated: February 13, 2026*
 *Test Suite Version: 2.0*
-*Total Tests: 2,249 | Success Rate: 100% | All Features: COMPLETE*
+*Total Tests: 2,397 | Success Rate: 100% | All Features: COMPLETE*
