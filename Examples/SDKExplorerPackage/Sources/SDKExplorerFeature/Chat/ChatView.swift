@@ -16,7 +16,7 @@ public struct ChatView: View {
                 providerPicker
                 missionStrip
                 transcript
-                toolActivity
+                agentActivity
                 composer
             }
             .padding(.horizontal, 12)
@@ -118,21 +118,8 @@ public struct ChatView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private var toolActivity: some View {
-        Group {
-            if !runtime.activeToolEvents.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Tool activity")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(runtime.activeToolEvents.indices, id: \.self) { idx in
-                        Text(runtime.activeToolEvents[idx])
-                            .font(.caption2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
+    private var agentActivity: some View {
+        AgentActivityView(accumulator: runtime.streamAccumulator)
     }
 
     @ViewBuilder

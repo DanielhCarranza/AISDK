@@ -85,7 +85,7 @@ public final class ExplorerRuntime: ObservableObject {
     @Published public var selectedStore: DemoStoreKind = .inMemory
     @Published public var isBusy = false
     @Published public var messages: [AIMessage] = []
-    @Published public var activeToolEvents: [String] = []
+    @Published public var streamAccumulator = AIStreamAccumulator()
     @Published public var lastError: String?
     @Published public var sessions: [SessionSummary] = []
     @Published public var missionEvidence: [MissionEvidence] = []
@@ -141,7 +141,7 @@ public final class ExplorerRuntime: ObservableObject {
         }
         activeSessionID = nil
         messages = []
-        activeToolEvents = []
+        streamAccumulator.reset()
         lastError = nil
         await refreshSessions()
     }
@@ -170,7 +170,7 @@ public final class ExplorerRuntime: ObservableObject {
         } else {
             displayValue = "\(event.componentName) = null"
         }
-        activeToolEvents.append("State change: \(displayValue)")
+        // State changes are tracked through the accumulator's parts
     }
 
     public func runMission(_ mission: MissionCard) async {
@@ -307,7 +307,7 @@ public final class ExplorerRuntime: ObservableObject {
         isBusy = true
         lastError = nil
         let started = Date()
-        activeToolEvents = []
+        streamAccumulator.reset()
         streamingSpec = nil
         uitoolResults = []
 
@@ -336,18 +336,16 @@ public final class ExplorerRuntime: ObservableObject {
             var lastToolArgs = ""
 
             for try await event in stream {
+                streamAccumulator.process(event)
+
                 switch event {
                 case .textDelta(let delta):
                     assistantText += delta
-                case .toolCallStart(_, let name):
-                    activeToolEvents.append("Calling \(name)")
-                    lastToolName = name
                 case .toolCall(_, let name, let arguments):
                     calls.append(AIMessage.ToolCall(id: UUID().uuidString, name: name, arguments: arguments))
                     lastToolName = name
                     lastToolArgs = arguments
-                case .toolResult(_, let result, let metadata):
-                    activeToolEvents.append("Tool result: \(result)")
+                case .toolResult(_, _, let metadata):
                     if let uiMeta = metadata as? UIToolResultMetadata, uiMeta.hasUIView {
                         uitoolResults.append((toolName: lastToolName, arguments: lastToolArgs))
                     }
