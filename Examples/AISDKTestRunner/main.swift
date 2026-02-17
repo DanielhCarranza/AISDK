@@ -19,6 +19,11 @@ enum TestMode: String, CaseIterable {
     case litellm
     case providers
     case reasoning
+    case correctness
+    case performance
+    case session = "session"
+    case liveReliability = "live-reliability"
+    case eval
     case help
 }
 
@@ -63,6 +68,16 @@ func runMain() async {
             try await runProviderTests(options: options, reporter: reporter, reasoningDisplay: reasoningDisplay)
         case .reasoning:
             try await runReasoningDemo(options: options, reasoningDisplay: reasoningDisplay)
+        case .correctness:
+            try await runCorrectnessTests(options: options, reporter: reporter)
+        case .performance:
+            try await runPerformanceTests(options: options, reporter: reporter)
+        case .session:
+            try await runSessionTests(options: options, reporter: reporter)
+        case .liveReliability:
+            try await runLiveReliabilityTests(options: options, reporter: reporter)
+        case .eval:
+            try await runAllEvalTests(options: options, reporter: reporter)
         case .help:
             printUsage()
         }
@@ -159,14 +174,19 @@ func printUsage() {
     Usage: swift run AISDKTestRunner [options]
 
     Test Modes:
-      --mode all           Run all test suites (default)
-      --mode reliability   Test circuit breaker, failover, retry policies
-      --mode generative-ui Test UITree generation and streaming
-      --mode stress        Run stress and memory tests
-      --mode litellm       Test LiteLLM proxy integration
-      --mode providers     Test provider adapters (OpenAI, Anthropic, Gemini)
-      --mode reasoning     Demo reasoning/thinking display
-      --mode help          Show this help
+      --mode all              Run all test suites (default)
+      --mode reliability      Test circuit breaker, failover, retry policies
+      --mode generative-ui    Test UITree generation and streaming
+      --mode stress           Run stress and memory tests
+      --mode litellm          Test LiteLLM proxy integration
+      --mode providers        Test provider adapters (OpenAI, Anthropic, Gemini)
+      --mode reasoning        Demo reasoning/thinking display
+      --mode correctness      Layer 2: streaming integrity, tool parsing, sessions
+      --mode performance      Layer 2: TTFT, tokens/sec, latency, memory benchmarks
+      --mode session          Layer 2: session store roundtrip, concurrent access
+      --mode live-reliability Layer 2: success rate, error recovery, cancellation
+      --mode eval             Layer 2: run all eval suites (correctness+performance+session+live-reliability)
+      --mode help             Show this help
 
     Provider Options:
       --provider NAME      Filter to specific provider (openai, anthropic, gemini)
@@ -190,6 +210,11 @@ func printUsage() {
       swift run AISDKTestRunner --mode providers --provider gemini --model gemini-3.0-flash-preview
       swift run AISDKTestRunner --mode stress --concurrency 50
       swift run AISDKTestRunner --mode reasoning --reasoning inline
+      swift run AISDKTestRunner --mode eval --verbose
+      swift run AISDKTestRunner --mode correctness --provider openai
+      swift run AISDKTestRunner --mode performance --provider anthropic
+      swift run AISDKTestRunner --mode session
+      swift run AISDKTestRunner --mode live-reliability --provider gemini
 
     Supported Models:
       OpenAI:     gpt-5-nano, gpt-4o-mini, gpt-4o
@@ -231,6 +256,9 @@ func runAllTests(options: TestOptions, reporter: TestReporter, reasoningDisplay:
     try await runGenerativeUITests(options: options, reporter: reporter)
     try await runStressTests(options: options, reporter: reporter)
     try await runLiteLLMTests(options: options, reporter: reporter)
+
+    // Layer 2 eval suites
+    try await runAllEvalTests(options: options, reporter: reporter)
 }
 
 func runReliabilityTests(options: TestOptions, reporter: TestReporter) async throws {
@@ -272,6 +300,52 @@ func runProviderTests(options: TestOptions, reporter: TestReporter, reasoningDis
         reasoningDisplay: reasoningDisplay
     )
     try await suite.run()
+}
+
+// MARK: - Layer 2 Eval Suites
+
+func runCorrectnessTests(options: TestOptions, reporter: TestReporter) async throws {
+    reporter.printSection("Layer 2: Correctness Evaluation")
+    let suite = CorrectnessEvalSuite(
+        reporter: reporter,
+        verbose: options.verbose,
+        provider: options.provider
+    )
+    try await suite.run()
+}
+
+func runPerformanceTests(options: TestOptions, reporter: TestReporter) async throws {
+    reporter.printSection("Layer 2: Performance Benchmarks")
+    let suite = PerformanceBenchmarkSuite(
+        reporter: reporter,
+        verbose: options.verbose,
+        provider: options.provider
+    )
+    try await suite.run()
+}
+
+func runSessionTests(options: TestOptions, reporter: TestReporter) async throws {
+    reporter.printSection("Layer 2: Session Evaluation")
+    let suite = SessionEvalSuite(reporter: reporter, verbose: options.verbose)
+    try await suite.run()
+}
+
+func runLiveReliabilityTests(options: TestOptions, reporter: TestReporter) async throws {
+    reporter.printSection("Layer 2: Live Reliability Evaluation")
+    let suite = LiveReliabilityEvalSuite(
+        reporter: reporter,
+        verbose: options.verbose,
+        provider: options.provider
+    )
+    try await suite.run()
+}
+
+func runAllEvalTests(options: TestOptions, reporter: TestReporter) async throws {
+    reporter.printSection("Layer 2: All Eval Suites")
+    try await runCorrectnessTests(options: options, reporter: reporter)
+    try await runPerformanceTests(options: options, reporter: reporter)
+    try await runSessionTests(options: options, reporter: reporter)
+    try await runLiveReliabilityTests(options: options, reporter: reporter)
 }
 
 func runReasoningDemo(options: TestOptions, reasoningDisplay: ReasoningDisplay) async throws {

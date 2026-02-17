@@ -276,7 +276,7 @@ Some tests use external resources:
 ## 📊 Test Metrics & Performance
 
 ### Current Test Status
-- **Total Tests**: 2,249 tests across 205 suites (1,997 XCTest + 252 Swift Testing)
+- **Total Tests**: 2,397 tests (2,071 XCTest + 326 Swift Testing)
 - **Success Rate**: 100% (0 failures)
 - **Test Files**: ~130 Swift test files across 163 XCTest suites and 42 Swift Testing suites
 - **Coverage**: Comprehensive across all features including agents, computer use, sessions, reliability, generative UI, MCP, skills, and multi-provider LLM support
@@ -469,4 +469,4 @@ Tests are designed for CI/CD environments:
 
 *Last Updated: February 13, 2026*
 *Test Suite Version: 2.0*
-*Total Tests: 2,249 | Success Rate: 100% | All Features: COMPLETE*
+*Total Tests: 2,397 | Success Rate: 100% | All Features: COMPLETE*

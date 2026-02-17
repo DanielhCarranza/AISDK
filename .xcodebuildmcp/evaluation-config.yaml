@@ -1,0 +1,113 @@
+schemaVersion: 1
+evaluation:
+  app:
+    projectPath: "Examples/SDKExplorer.xcodeproj"
+    scheme: "SDKExplorer"
+    configuration: "Debug"
+
+  tests:
+    uiTestScheme: "SDKExplorerUITests"
+
+  simulator:
+    preferred:
+      name: "iPhone 16"
+      useLatestOS: true
+    fallbacks:
+      - name: "iPhone 16 Pro"
+        useLatestOS: true
+      - name: "iPhone 15 Pro"
+        useLatestOS: true
+    lifecycle:
+      bootBeforeRun: true
+      eraseBeforeRun: false
+      shutdownAfterRun: false
+
+  providers:
+    openai:
+      model: "gpt-4.1-mini"
+      envKey: "OPENAI_API_KEY"
+      sharedQuestions: ["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"]
+      providerQuestions: ["Q11-O","Q12-O"]
+    anthropic:
+      model: "claude-haiku-4-5-20251001"
+      envKey: "ANTHROPIC_API_KEY"
+      sharedQuestions: ["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"]
+      providerQuestions: ["Q13-A","Q14-A"]
+    gemini:
+      model: "gemini-2.5-flash"
+      envKey: "GOOGLE_API_KEY"
+      sharedQuestions: ["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"]
+      providerQuestions: ["Q15-G","Q16-G"]
+
+  artifactPaths:
+    root: "docs/results/layer3/artifacts"
+    screenshots: "docs/results/layer3/artifacts/screenshots"
+    logs: "docs/results/layer3/artifacts/logs"
+    traces: "docs/results/layer3/artifacts/traces"
+    summaries: "docs/results/layer3/artifacts/summaries"
+
+  failureCategories:
+    - infra
+    - provider
+    - app_regression
+    - assertion_mismatch
+
+  scenarios:
+    smoke:
+      description: "Build and launch sanity pass with baseline artifacts."
+      steps:
+        - setSessionDefaults
+        - bootSimulator
+        - buildRun
+        - startLogCapture
+        - captureScreenshot
+        - stopLogCapture
+
+    layer3-full:
+      description: "Execute full Q1-Q16 matrix with provider switching checks."
+      steps:
+        - setSessionDefaults
+        - bootSimulator
+        - buildRun
+        - startLogCapture
+        - runQuestionMatrix
+        - captureCheckpointScreenshots
+        - stopLogCapture
+        - emitScenarioSummary
+
+    generative-ui-regression:
+      description: "Validate rendering, parser resilience, and chart correctness for Generative UI."
+      questions: ["Q4","Q5","Q8","Q10","Q16-G"]
+      checks:
+        - renderCorrectness
+        - parserResilience
+        - interactionReadiness
+        - chartIntegrity
+      steps:
+        - setSessionDefaults
+        - bootSimulator
+        - buildRun
+        - startLogCapture
+        - runGenerativeUIQuestions
+        - capturePerQuestionScreenshots
+        - stopLogCapture
+        - emitScenarioSummary
+
+    reasoning-tool-flow:
+      description: "Validate thought/reasoning stream, tool lifecycle, and final response ordering."
+      questions: ["Q13-A","Q15-G"]
+      customPrompts:
+        - "Compute step by step: (15 + 27) * 3, then divide by 7, and explain each tool step."
+      checks:
+        - reasoningLifecycleVisible
+        - toolLifecycleVisible
+        - finalResponseAfterToolResolution
+      steps:
+        - setSessionDefaults
+        - bootSimulator
+        - buildRun
+        - startLogCapture
+        - runReasoningFlowPrompts
+        - captureLifecycleEvidence
+        - stopLogCapture
+        - emitScenarioSummary

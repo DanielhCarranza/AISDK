@@ -19,7 +19,7 @@
 ## Build and Test
 
 - `swift build` — build all targets
-- `swift test` — run the full test suite (2,249 tests across 205 suites)
+- `swift test` — run the full test suite (2,397 tests — 2,071 XCTest + 326 Swift Testing)
 - `swift test --filter <TestClass>` — run specific tests
 - `swift package resolve` — resolve dependencies without building
 - `RUN_LIVE_TESTS=1 swift test` — include live API integration tests (requires `.env` with API keys)

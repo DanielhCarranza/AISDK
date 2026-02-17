@@ -40,6 +40,7 @@ public actor GeminiClientAdapter: ProviderClient {
 
     private let apiKey: String
     private let session: URLSession
+    private let retryPolicy: RetryPolicy
 
     // MARK: - State
 
@@ -71,14 +72,17 @@ public actor GeminiClientAdapter: ProviderClient {
     ///   - apiKey: Google AI API key
     ///   - baseURL: Optional custom base URL (defaults to https://generativelanguage.googleapis.com/v1beta)
     ///   - session: Optional URLSession for dependency injection
+    /// - Parameter retryPolicy: Retry policy for transient failures (default: 3 retries with exponential backoff)
     public init(
         apiKey: String,
         baseURL: URL? = nil,
-        session: URLSession? = nil
+        session: URLSession? = nil,
+        retryPolicy: RetryPolicy = .default
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
         self.session = session ?? .shared
+        self.retryPolicy = retryPolicy
     }
 
     // MARK: - Health & Status
@@ -120,7 +124,9 @@ public actor GeminiClientAdapter: ProviderClient {
         let startTime = Date()
         let httpRequest = try await buildHTTPRequest(for: request, streaming: false)
 
-        let (data, response) = try await performRequest(httpRequest, timeout: request.timeout)
+        let (data, response) = try await RetryExecutor(policy: retryPolicy).execute {
+            try await self.performRequest(httpRequest, timeout: request.timeout)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")
@@ -440,10 +446,10 @@ public actor GeminiClientAdapter: ProviderClient {
                     description = nil
                 }
 
-                // Convert parameters
+                // Convert parameters — strip fields unsupported by Gemini's function calling API
                 let parameters: [String: ProviderJSONValue]?
                 if case .object(let params)? = functionDict["parameters"] {
-                    parameters = params
+                    parameters = GeminiClientAdapter.stripUnsupportedSchemaFields(params)
                 } else {
                     parameters = nil
                 }
@@ -579,6 +585,42 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         return hasConfig ? config : nil
+    }
+
+    /// Recursively strips JSON Schema fields unsupported by Gemini's function calling API.
+    /// Gemini uses a restricted OpenAPI 3.0 subset that rejects fields like `additionalProperties`.
+    private static let unsupportedFunctionSchemaFields: Set<String> = [
+        "additionalProperties", "patternProperties",
+        "$ref", "allOf", "oneOf",
+        "definitions", "$defs",
+        "if", "then", "else", "not",
+        "$schema", "title", "default"
+    ]
+
+    private nonisolated static func stripUnsupportedSchemaFields(
+        _ schema: [String: ProviderJSONValue]
+    ) -> [String: ProviderJSONValue] {
+        var cleaned = schema
+        for field in unsupportedFunctionSchemaFields {
+            cleaned.removeValue(forKey: field)
+        }
+
+        // Recursively clean nested property schemas
+        if case .object(let properties)? = cleaned["properties"] {
+            cleaned["properties"] = .object(properties.mapValues { value in
+                if case .object(let nested) = value {
+                    return .object(stripUnsupportedSchemaFields(nested))
+                }
+                return value
+            })
+        }
+
+        // Clean array item schemas
+        if case .object(let items)? = cleaned["items"] {
+            cleaned["items"] = .object(stripUnsupportedSchemaFields(items))
+        }
+
+        return cleaned
     }
 
     /// Validates a JSON schema against Gemini's supported subset
@@ -841,7 +883,10 @@ public actor GeminiClientAdapter: ProviderClient {
     ) async throws {
         let httpRequest = try await buildHTTPRequest(for: request, streaming: true)
 
-        let (bytes, response) = try await session.bytes(for: httpRequest)
+        let streamRetry = RetryPolicy(maxRetries: 1, baseDelay: .milliseconds(500))
+        let (bytes, response) = try await RetryExecutor(policy: streamRetry).execute {
+            try await self.session.bytes(for: httpRequest)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")

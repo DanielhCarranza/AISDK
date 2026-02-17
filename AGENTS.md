@@ -22,7 +22,7 @@
 
 ## Testing Guidelines
 - XCTest and Swift Testing are the standard frameworks (see `Tests/AISDKTests/README.md`).
-- **2,249 tests** across 205 suites (1,997 XCTest + 252 Swift Testing), 100% pass rate.
+- **2,397 tests** (2,071 XCTest + 326 Swift Testing), 100% pass rate.
 - Use `Tests/env.example` as the template for a local `.env` with API keys.
 - Mock-based tests run without keys; provider integration tests require valid credentials.
 - Set `RUN_LIVE_TESTS=1` to enable live API tests (e.g., `BuiltInToolsLiveTests`).

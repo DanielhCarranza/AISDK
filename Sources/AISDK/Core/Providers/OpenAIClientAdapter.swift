@@ -41,6 +41,7 @@ public actor OpenAIClientAdapter: ProviderClient {
     private let apiKey: String
     private let session: URLSession
     private let organization: String?
+    private let retryPolicy: RetryPolicy
 
     // MARK: - State
 
@@ -63,16 +64,19 @@ public actor OpenAIClientAdapter: ProviderClient {
     ///   - baseURL: Optional custom base URL (defaults to https://api.openai.com/v1)
     ///   - session: Optional URLSession for dependency injection
     ///   - organization: Optional organization ID for multi-org accounts
+    ///   - retryPolicy: Retry policy for transient failures (default: 3 retries with exponential backoff)
     public init(
         apiKey: String,
         baseURL: URL? = nil,
         session: URLSession? = nil,
-        organization: String? = nil
+        organization: String? = nil,
+        retryPolicy: RetryPolicy = .default
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
         self.session = session ?? .shared
         self.organization = organization
+        self.retryPolicy = retryPolicy
     }
 
     // MARK: - Health & Status
@@ -114,7 +118,9 @@ public actor OpenAIClientAdapter: ProviderClient {
         let startTime = Date()
         let httpRequest = try buildHTTPRequest(for: request, streaming: false)
 
-        let (data, response) = try await performRequest(httpRequest, timeout: request.timeout)
+        let (data, response) = try await RetryExecutor(policy: retryPolicy).execute {
+            try await self.performRequest(httpRequest, timeout: request.timeout)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")
@@ -540,7 +546,10 @@ public actor OpenAIClientAdapter: ProviderClient {
     ) async throws {
         let httpRequest = try buildHTTPRequest(for: request, streaming: true)
 
-        let (bytes, response) = try await session.bytes(for: httpRequest)
+        let streamRetry = RetryPolicy(maxRetries: 1, baseDelay: .milliseconds(500))
+        let (bytes, response) = try await RetryExecutor(policy: streamRetry).execute {
+            try await self.session.bytes(for: httpRequest)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ProviderError.networkError("Invalid response type")
