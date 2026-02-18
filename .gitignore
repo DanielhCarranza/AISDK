@@ -12,3 +12,4 @@ DerivedData/
 .env.local
 .cursor/
 .context/
+.aidoctor/

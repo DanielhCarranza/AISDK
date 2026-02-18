@@ -4,7 +4,6 @@ on:
   pull_request:
     branches:
       - main
-      - aisdk-2.0-modernization
       - 'release/**'
   push:
     branches:
