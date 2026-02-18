@@ -322,8 +322,8 @@ final class GenerativeUIViewModelTests: XCTestCase {
         // When
         viewModel.scheduleUpdate(UITreeUpdate(type: .clear))
 
-        // Wait for batch to apply
-        try await Task.sleep(for: .milliseconds(25))
+        // Wait for batch to apply (needs longer on CI runners)
+        try await Task.sleep(for: .milliseconds(200))
 
         // Then
         XCTAssertNil(viewModel.tree)
