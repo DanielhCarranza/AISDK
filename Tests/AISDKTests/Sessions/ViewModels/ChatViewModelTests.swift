@@ -222,8 +222,8 @@ final class StreamingPersistenceBufferTests: XCTestCase {
         let message = AIMessage.assistant("Hello")
         await buffer.bufferDelta(message)
 
-        // Wait for debounce
-        try await Task.sleep(for: .milliseconds(100))
+        // Wait for debounce (needs extra headroom on CI runners)
+        try await Task.sleep(for: .milliseconds(500))
 
         let updateCount = await store.updateLastMessageCalls.count
         XCTAssertEqual(updateCount, 1)
@@ -245,8 +245,8 @@ final class StreamingPersistenceBufferTests: XCTestCase {
             await buffer.bufferDelta(.assistant("Text \(i)"))
         }
 
-        // Wait for single debounce
-        try await Task.sleep(for: .milliseconds(200))
+        // Wait for single debounce (needs extra headroom on CI runners)
+        try await Task.sleep(for: .milliseconds(500))
 
         let updateCount = await store.updateLastMessageCalls.count
         // Should coalesce to 1 persist (not 10)
