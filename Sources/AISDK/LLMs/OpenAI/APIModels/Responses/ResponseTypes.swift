@@ -92,6 +92,12 @@ public struct Response {
             case .mcpApprovalRequest:
                 // MCP approval requests are metadata, not content
                 break
+            case .computerCall:
+                // Computer calls are handled via agent routing, not content
+                break
+            case .unknown:
+                // Unrecognized output types are silently skipped
+                break
             }
         }
         

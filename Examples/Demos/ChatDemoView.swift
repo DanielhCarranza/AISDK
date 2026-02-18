@@ -16,12 +16,12 @@ struct ChatDemoView: View {
     @State private var isStreaming = false
     @State private var selectedProvider: ProviderType = .openAI
     
-    // LLM instances
+    // LegacyLLM instances
     let openAIClient = OpenAIProvider(apiKey: AgenticModels.gpt4.apiKey ?? " ")
     let claudeClient = ClaudeProvider(apiKey: AgenticModels.claude.apiKey ?? " ") // Use AgenticModels for API key
     
     // Computed property to get the current provider
-    private var currentProvider: LLM {
+    private var currentProvider: LegacyLLM {
         switch selectedProvider {
         case .openAI:
             return openAIClient
@@ -36,7 +36,7 @@ struct ChatDemoView: View {
         case .openAI:
             return "gpt-4o"
         case .claude:
-            return "claude-3-7-sonnet-20250219"
+            return "claude-sonnet-4-5-20250929"
         }
     }
     
@@ -68,7 +68,7 @@ struct ChatDemoView: View {
                     Button("Send Non-Streaming") {
                         Task {
                             do {
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let req = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -90,7 +90,7 @@ struct ChatDemoView: View {
                         textOutput = ""
                         isStreaming = true
                         Task {
-                            let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                            let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                             let streamReq = ChatCompletionRequest(
                                 model: model,
                                 messages: [
@@ -125,7 +125,7 @@ struct ChatDemoView: View {
                             textOutput = ""
                             do {
                                 // Example 1: Simple URL image
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let urlRequest = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -185,21 +185,26 @@ struct ChatDemoView: View {
                                     
                                     init() {}
                                     
+                                    enum TemperatureUnit: String, Codable, CaseIterable {
+                                        case celsius
+                                        case fahrenheit
+                                    }
+
                                     @Parameter(description: "The city and state, e.g. San Francisco, CA")
                                     var location: String = ""
                                     
-                                    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-                                    var unit: String = "celsius"
+                                    @Parameter(description: "Temperature unit")
+                                    var unit: TemperatureUnit = .celsius
 
-                                    func execute() async throws -> (content: String, metadata: ToolMetadata?)  {
-                                        return (content: "Weather \(self.location) \(self.unit)", metadata: nil)
+                                    func execute() async throws -> ToolResult  {
+                                        return ToolResult(content: "Weather \(self.location) \(self.unit.rawValue)")
                                     }
                                 }
                                 
                                 // Get the tool schema using the static method
                                 let tools = [WeatherTool.jsonSchema()]
                                 
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let toolRequest = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -250,7 +255,7 @@ struct ChatDemoView: View {
                             textOutput = ""
                             do {
                                 // Simple JSON Object example
-                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-3-7-sonnet-20250219"
+                                let model = selectedProvider == .openAI ? "gpt-4o" : "claude-sonnet-4-5-20250929"
                                 let jsonRequest = ChatCompletionRequest(
                                     model: model,
                                     messages: [
@@ -309,7 +314,7 @@ struct ChatDemoView: View {
                             do {
                                 // Use the withExtendedThinking helper method for Claude
                                 let basicRequest = ChatCompletionRequest(
-                                    model: "claude-3-7-sonnet-20250219",
+                                    model: "claude-sonnet-4-5-20250929",
                                     messages: [
                                         .user(content: .text("Solve this complex problem: Find all positive integer solutions to the equation x² - y² = 2023. Explain your approach."))
                                     ]
@@ -333,9 +338,9 @@ struct ChatDemoView: View {
                     .disabled(isStreaming)
                 }
                 
-                Button("Weather Tool Agent Test") {
+                Button("Weather Tool LegacyAgent Test") {
                     Task {
-                        textOutput = "Starting Weather Tool Agent Test...\n"
+                        textOutput = "Starting Weather Tool LegacyAgent Test...\n"
                         
                         do {
                             // Define the simple weather tool
@@ -345,28 +350,33 @@ struct ChatDemoView: View {
                                 
                                 init() {}
                                 
+                                enum TemperatureUnit: String, Codable, CaseIterable {
+                                    case celsius
+                                    case fahrenheit
+                                }
+
                                 @Parameter(description: "The city and state, e.g. San Francisco, CA")
                                 var location: String = ""
                                 
-                                @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-                                var unit: String = "celsius"
+                                @Parameter(description: "Temperature unit")
+                                var unit: TemperatureUnit = .celsius
 
-                                func execute() async throws -> (content: String, metadata: ToolMetadata?)  {
+                                func execute() async throws -> ToolResult  {
                                     // Add logging to verify execution
-                                    print("🌦️ Weather tool executing for location: \(location), unit: \(unit)")
-                                    return (content: "Weather for \(self.location): 72°\(self.unit == "celsius" ? "C" : "F"), partly cloudy", metadata: nil)
+                                    print("🌦️ Weather tool executing for location: \(location), unit: \(unit.rawValue)")
+                                    return ToolResult(content: "Weather for \(self.location): 72°\(self.unit == .celsius ? "C" : "F"), partly cloudy")
                                 }
                             }
                             
                             // Initialize an agent with just the weather tool
-                            let agent = try Agent(
+                            let agent = try LegacyAgent(
                                 model: AgenticModels.gpt4,
                                 tools: [WeatherToolForAgent.self],
                                 instructions: "You are a helpful assistant that provides weather information."
                             )
                             
                             // Create test message
-                            let userMessage = ChatMessage(message: .user(content: .text("What's the weather in Boston today?")))
+                            let userMessage = LegacyChatMessage(message: .user(content: .text("What's the weather in Boston today?")))
                             
                             // Test with specific function requirement
                             textOutput += "🧪 TEST: Specific weather function\n"

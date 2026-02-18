@@ -87,7 +87,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: invalidJSON,
                         toolCalls: nil,
@@ -155,7 +155,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: productJSON,
                         toolCalls: nil,
@@ -225,7 +225,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: bookJSON,
                         toolCalls: nil,
@@ -300,7 +300,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: userJSON,
                         toolCalls: nil,
@@ -359,7 +359,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: invalidJSON,
                         toolCalls: nil,
@@ -423,7 +423,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: mismatchedJSON,
                         toolCalls: nil,
@@ -478,7 +478,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: nil,
                         toolCalls: nil,
@@ -538,7 +538,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: simpleJSON,
                         toolCalls: nil,
@@ -604,7 +604,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: "{}",
                         toolCalls: nil,
@@ -695,7 +695,7 @@ final class StructuredOutputTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: documentJSON,
                         toolCalls: nil,

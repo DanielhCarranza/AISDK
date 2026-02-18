@@ -1,0 +1,9 @@
+{
+  "enabledPlugins": {
+    "command-sync-skills-readme@agent-toolkit": true,
+    "crafting-effective-readmes@agent-toolkit": true,
+    "context7@claude-plugins-official": true,
+    "skill-judge@agent-toolkit": true,
+    "agent-md-refactor@agent-toolkit": true
+  }
+}

@@ -8,7 +8,22 @@
 import Foundation
 import Alamofire
 
-public class OpenAIProvider: LLM {
+public class OpenAIProvider: LegacyLLM {
+    private struct OpenAIAPIErrorEnvelope: Decodable {
+        struct OpenAIAPIError: Decodable {
+            let message: String?
+            let type: String?
+            let code: String?
+        }
+
+        let error: OpenAIAPIError
+    }
+
+    private enum ResponsesOperation {
+        case create
+        case retrieve
+        case cancel
+    }
         
     // MARK: - Properties
     
@@ -65,7 +80,7 @@ public class OpenAIProvider: LLM {
     /// let request = ChatCompletionRequest(
     ///   model: "gpt-4o",
     ///   messages: [
-    ///       ChatMessage(role: "user", content: .string("Hello!"))
+    ///       LegacyChatMessage(role: "user", content: .string("Hello!"))
     ///   ]
     /// )
     /// let response = try await client.createChatCompletion(request: request)
@@ -134,7 +149,7 @@ public class OpenAIProvider: LLM {
     /// let request = ChatCompletionRequest(
     ///   model: "gpt-4o",
     ///   messages: [
-    ///       ChatMessage(role: "user", content: .string("Hello!"))
+    ///       LegacyChatMessage(role: "user", content: .string("Hello!"))
     ///   ],
     ///   stream: true
     /// )
@@ -365,35 +380,57 @@ public class OpenAIProvider: LLM {
             print("DEBUG: Sending request to \(endpoint)")
             print("DEBUG: Request body: \(requestString)")
         }
-        
-        let dataTask = session.request(
-            url,
-            method: .post,
-            parameters: request,
-            encoder: JSONParameterEncoder.default,
-            headers: authorizationHeaders
-        )
-        .validate()
-        .serializingDecodable(ResponseObject.self)
-        
-        let result = await dataTask.result
-        
-        switch result {
-        case .success(let response):
-            return response
-        case .failure(let afError):
-            // Simple error logging
-            print("DEBUG: AFError occurred - \(afError.localizedDescription)")
-            if let responseCode = afError.responseCode {
-                print("DEBUG: HTTP Status Code: \(responseCode)")
+
+        try request.validate()
+
+        return try await withCheckedThrowingContinuation { continuation in
+            session.request(
+                url,
+                method: .post,
+                parameters: request,
+                encoder: JSONParameterEncoder.default,
+                headers: authorizationHeaders
+            )
+            .validate()
+            .responseData { response in
+                switch response.result {
+                case .success(let data):
+                    do {
+                        let decoded = try JSONDecoder().decode(ResponseObject.self, from: data)
+                        continuation.resume(returning: decoded)
+                    } catch {
+                        continuation.resume(throwing: LLMError.parsingError(error.localizedDescription))
+                    }
+                case .failure(let afError):
+                    // Simple error logging
+                    print("DEBUG: AFError occurred - \(afError.localizedDescription)")
+                    if let statusCode = response.response?.statusCode {
+                        print("DEBUG: HTTP Status Code: \(statusCode)")
+                    }
+                    continuation.resume(
+                        throwing: self.mapResponsesAPIError(
+                            statusCode: response.response?.statusCode ?? afError.responseCode,
+                            data: response.data,
+                            fallback: afError,
+                            operation: .create
+                        )
+                    )
+                }
             }
-            throw LLMError.from(afError)
         }
     }
     
     /// Creates a streaming response using OpenAI's Responses API
     /// POST /v1/responses with stream=true
     public func createResponseStream(request: ResponseRequest) -> AsyncThrowingStream<ResponseChunk, Error> {
+        do {
+            try request.validate()
+        } catch {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: error)
+            }
+        }
+
         // Create a new request with streaming enabled
         let streamingRequest = ResponseRequest(
             model: request.model,
@@ -603,21 +640,33 @@ public class OpenAIProvider: LLM {
             throw LLMError.invalidRequest("Invalid URL configuration")
         }
         
-        let dataTask = session.request(
-            url,
-            method: .get,
-            headers: authorizationHeaders
-        )
-        .validate()
-        .serializingDecodable(ResponseObject.self)
-        
-        let result = await dataTask.result
-        
-        switch result {
-        case .success(let response):
-            return response
-        case .failure(let afError):
-            throw LLMError.from(afError)
+        return try await withCheckedThrowingContinuation { continuation in
+            session.request(
+                url,
+                method: .get,
+                headers: authorizationHeaders
+            )
+            .validate()
+            .responseData { response in
+                switch response.result {
+                case .success(let data):
+                    do {
+                        let decoded = try JSONDecoder().decode(ResponseObject.self, from: data)
+                        continuation.resume(returning: decoded)
+                    } catch {
+                        continuation.resume(throwing: LLMError.parsingError(error.localizedDescription))
+                    }
+                case .failure(let afError):
+                    continuation.resume(
+                        throwing: self.mapResponsesAPIError(
+                            statusCode: response.response?.statusCode ?? afError.responseCode,
+                            data: response.data,
+                            fallback: afError,
+                            operation: .retrieve
+                        )
+                    )
+                }
+            }
         }
     }
     
@@ -630,21 +679,33 @@ public class OpenAIProvider: LLM {
             throw LLMError.invalidRequest("Invalid URL configuration")
         }
         
-        let dataTask = session.request(
-            url,
-            method: .post,
-            headers: authorizationHeaders
-        )
-        .validate()
-        .serializingDecodable(ResponseObject.self)
-        
-        let result = await dataTask.result
-        
-        switch result {
-        case .success(let response):
-            return response
-        case .failure(let afError):
-            throw LLMError.from(afError)
+        return try await withCheckedThrowingContinuation { continuation in
+            session.request(
+                url,
+                method: .post,
+                headers: authorizationHeaders
+            )
+            .validate()
+            .responseData { response in
+                switch response.result {
+                case .success(let data):
+                    do {
+                        let decoded = try JSONDecoder().decode(ResponseObject.self, from: data)
+                        continuation.resume(returning: decoded)
+                    } catch {
+                        continuation.resume(throwing: LLMError.parsingError(error.localizedDescription))
+                    }
+                case .failure(let afError):
+                    continuation.resume(
+                        throwing: self.mapResponsesAPIError(
+                            statusCode: response.response?.statusCode ?? afError.responseCode,
+                            data: response.data,
+                            fallback: afError,
+                            operation: .cancel
+                        )
+                    )
+                }
+            }
         }
     }
     
@@ -657,5 +718,88 @@ public class OpenAIProvider: LLM {
             "Authorization": "Bearer \(apiKey)",
             "Content-Type": "application/json"
         ]
+    }
+
+    private func mapResponsesAPIError(
+        statusCode: Int?,
+        data: Data?,
+        fallback: Error,
+        operation: ResponsesOperation
+    ) -> LLMError {
+        let parsedMessage = parseOpenAIErrorMessage(from: data)
+        let parsedCode = parseOpenAIErrorCode(from: data)?.lowercased()
+        let normalizedMessage = parsedMessage?.lowercased()
+
+        // Retrieval-specific guidance for a common pitfall.
+        switch operation {
+        case .retrieve where statusCode == 404:
+            return .invalidRequest(
+                "Response not found. Retrieval requires creating the response with store: true."
+            )
+        case .create, .retrieve, .cancel:
+            break
+        }
+
+        // Known OpenAI tool capability restrictions that should be explicit.
+        if statusCode == 400 {
+            if matchesCodeInterpreterRestriction(code: parsedCode, message: normalizedMessage) {
+                return .invalidRequest(
+                    "code_interpreter requires an API key without Zero Data Retention (ZDR) enabled."
+                )
+            }
+
+            if matchesImageGenerationRestriction(code: parsedCode, message: normalizedMessage) {
+                return .invalidRequest(
+                    "image_generation is not available for this model or API key."
+                )
+            }
+        }
+
+        if let statusCode, let parsedMessage {
+            return .networkError(statusCode, parsedMessage)
+        }
+
+        return LLMError.from(fallback)
+    }
+
+    private func parseOpenAIErrorMessage(from data: Data?) -> String? {
+        guard let data else { return nil }
+        if let envelope = try? JSONDecoder().decode(OpenAIAPIErrorEnvelope.self, from: data),
+           let message = envelope.error.message, !message.isEmpty {
+            return message
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func parseOpenAIErrorCode(from data: Data?) -> String? {
+        guard let data,
+              let envelope = try? JSONDecoder().decode(OpenAIAPIErrorEnvelope.self, from: data) else {
+            return nil
+        }
+        return envelope.error.code
+    }
+
+    private func matchesCodeInterpreterRestriction(code: String?, message: String?) -> Bool {
+        let messageContainsZDR = message?.contains("zero data retention") == true || message?.contains("zdr") == true
+        let messageContainsCodeInterpreter = message?.contains("code_interpreter") == true
+            || message?.contains("code interpreter") == true
+        let messageContainsContainer = message?.contains("container") == true
+        let codeContainsCodeInterpreter = code?.contains("code_interpreter") == true
+        let codeContainsContainer = code?.contains("container") == true
+
+        return (messageContainsCodeInterpreter && (messageContainsZDR || messageContainsContainer))
+            || (codeContainsCodeInterpreter && (messageContainsZDR || messageContainsContainer))
+            || (messageContainsZDR && messageContainsCodeInterpreter)
+            || (messageContainsCodeInterpreter && codeContainsContainer)
+    }
+
+    private func matchesImageGenerationRestriction(code: String?, message: String?) -> Bool {
+        let messageContainsImageGeneration = message?.contains("image_generation") == true
+        let messageContainsModelSupport = message?.contains("not available") == true
+            || message?.contains("unsupported") == true
+            || message?.contains("does not support") == true
+        let codeContainsImageGeneration = code?.contains("image_generation") == true
+
+        return messageContainsImageGeneration || codeContainsImageGeneration || (messageContainsModelSupport && messageContainsImageGeneration)
     }
 }

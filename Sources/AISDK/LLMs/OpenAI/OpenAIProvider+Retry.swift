@@ -7,7 +7,7 @@ extension OpenAIProvider {
     ///  • Explicit `rateLimitExceeded` and generic network errors
     ///  • Low-level networking issues wrapped in `AISDKError.underlying`
     private func isTransientError(_ error: Error) -> Bool {
-        // Handle LLM-level errors first
+        // Handle LegacyLLM-level errors first
         if let llmError = error as? LLMError {
             switch llmError {
             case .rateLimitExceeded:

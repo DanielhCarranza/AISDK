@@ -21,7 +21,7 @@ struct WeatherToolUI: RenderableTool {
     var city: String = ""
     
     // 1) Execute tool
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         // Simulate network delay
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         
@@ -45,7 +45,7 @@ struct WeatherToolUI: RenderableTool {
         // Create the RenderMetadata
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return (textResponse, metadata)
+        return ToolResult(content: textResponse, metadata: metadata)
     }
     
     // 2) Render from metadata
@@ -127,10 +127,10 @@ struct WeatherTool: Tool {
     @Parameter(description: "City name")
     var city: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?)  {
+    func execute() async throws -> ToolResult  {
         // Simulate API delay
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        return (content: "Weather in \(city): 72°F, Sunny", metadata: nil)
+        return ToolResult(content: "Weather in \(city): 72°F, Sunny")
     }
 }
 
@@ -141,27 +141,33 @@ struct CalculatorTool: Tool {
     
     init() {}
     
-    @Parameter(description: "First number", validation: ["minimum": -1000, "maximum": 1000])
+    @Parameter(description: "First number", .range(-1000...1000))
     var a: Double = 0
     
-    @Parameter(description: "Second number", validation: ["minimum": -1000, "maximum": 1000])
+    @Parameter(description: "Second number", .range(-1000...1000))
     var b: Double = 0
     
-    @Parameter(description: "Operation to perform", validation: ["enum": ["+", "-", "*", "/"]])
-    var operation: String = "+"
+    enum Operation: String, Codable, CaseIterable {
+        case plus = "+"
+        case minus = "-"
+        case multiply = "*"
+        case divide = "/"
+    }
+
+    @Parameter(description: "Operation to perform")
+    var operation: Operation = .plus
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
-        case "+": result = a + b
-        case "-": result = a - b
-        case "*": result = a * b
-        case "/":
+        case .plus: result = a + b
+        case .minus: result = a - b
+        case .multiply: result = a * b
+        case .divide:
             guard b != 0 else { throw AgentError.toolExecutionFailed("Division by zero") }
             result = a / b
-        default: throw AgentError.toolExecutionFailed("Invalid operation")
         }
-        return (content: String(format: "%.2f %@ %.2f = %.2f", a, operation, b, result), metadata: nil)
+        return ToolResult(content: String(format: "%.2f %@ %.2f = %.2f", a, operation.rawValue, b, result))
     }
 }
 
@@ -181,10 +187,10 @@ struct TimezoneTool: Tool {
     @Parameter(description: "Time to convert (format: HH:mm)")
     var time: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        return (content: "Tool response: \(time) in \(fromTimezone) to \(toTimezone)", metadata: nil)
+        return ToolResult(content: "Tool response: \(time) in \(fromTimezone) to \(toTimezone)")
     }
 }
 
@@ -199,10 +205,10 @@ struct ResearchTool: Tool {
     @Parameter(description: "Medical topic to search for")
     var topic: String = ""
     
-    @Parameter(description: "Maximum number of results", validation: ["minimum": 1, "maximum": 5])
+    @Parameter(description: "Maximum number of results", .range(1...5))
     var maxResults: Int = 3
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         
@@ -220,6 +226,6 @@ struct ResearchTool: Tool {
         Found 
         """
         
-        return (content: content, metadata: evidence)
+        return ToolResult(content: content, metadata: evidence)
     }
 } 

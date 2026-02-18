@@ -10,10 +10,11 @@ import Foundation
 /// Built-in tools available in the Responses API
 public enum ResponseTool: Codable {
     case webSearchPreview
-    case fileSearch(vectorStoreId: String)
+    case fileSearch(vectorStoreIds: [String])
     case imageGeneration(partialImages: Int? = nil)
     case codeInterpreter
     case mcp(serverLabel: String, serverUrl: String, requireApproval: String? = nil, headers: [String: String]? = nil)
+    case computerUsePreview(displayWidth: Int, displayHeight: Int, environment: String?)
     case function(ToolFunction)
     
     enum CodingKeys: String, CodingKey {
@@ -26,6 +27,7 @@ public enum ResponseTool: Codable {
         case imageGeneration = "image_generation"
         case codeInterpreter = "code_interpreter"
         case mcp = "mcp"
+        case computerUsePreview = "computer_use_preview"
         case function = "function"
     }
     
@@ -38,7 +40,7 @@ public enum ResponseTool: Codable {
             self = .webSearchPreview
         case .fileSearch:
             let fileSearchTool = try ResponseFileSearchTool(from: decoder)
-            self = .fileSearch(vectorStoreId: fileSearchTool.vectorStoreId)
+            self = .fileSearch(vectorStoreIds: fileSearchTool.vectorStoreIds)
         case .imageGeneration:
             let imageGenTool = try ResponseImageGenerationTool(from: decoder)
             self = .imageGeneration(partialImages: imageGenTool.partialImages)
@@ -52,6 +54,13 @@ public enum ResponseTool: Codable {
                 requireApproval: mcpTool.requireApproval,
                 headers: mcpTool.headers
             )
+        case .computerUsePreview:
+            let cuTool = try ResponseComputerUseTool(from: decoder)
+            self = .computerUsePreview(
+                displayWidth: cuTool.displayWidth,
+                displayHeight: cuTool.displayHeight,
+                environment: cuTool.environment
+            )
         case .function:
             let functionTool = try ResponseFunctionTool(from: decoder)
             self = .function(functionTool.function)
@@ -63,8 +72,8 @@ public enum ResponseTool: Codable {
         case .webSearchPreview:
             let tool = ResponseWebSearchTool()
             try tool.encode(to: encoder)
-        case .fileSearch(let vectorStoreId):
-            let tool = ResponseFileSearchTool(vectorStoreId: vectorStoreId)
+        case .fileSearch(let vectorStoreIds):
+            let tool = ResponseFileSearchTool(vectorStoreIds: vectorStoreIds)
             try tool.encode(to: encoder)
         case .imageGeneration(let partialImages):
             let tool = ResponseImageGenerationTool(partialImages: partialImages)
@@ -78,6 +87,13 @@ public enum ResponseTool: Codable {
                 serverUrl: serverUrl,
                 requireApproval: requireApproval,
                 headers: headers
+            )
+            try tool.encode(to: encoder)
+        case .computerUsePreview(let displayWidth, let displayHeight, let environment):
+            let tool = ResponseComputerUseTool(
+                displayWidth: displayWidth,
+                displayHeight: displayHeight,
+                environment: environment
             )
             try tool.encode(to: encoder)
         case .function(let function):
@@ -99,15 +115,15 @@ public struct ResponseWebSearchTool: Codable {
 /// File search tool
 public struct ResponseFileSearchTool: Codable {
     public let type: String = "file_search"
-    public let vectorStoreId: String
+    public let vectorStoreIds: [String]
     
-    public init(vectorStoreId: String) {
-        self.vectorStoreId = vectorStoreId
+    public init(vectorStoreIds: [String]) {
+        self.vectorStoreIds = vectorStoreIds
     }
     
     enum CodingKeys: String, CodingKey {
         case type
-        case vectorStoreId = "vector_store_id"
+        case vectorStoreIds = "vector_store_ids"
     }
 }
 
@@ -129,8 +145,19 @@ public struct ResponseImageGenerationTool: Codable {
 /// Code interpreter tool
 public struct ResponseCodeInterpreterTool: Codable {
     public let type: String = "code_interpreter"
-    
-    public init() {}
+    public let container: CodeInterpreterContainer
+
+    public init(container: CodeInterpreterContainer = CodeInterpreterContainer()) {
+        self.container = container
+    }
+
+    public struct CodeInterpreterContainer: Codable {
+        public let type: String
+
+        public init(type: String = "auto") {
+            self.type = type
+        }
+    }
 }
 
 /// MCP (Model Context Protocol) tool
@@ -163,13 +190,52 @@ public struct ResponseMCPTool: Codable {
 }
 
 /// Function tool (custom functions)
+/// Note: The Responses API uses a flat structure where function properties
+/// are at the top level, unlike Chat Completions which nests them in "function"
 public struct ResponseFunctionTool: Codable {
     public let type: String = "function"
-    public let function: ToolFunction
-    
+    public let name: String
+    public let description: String?
+    public let parameters: Parameters
+    public let strict: Bool
+
     public init(function: ToolFunction) {
-        self.function = function
+        self.name = function.name
+        self.description = function.description
+        self.parameters = function.parameters
+        self.strict = function.strict
+    }
+
+    public init(name: String, description: String? = nil, parameters: Parameters, strict: Bool = true) {
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+        self.strict = strict
+    }
+
+    /// For decoding, reconstruct the ToolFunction
+    public var function: ToolFunction {
+        ToolFunction(name: name, description: description, parameters: parameters, strict: strict)
     }
 }
 
- 
+/// Computer use preview tool
+public struct ResponseComputerUseTool: Codable {
+    public let type: String = "computer_use_preview"
+    public let displayWidth: Int
+    public let displayHeight: Int
+    public let environment: String?
+
+    public init(displayWidth: Int, displayHeight: Int, environment: String? = nil) {
+        self.displayWidth = displayWidth
+        self.displayHeight = displayHeight
+        self.environment = environment
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case displayWidth = "display_width"
+        case displayHeight = "display_height"
+        case environment
+    }
+}

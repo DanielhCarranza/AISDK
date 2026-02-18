@@ -2,6 +2,8 @@
 
 This guide will help you get up and running with AISDK in your Swift project.
 
+> **Note:** This guide covers AISDK 2.0 APIs. Legacy 1.x APIs (`Agent`, `LLM`, `Tool`, `ChatMessage`) are deprecated and will be removed in a future release. If you're migrating from 1.x, see the [Migration Guide](../../../docs/MIGRATION-GUIDE.md).
+
 ## Prerequisites
 
 - Xcode 15.0 or later
@@ -13,15 +15,15 @@ This guide will help you get up and running with AISDK in your Swift project.
 
 ### Swift Package Manager
 
-1. In Xcode, select **File → Add Package Dependencies**
+1. In Xcode, select **File -> Add Package Dependencies**
 2. Enter the repository URL: `https://github.com/yourusername/AISDK.git`
 3. Select the version rule (e.g., "Up to Next Major Version")
 4. Choose the products you need:
-   - ✅ `AISDK` - Core functionality (required)
-   - ⬜ `AISDKChat` - Chat UI components
-   - ⬜ `AISDKVoice` - Native voice features
-   - ⬜ `AISDKVision` - LiveKit vision features
-   - ⬜ `AISDKResearch` - Research capabilities
+   - `AISDK` - Core functionality (required)
+   - `AISDKChat` - Chat UI components
+   - `AISDKVoice` - Native voice features
+   - `AISDKVision` - LiveKit vision features
+   - `AISDKResearch` - Research capabilities
 
 ### Package.swift
 
@@ -29,7 +31,7 @@ If you're using Package.swift directly:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/AISDK.git", from: "1.0.0")
+    .package(url: "https://github.com/yourusername/AISDK.git", from: "2.0.0")
 ],
 targets: [
     .target(
@@ -50,15 +52,18 @@ targets: [
 ```swift
 import AISDK
 
-// Set up your API key
-let agent = try Agent(
-    model: .gpt4o,
+// Create a provider client
+let client = OpenRouterClient(apiKey: "your-api-key")
+
+// Create an agent
+let agent = AIAgentActor(
+    model: client,
     instructions: "You are a helpful assistant."
 )
 
 // Send a message
-let response = try await agent.send("Hello! How are you?")
-print(response.content)
+let result = try await agent.execute(messages: [.user("Hello! How are you?")])
+print(result.text)
 ```
 
 ### 2. Chat Interface with UI
@@ -79,15 +84,16 @@ struct ChatApp: App {
 
 struct ContentView: View {
     @State private var chatManager: AIChatManager
-    
+
     init() {
-        let agent = try! Agent(model: .gpt4o)
+        let client = OpenRouterClient()
+        let agent = AIAgentActor(model: client)
         _chatManager = State(initialValue: AIChatManager(
             agent: agent,
             storage: MemoryStorage()
         ))
     }
-    
+
     var body: some View {
         ChatCompanionView(manager: chatManager)
     }
@@ -101,11 +107,11 @@ struct ContentView: View {
 struct WeatherTool: RenderableTool {
     let name = "get_weather"
     let description = "Get the current weather with visual display"
-    
-    @Parameter(description: "The city to get weather for")
+
+    @AIParameter(description: "The city to get weather for")
     var city: String = ""
-    
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+
+    func execute() async throws -> AIToolResult {
         // Fetch weather data (mock for example)
         let weatherData = WeatherData(
             city: city,
@@ -113,32 +119,32 @@ struct WeatherTool: RenderableTool {
             condition: "Sunny",
             icon: "sun.max.fill"
         )
-        
+
         let jsonData = try JSONEncoder().encode(weatherData)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        
-        return ("It's 72°F and sunny in \(city)", metadata)
+
+        return AIToolResult(content: "It's 72F and sunny in \(city)", metadata: metadata)
     }
-    
+
     func render(from data: Data) -> AnyView {
         let weather = try? JSONDecoder().decode(WeatherData.self, from: data)
-        
+
         return AnyView(
             VStack(spacing: 12) {
                 HStack {
                     Image(systemName: weather?.icon ?? "sun.max.fill")
                         .font(.system(size: 40))
                         .foregroundStyle(.yellow)
-                    
+
                     VStack(alignment: .leading) {
                         Text(weather?.city ?? "Unknown")
                             .font(.headline)
-                        Text("\(weather?.temp ?? 0)°F")
+                        Text("\(weather?.temp ?? 0)F")
                             .font(.largeTitle)
                             .bold()
                     }
                 }
-                
+
                 Text(weather?.condition ?? "")
                     .foregroundStyle(.secondary)
             }
@@ -150,8 +156,9 @@ struct WeatherTool: RenderableTool {
 }
 
 // Create agent with the tool
-let agent = try Agent(
-    model: .gpt4o,
+let client = OpenRouterClient(apiKey: "your-api-key")
+let agent = AIAgentActor(
+    model: client,
     tools: [WeatherTool.self]
 )
 
@@ -166,9 +173,13 @@ import AISDKVoice
 
 struct VoiceChatView: View {
     @StateObject private var voiceMode = AIVoiceMode()
-    @State private var agent = try! Agent(model: .gpt4o)
-    @State private var isListening = false
-    
+    private let agent: AIAgentActor
+
+    init() {
+        let client = OpenRouterClient()
+        self.agent = AIAgentActor(model: client)
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             // Transcript display
@@ -179,7 +190,7 @@ struct VoiceChatView: View {
             }
             .background(Color(.systemGray6))
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            
+
             // Audio level indicator
             if voiceMode.isRecording {
                 HStack(spacing: 4) {
@@ -192,7 +203,7 @@ struct VoiceChatView: View {
                 }
                 .frame(height: 30)
             }
-            
+
             // Voice button
             Button(action: toggleVoice) {
                 Image(systemName: voiceMode.isRecording ? "mic.fill" : "mic")
@@ -204,7 +215,7 @@ struct VoiceChatView: View {
         }
         .padding()
     }
-    
+
     func toggleVoice() {
         if voiceMode.isRecording {
             voiceMode.stopRecording()
@@ -241,14 +252,15 @@ struct VoiceChatView: View {
 #### Option A: Environment Variable (Recommended for Development)
 
 Edit your scheme:
-1. Product → Scheme → Edit Scheme
-2. Select "Run" → "Arguments"
+1. Product -> Scheme -> Edit Scheme
+2. Select "Run" -> "Arguments"
 3. Add environment variable: `OPENAI_API_KEY` = `your-key`
 
 ```swift
 // In your code
 let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
-let agent = try Agent(model: .gpt4o(apiKey: apiKey))
+let client = OpenRouterClient(apiKey: apiKey)
+let agent = AIAgentActor(model: client)
 ```
 
 #### Option B: Secure Storage (Recommended for Production)
@@ -266,17 +278,17 @@ enum KeychainHelper {
         ]
         SecItemAdd(query as CFDictionary, nil)
     }
-    
+
     static func load(key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true
         ]
-        
+
         var result: AnyObject?
         SecItemCopyMatching(query as CFDictionary, &result)
-        
+
         if let data = result as? Data {
             return String(data: data, encoding: .utf8)
         }
@@ -295,65 +307,57 @@ import SwiftUI
 
 @Observable
 class AIManager {
-    let agent: Agent
-    var messages: [ChatMessage] = []
+    let agent: AIAgentActor
+    var messages: [AIMessage] = []
     var isLoading = false
     var error: Error?
-    
-    init() throws {
-        // Initialize with model
-        self.agent = try Agent(
-            model: .gpt4o,
+
+    init() {
+        let client = OpenRouterClient()
+        self.agent = AIAgentActor(
+            model: client,
             instructions: """
                 You are a helpful AI assistant. Be concise and friendly.
                 Format your responses using markdown when appropriate.
                 """
         )
     }
-    
+
     func sendMessage(_ content: String) async {
-        // Create user message
-        let userMessage = ChatMessage(message: .user(content: .text(content)))
-        messages.append(userMessage)
-        
+        messages.append(.user(content))
+
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
-            // Send to agent and get response
-            let response = try await agent.send(content)
-            messages.append(response)
+            let result = try await agent.execute(messages: messages)
+            messages.append(.assistant(result.text))
         } catch {
             self.error = error
-            // Add error message
-            let errorMessage = ChatMessage(
-                message: .assistant(content: .text("Error: \(error.localizedDescription)"))
-            )
-            messages.append(errorMessage)
+            messages.append(.assistant("Error: \(error.localizedDescription)"))
         }
     }
-    
+
     func sendStreamingMessage(_ content: String) async {
-        let userMessage = ChatMessage(message: .user(content: .text(content)))
-        messages.append(userMessage)
-        
-        // Create placeholder for assistant message
-        var assistantMessage = ChatMessage(
-            message: .assistant(content: .text("")),
-            isPending: true
-        )
-        messages.append(assistantMessage)
-        
+        messages.append(.user(content))
+
+        var streamedText = ""
+
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
-            for try await chunk in agent.sendStream(userMessage) {
-                // Update the assistant message content
-                if let index = messages.firstIndex(where: { $0.id == assistantMessage.id }) {
-                    messages[index] = chunk
+            for try await event in agent.streamExecute(messages: messages) {
+                switch event {
+                case .textDelta(let text):
+                    streamedText += text
+                case .finish:
+                    break
+                default:
+                    break
                 }
             }
+            messages.append(.assistant(streamedText))
         } catch {
             self.error = error
         }
@@ -371,10 +375,10 @@ import AISDK
 import MarkdownUI
 
 struct ContentView: View {
-    @State private var aiManager = try! AIManager()
+    @State private var aiManager = AIManager()
     @State private var inputText = ""
     @FocusState private var isInputFocused: Bool
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -382,11 +386,11 @@ struct ContentView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
-                            ForEach(aiManager.messages) { message in
+                            ForEach(Array(aiManager.messages.enumerated()), id: \.offset) { index, message in
                                 MessageRow(message: message)
-                                    .id(message.id)
+                                    .id(index)
                             }
-                            
+
                             if aiManager.isLoading {
                                 HStack {
                                     ProgressView()
@@ -402,13 +406,13 @@ struct ContentView: View {
                     }
                     .onChange(of: aiManager.messages.count) { _, _ in
                         withAnimation {
-                            proxy.scrollTo(aiManager.messages.last?.id, anchor: .bottom)
+                            proxy.scrollTo(aiManager.messages.count - 1, anchor: .bottom)
                         }
                     }
                 }
-                
+
                 Divider()
-                
+
                 // Input area
                 HStack(alignment: .bottom, spacing: 8) {
                     TextField("Type a message...", text: $inputText, axis: .vertical)
@@ -422,7 +426,7 @@ struct ContentView: View {
                         .onSubmit {
                             sendMessage()
                         }
-                    
+
                     Button(action: sendMessage) {
                         Image(systemName: "paperplane.fill")
                             .foregroundStyle(.white)
@@ -438,13 +442,13 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-    
+
     private func sendMessage() {
         let message = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
-        
+
         inputText = ""
-        
+
         Task {
             // Use streaming for better UX
             await aiManager.sendStreamingMessage(message)
@@ -453,45 +457,28 @@ struct ContentView: View {
 }
 
 struct MessageRow: View {
-    let message: ChatMessage
-    
+    let message: AIMessage
+
     private var isUser: Bool {
-        if case .user = message.message {
-            return true
-        }
-        return false
+        message.role == .user
     }
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if isUser {
                 Spacer(minLength: 60)
             }
-            
+
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-                // Message content
-                if message.content.isEmpty && message.isPending {
-                    TypingIndicator()
-                } else {
-                    Markdown(message.content)
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(isUser ? Color.blue : Color(.systemGray5))
-                        )
-                        .foregroundStyle(isUser ? .white : .primary)
-                }
-                
-                // Tool UI rendering
-                if let metadata = message.metadata?.first,
-                   let renderMetadata = metadata.metadata as? RenderMetadata,
-                   let toolType = ToolRegistry.getToolType(for: renderMetadata.toolName),
-                   let renderable = toolType.init() as? RenderableTool {
-                    renderable.render(from: renderMetadata.jsonData)
-                        .padding(.top, 8)
-                }
+                Markdown(message.textContent ?? "")
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(isUser ? Color.blue : Color(.systemGray5))
+                    )
+                    .foregroundStyle(isUser ? .white : .primary)
             }
-            
+
             if !isUser {
                 Spacer(minLength: 60)
             }
@@ -501,7 +488,7 @@ struct MessageRow: View {
 
 struct TypingIndicator: View {
     @State private var animationAmount = 0.0
-    
+
     var body: some View {
         HStack(spacing: 4) {
             ForEach(0..<3) { index in
@@ -559,11 +546,11 @@ struct StockData: Codable {
 struct WeatherTool: RenderableTool {
     let name = "get_weather"
     let description = "Get current weather for a location"
-    
-    @Parameter(description: "City name")
+
+    @AIParameter(description: "City name")
     var location: String = ""
-    
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+
+    func execute() async throws -> AIToolResult {
         // Mock weather data - replace with real API
         let weather = WeatherData(
             city: location,
@@ -573,26 +560,26 @@ struct WeatherTool: RenderableTool {
             humidity: Int.random(in: 40...80),
             windSpeed: Double.random(in: 5...20)
         )
-        
+
         let jsonData = try JSONEncoder().encode(weather)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        
+
         let description = """
         Current weather in \(weather.city):
-        • Temperature: \(weather.temp)°F
-        • Condition: \(weather.condition)
-        • Humidity: \(weather.humidity)%
-        • Wind: \(String(format: "%.1f", weather.windSpeed)) mph
+        - Temperature: \(weather.temp)F
+        - Condition: \(weather.condition)
+        - Humidity: \(weather.humidity)%
+        - Wind: \(String(format: "%.1f", weather.windSpeed)) mph
         """
-        
+
         return (description, metadata)
     }
-    
+
     func render(from data: Data) -> AnyView {
         guard let weather = try? JSONDecoder().decode(WeatherData.self, from: data) else {
             return AnyView(EmptyView())
         }
-        
+
         return AnyView(
             VStack(spacing: 16) {
                 // Header
@@ -605,19 +592,19 @@ struct WeatherTool: RenderableTool {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                     Spacer()
-                    
+
                     Image(systemName: weather.icon)
                         .font(.system(size: 50))
                         .symbolRenderingMode(.multicolor)
                 }
-                
+
                 // Temperature
-                Text("\(weather.temp)°")
+                Text("\(weather.temp)")
                     .font(.system(size: 60, weight: .thin))
                     .frame(maxWidth: .infinity)
-                
+
                 // Details
                 HStack(spacing: 20) {
                     Label("\(weather.humidity)%", systemImage: "humidity.fill")
@@ -644,15 +631,15 @@ struct WeatherTool: RenderableTool {
 struct StockTool: RenderableTool {
     let name = "get_stock_price"
     let description = "Get current stock price and information"
-    
-    @Parameter(description: "Stock symbol (e.g., AAPL)")
+
+    @AIParameter(description: "Stock symbol (e.g., AAPL)")
     var symbol: String = ""
-    
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+
+    func execute() async throws -> AIToolResult {
         // Mock stock data - replace with real API
         let basePrice = Double.random(in: 100...500)
         let change = Double.random(in: -10...10)
-        
+
         let stock = StockData(
             symbol: symbol.uppercased(),
             price: basePrice,
@@ -660,30 +647,30 @@ struct StockTool: RenderableTool {
             changePercent: (change / basePrice) * 100,
             volume: Int.random(in: 1000000...50000000)
         )
-        
+
         let jsonData = try JSONEncoder().encode(stock)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        
+
         let changeSign = stock.change >= 0 ? "+" : ""
         let description = """
         \(stock.symbol) Stock Information:
-        • Price: $\(String(format: "%.2f", stock.price))
-        • Change: \(changeSign)$\(String(format: "%.2f", stock.change)) (\(changeSign)\(String(format: "%.2f", stock.changePercent))%)
-        • Volume: \(formatNumber(stock.volume))
+        - Price: $\(String(format: "%.2f", stock.price))
+        - Change: \(changeSign)$\(String(format: "%.2f", stock.change)) (\(changeSign)\(String(format: "%.2f", stock.changePercent))%)
+        - Volume: \(formatNumber(stock.volume))
         """
-        
+
         return (description, metadata)
     }
-    
+
     func render(from data: Data) -> AnyView {
         guard let stock = try? JSONDecoder().decode(StockData.self, from: data) else {
             return AnyView(EmptyView())
         }
-        
+
         let isPositive = stock.change >= 0
         let changeColor = isPositive ? Color.green : Color.red
         let changeIcon = isPositive ? "arrow.up.right" : "arrow.down.right"
-        
+
         return AnyView(
             VStack(alignment: .leading, spacing: 12) {
                 // Symbol and price
@@ -691,14 +678,14 @@ struct StockTool: RenderableTool {
                     Text(stock.symbol)
                         .font(.title2)
                         .bold()
-                    
+
                     Spacer()
-                    
+
                     VStack(alignment: .trailing) {
                         Text("$\(String(format: "%.2f", stock.price))")
                             .font(.title)
                             .bold()
-                        
+
                         HStack(spacing: 4) {
                             Image(systemName: changeIcon)
                                 .font(.caption)
@@ -709,7 +696,7 @@ struct StockTool: RenderableTool {
                         .foregroundStyle(changeColor)
                     }
                 }
-                
+
                 // Volume
                 HStack {
                     Text("Volume")
@@ -725,7 +712,7 @@ struct StockTool: RenderableTool {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         )
     }
-    
+
     private func formatNumber(_ number: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -734,20 +721,16 @@ struct StockTool: RenderableTool {
     }
 }
 
-// Register tools
-extension AIManager {
-    convenience init() throws {
-        let agent = try Agent(
-            model: .gpt4(apiKey: "your-key"),
-            tools: [WeatherTool.self, StockTool.self],
-            instructions: """
-                You are a helpful assistant with access to weather and stock information.
-                When users ask about weather or stocks, use the appropriate tools.
-                """
-        )
-        try self.init(agent: agent)
-    }
-}
+// Create agent with tools
+let client = OpenRouterClient(apiKey: "your-key")
+let agent = AIAgentActor(
+    model: client,
+    tools: [WeatherTool.self, StockTool.self],
+    instructions: """
+        You are a helpful assistant with access to weather and stock information.
+        When users ask about weather or stocks, use the appropriate tools.
+        """
+)
 ```
 
 ## Common Patterns
@@ -762,40 +745,40 @@ import AISDKChat
 class UserDefaultsStorage: ChatStorageProtocol {
     private let userDefaults = UserDefaults.standard
     private let sessionsKey = "chat_sessions"
-    
+
     func save(session: ChatSession) async throws {
         var sessions = try await list()
-        
+
         if let index = sessions.firstIndex(where: { $0.id == session.id }) {
             sessions[index] = session
         } else {
             sessions.append(session)
         }
-        
+
         let data = try JSONEncoder().encode(sessions)
         userDefaults.set(data, forKey: sessionsKey)
     }
-    
+
     func load(id: String) async throws -> ChatSession? {
         let sessions = try await list()
         return sessions.first { $0.id == id }
     }
-    
+
     func delete(id: String) async throws {
         var sessions = try await list()
         sessions.removeAll { $0.id == id }
-        
+
         let data = try JSONEncoder().encode(sessions)
         userDefaults.set(data, forKey: sessionsKey)
     }
-    
+
     func list() async throws -> [ChatSession] {
         guard let data = userDefaults.data(forKey: sessionsKey) else {
             return []
         }
         return try JSONDecoder().decode([ChatSession].self, from: data)
     }
-    
+
     // Additional protocol methods...
 }
 ```
@@ -803,13 +786,25 @@ class UserDefaultsStorage: ChatStorageProtocol {
 ### Pattern 2: Error Handling with Retry
 
 ```swift
-class RobustAIManager: AIManager {
+@Observable
+class RobustAIManager {
+    let agent: AIAgentActor
+    var messages: [AIMessage] = []
+    var error: Error?
+
+    init() {
+        let client = OpenRouterClient()
+        self.agent = AIAgentActor(model: client)
+    }
+
     func sendMessageWithRetry(_ content: String, maxRetries: Int = 3) async {
+        messages.append(.user(content))
         var retries = 0
-        
+
         while retries < maxRetries {
             do {
-                try await sendMessage(content)
+                let result = try await agent.execute(messages: messages)
+                messages.append(.assistant(result.text))
                 return
             } catch AISDKError.rateLimitExceeded {
                 // Wait before retry
@@ -824,7 +819,7 @@ class RobustAIManager: AIManager {
                 return
             }
         }
-        
+
         self.error = AISDKError.networkError(
             NSError(domain: "AISDK", code: -1, userInfo: [
                 NSLocalizedDescriptionKey: "Failed after \(maxRetries) retries"
@@ -841,8 +836,13 @@ import AISDKVoice
 
 struct VoiceAssistantView: View {
     @StateObject private var voiceMode = AIVoiceMode()
-    @State private var agent = try! Agent(model: .gpt4(apiKey: "your-key"))
-    
+    private let agent: AIAgentActor
+
+    init() {
+        let client = OpenRouterClient(apiKey: "your-key")
+        self.agent = AIAgentActor(model: client)
+    }
+
     var body: some View {
         ZStack {
             // Background gradient
@@ -852,7 +852,7 @@ struct VoiceAssistantView: View {
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
-            
+
             VStack(spacing: 30) {
                 // Animated waveform
                 if voiceMode.isRecording {
@@ -860,7 +860,7 @@ struct VoiceAssistantView: View {
                         .frame(height: 100)
                         .padding(.horizontal)
                 }
-                
+
                 // Transcript
                 ScrollView {
                     Text(voiceMode.transcript)
@@ -869,7 +869,7 @@ struct VoiceAssistantView: View {
                         .padding()
                 }
                 .frame(maxHeight: 300)
-                
+
                 // Voice button
                 VoiceButton(isRecording: voiceMode.isRecording) {
                     toggleVoice()
@@ -878,7 +878,7 @@ struct VoiceAssistantView: View {
             .padding()
         }
     }
-    
+
     func toggleVoice() {
         Task {
             if voiceMode.isRecording {
@@ -893,16 +893,16 @@ struct VoiceAssistantView: View {
 struct WaveformView: View {
     let audioLevel: Float
     @State private var phase = 0.0
-    
+
     var body: some View {
         GeometryReader { geometry in
             Path { path in
                 let width = geometry.size.width
                 let height = geometry.size.height
                 let midHeight = height / 2
-                
+
                 path.move(to: CGPoint(x: 0, y: midHeight))
-                
+
                 for x in stride(from: 0, through: width, by: 2) {
                     let relativeX = x / width
                     let sine = sin((relativeX + phase) * .pi * 4)
@@ -930,14 +930,14 @@ struct WaveformView: View {
 struct VoiceButton: View {
     let isRecording: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             ZStack {
                 Circle()
                     .fill(isRecording ? Color.red : Color.blue)
                     .frame(width: 80, height: 80)
-                
+
                 if isRecording {
                     Circle()
                         .stroke(Color.red.opacity(0.3), lineWidth: 4)
@@ -950,7 +950,7 @@ struct VoiceButton: View {
                             value: isRecording
                         )
                 }
-                
+
                 Image(systemName: isRecording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 30))
                     .foregroundStyle(.white)
@@ -1007,9 +1007,9 @@ struct VoiceButton: View {
    ```swift
    // Check environment variable
    print(ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "Not set")
-   
+
    // Verify in scheme editor
-   // Product → Scheme → Edit Scheme → Arguments
+   // Product -> Scheme -> Edit Scheme -> Arguments
    ```
 
 2. **Voice Permission Denied**
@@ -1017,7 +1017,7 @@ struct VoiceButton: View {
    // Add to Info.plist
    <key>NSMicrophoneUsageDescription</key>
    <string>This app needs microphone access for voice chat</string>
-   
+
    <key>NSSpeechRecognitionUsageDescription</key>
    <string>This app needs speech recognition for voice input</string>
    ```
@@ -1025,8 +1025,8 @@ struct VoiceButton: View {
 3. **Tool Not Executing**
    ```swift
    // Verify tool registration
-   print(ToolRegistry.registeredTools)
-   
+   print(AIToolRegistry.registeredTools)
+
    // Check tool name matches
    let tool = WeatherTool()
    print("Tool name: \(tool.name)")
@@ -1038,7 +1038,7 @@ struct VoiceButton: View {
    if let renderable = tool as? RenderableTool {
        // Tool can render UI
    }
-   
+
    // Check metadata is being passed
    print("Metadata: \(String(describing: message.metadata))")
    ```
@@ -1048,4 +1048,4 @@ struct VoiceButton: View {
 - GitHub Issues: [github.com/yourusername/AISDK/issues](https://github.com/yourusername/AISDK/issues)
 - Discord Community: [discord.gg/aisdk](https://discord.gg/aisdk)
 - Documentation: [docs.aisdk.dev](https://docs.aisdk.dev)
-- Stack Overflow: Tag with `aisdk-swift` 
+- Stack Overflow: Tag with `aisdk-swift`

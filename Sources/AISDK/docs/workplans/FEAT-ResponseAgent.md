@@ -33,7 +33,7 @@ public class ResponseAgent {
     // Core initialization with local storage by default
     init(
         llm: OpenAIProvider, 
-        tools: [Tool.Type] = [], 
+        tools: [AITool.Type] = [], 
         instructions: String? = nil,
         storage: ResponseAgentStorage? = LocalStorage() // Default to local storage
     )
@@ -114,8 +114,8 @@ public class ResponseAgent {
    ```
 
 4. **Custom Tool Call Handling (Using Proven Agent Pattern)**:
-   - **Tool Registration**: Use existing ToolRegistry system from baseline Agent
-   - **Parameter Validation**: Use existing `validateAndSetParameters()` method from Tool protocol
+   - **Tool Registration**: Use existing AIToolRegistry system from baseline Agent
+   - **Parameter Validation**: Use existing `validateAndSetParameters()` method from AITool protocol
    - **Non-Streaming**: 
      1. Convert custom tools to `ResponseTool.function()` format → send to OpenAI API
      2. API returns `functionCall` chunks → ResponseAgent intercepts and processes
@@ -178,11 +178,11 @@ public class ResponseAgent {
   - `ConversationData.swift` - Data model inspired by ChatSession structure
   - `ToolConflictDetector.swift` - Tool name conflict detection and warnings
   - `ResponseResult.swift` - Unified result type for streaming/non-streaming responses
-  - `CustomToolHandler.swift` - Handle custom tool calls using existing ToolRegistry and validateAndSetParameters
+  - `CustomToolHandler.swift` - Handle custom tool calls using existing AIToolRegistry and validateAndSetParameters
   
 - **Enhanced Components**:
   - `AgentState.swift` - Add Response-specific states (.backgroundProcessing, .toolExecuting, etc.)
-  - `ToolRegistry.swift` - Enhanced with Response API tool conversion
+  - `AIToolRegistry.swift` - Enhanced with Response API tool conversion
   - Documentation in `docs/Agents/ResponseAgentUsage.md`
   
 - **Integration Points**:
@@ -196,7 +196,7 @@ public class ResponseAgent {
 ## Dependencies
 - OpenAI Responses API implementation (already exists) ✅
 - Tool system with metadata support and validateAndSetParameters (already exists) ✅
-- ToolRegistry for tool lookup and registration (already exists) ✅
+- AIToolRegistry for tool lookup and registration (already exists) ✅
 - AIInputMessage universal message system (already exists) ✅
 - AIMessage+ResponseConversions multimodal conversion (already exists) ✅
 - OpenAI model capability detection (already exists) ✅
@@ -204,7 +204,7 @@ public class ResponseAgent {
 - Multi-conversation management (need to create) 📝
 - Background task state management (need to create) 📝
 - Tool conflict detection (need to create) 📝
-- Custom tool handling using existing ToolRegistry and validateAndSetParameters (need to create) 📝
+- Custom tool handling using existing AIToolRegistry and validateAndSetParameters (need to create) 📝
 - ConversationData model inspired by ChatSession (need to create) 📝
 
 ## Implementation Checklist
@@ -218,7 +218,7 @@ public class ResponseAgent {
 - [ ] Create `LocalStorage.swift` implementation (DEFAULT) for local file system persistence
 - [ ] Create `NoStorage.swift` implementation for no conversation persistence
 - [ ] Implement `ResponseResult.swift` for unified streaming/non-streaming responses
-- [ ] Create `CustomToolHandler.swift` to intercept and execute custom tool calls using existing ToolRegistry
+- [ ] Create `CustomToolHandler.swift` to intercept and execute custom tool calls using existing AIToolRegistry
 - [ ] Integrate existing `validateAndSetParameters()` pattern from baseline Agent for parameter validation
 - [ ] Add custom tool call handling for both streaming and non-streaming scenarios using proven Agent approach
 - [ ] Implement tool conflict detection and warnings between custom and built-in tools
@@ -269,7 +269,7 @@ public class ResponseAgent {
 - [ ] Test conversation cleanup and archival
 - [ ] Test AIMessage+ResponseConversions multimodal conversion accuracy
 - [ ] Test custom tool parameter validation using existing validateAndSetParameters pattern
-- [ ] Verify tool execution flow matches baseline Agent behavior (ToolRegistry, parameter validation, execution)
+- [ ] Verify tool execution flow matches baseline Agent behavior (AIToolRegistry, parameter validation, execution)
 
 ### Manual Verification
 - [ ] Compare response quality and capabilities vs. Agent
@@ -367,7 +367,7 @@ for try await chunk in agent.send(message, streaming: true, conversationId: conv
 ### Custom Tool Call Handling (Using Proven Agent Pattern)
 
 ```swift
-// Custom tools registered using existing ToolRegistry system
+// Custom tools registered using existing AIToolRegistry system
 let agent = ResponseAgent(
     llm: OpenAIProvider(model: OpenAIModels.gpt4o),
     tools: [WeatherTool.self, CalculatorTool.self, SearchTool.self]
@@ -411,7 +411,7 @@ for try await chunk in agent.send("Calculate 15 * 23 and search for Paris weathe
 // 1. User message → ResponseAgent converts tools using Tool.jsonSchema()
 // 2. OpenAI API calls function → sends functionCall chunk with arguments
 // 3. ResponseAgent intercepts and executes:
-//    - Find tool: ToolRegistry.toolType(forName: toolName)
+//    - Find tool: AIToolRegistry.toolType(forName: toolName)
 //    - Create: var tool = toolType.init()
 //    - Validate: tool = try tool.validateAndSetParameters(argumentsData)
 //    - Execute: let (response, metadata) = try await tool.execute()

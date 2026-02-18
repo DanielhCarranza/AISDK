@@ -7,8 +7,8 @@
 
 import Foundation
 
-// MARK: - Universal LLM Provider Identification
-public enum LLMProvider: String, CaseIterable {
+// MARK: - Universal LegacyLLM Provider Identification
+public enum LLMProvider: String, CaseIterable, Sendable {
     case openai = "OpenAI"
     case anthropic = "Anthropic"
     case google = "Google"
@@ -295,7 +295,7 @@ public extension LLMModelPricing {
     }
 }
 
-// MARK: - Main LLM Model Protocol
+// MARK: - Main LegacyLLM Model Protocol
 public protocol LLMModelProtocol: LLMCapable, LLMModelIdentifiable, LLMModelPerformance {
     var id: String { get }
     var aliases: [String] { get }

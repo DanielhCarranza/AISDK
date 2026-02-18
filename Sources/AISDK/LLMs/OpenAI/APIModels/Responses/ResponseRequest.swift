@@ -10,6 +10,8 @@ import Foundation
 /// Request structure for OpenAI Responses API
 /// Matches the body for POST /v1/responses
 public struct ResponseRequest: Encodable {
+    public static let minimumMaxOutputTokens = 16
+
     // Required
     public let model: String
     public let input: ResponseInput
@@ -76,6 +78,15 @@ public struct ResponseRequest: Encodable {
         self.user = user
         self.truncation = truncation
         self.text = text
+    }
+
+    /// Validates known OpenAI Responses API constraints before network submission.
+    public func validate() throws {
+        if let maxOutputTokens, maxOutputTokens < Self.minimumMaxOutputTokens {
+            throw LLMError.invalidRequest(
+                "maxOutputTokens must be at least \(Self.minimumMaxOutputTokens) for OpenAI Responses API."
+            )
+        }
     }
     
     enum CodingKeys: String, CodingKey {
@@ -191,22 +202,28 @@ public enum ResponseInput: Encodable {
 public enum ResponseInputItem: Codable {
     case message(ResponseMessage)
     case functionCallOutput(ResponseFunctionCallOutput)
+    case computerCallOutput(ResponseComputerCallOutput)
+    case computerCall(ResponseInputComputerCall)
     case mcpApprovalResponse(ResponseMCPApprovalResponse)
-    
+    case itemReference(ResponseItemReference)
+
     enum CodingKeys: String, CodingKey {
         case type
     }
-    
+
     enum ItemType: String, Codable {
         case message = "message"
         case functionCallOutput = "function_call_output"
+        case computerCallOutput = "computer_call_output"
+        case computerCall = "computer_call"
         case mcpApprovalResponse = "mcp_approval_response"
+        case itemReference = "item_reference"
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ItemType.self, forKey: .type)
-        
+
         switch type {
         case .message:
             let message = try ResponseMessage(from: decoder)
@@ -214,25 +231,81 @@ public enum ResponseInputItem: Codable {
         case .functionCallOutput:
             let output = try ResponseFunctionCallOutput(from: decoder)
             self = .functionCallOutput(output)
+        case .computerCallOutput:
+            let output = try ResponseComputerCallOutput(from: decoder)
+            self = .computerCallOutput(output)
+        case .computerCall:
+            let call = try ResponseInputComputerCall(from: decoder)
+            self = .computerCall(call)
         case .mcpApprovalResponse:
             let response = try ResponseMCPApprovalResponse(from: decoder)
             self = .mcpApprovalResponse(response)
+        case .itemReference:
+            let reference = try ResponseItemReference(from: decoder)
+            self = .itemReference(reference)
         }
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         switch self {
         case .message(let message):
             try message.encode(to: encoder)
         case .functionCallOutput(let output):
             try output.encode(to: encoder)
+        case .computerCallOutput(let output):
+            try output.encode(to: encoder)
+        case .computerCall(let call):
+            try call.encode(to: encoder)
         case .mcpApprovalResponse(let response):
             try response.encode(to: encoder)
+        case .itemReference(let reference):
+            try reference.encode(to: encoder)
         }
     }
 }
 
-/// Message input item
+/// Computer call input item for re-sending a previous computer_call in multi-turn conversations.
+public struct ResponseInputComputerCall: Codable {
+    public let type: String
+    public let id: String
+    public let callId: String
+    public let action: ResponseOutputComputerCall.ComputerCallAction
+    public let pendingSafetyChecks: [ResponseOutputComputerCall.PendingSafetyCheck]
+    public let status: String
+
+    public init(
+        id: String,
+        callId: String,
+        action: ResponseOutputComputerCall.ComputerCallAction,
+        pendingSafetyChecks: [ResponseOutputComputerCall.PendingSafetyCheck] = [],
+        status: String = "completed"
+    ) {
+        self.type = "computer_call"
+        self.id = id
+        self.callId = callId
+        self.action = action
+        self.pendingSafetyChecks = pendingSafetyChecks
+        self.status = status
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, id, action, status
+        case callId = "call_id"
+        case pendingSafetyChecks = "pending_safety_checks"
+    }
+}
+
+/// Item reference for compacted items
+public struct ResponseItemReference: Codable {
+    public let type: String = "item_reference"
+    public let id: String
+
+    public init(id: String) {
+        self.id = id
+    }
+}
+
+/// LegacyMessage input item
 public struct ResponseMessage: Codable {
     public let type: String = "message"
     public let role: String
@@ -262,6 +335,48 @@ public struct ResponseFunctionCallOutput: Codable {
     }
 }
 
+/// Computer call output item (result of executing a computer use action)
+public struct ResponseComputerCallOutput: Codable {
+    public let type: String = "computer_call_output"
+    public let callId: String
+    public let output: ComputerCallOutputContent
+    public let acknowledgedSafetyChecks: [AcknowledgedSafetyCheck]?
+
+    public init(callId: String, output: ComputerCallOutputContent, acknowledgedSafetyChecks: [AcknowledgedSafetyCheck]? = nil) {
+        self.callId = callId
+        self.output = output
+        self.acknowledgedSafetyChecks = acknowledgedSafetyChecks
+    }
+
+    public struct ComputerCallOutputContent: Codable {
+        public let type: String
+        public let imageUrl: String?
+
+        public init(type: String = "computer_screenshot", imageUrl: String? = nil) {
+            self.type = type
+            self.imageUrl = imageUrl
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case imageUrl = "image_url"
+        }
+    }
+
+    public struct AcknowledgedSafetyCheck: Codable {
+        public let id: String
+        public let code: String
+        public let message: String
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case callId = "call_id"
+        case output
+        case acknowledgedSafetyChecks = "acknowledged_safety_checks"
+    }
+}
+
 /// MCP approval response item
 public struct ResponseMCPApprovalResponse: Codable {
     public let type: String = "mcp_approval_response"
@@ -283,20 +398,22 @@ public struct ResponseMCPApprovalResponse: Codable {
 public enum ResponseContentItem: Codable {
     case inputText(ResponseInputText)
     case inputImage(ResponseInputImage)
-    
+    case inputFile(ResponseInputFile)
+
     enum CodingKeys: String, CodingKey {
         case type
     }
-    
+
     enum ContentType: String, Codable {
         case inputText = "input_text"
         case inputImage = "input_image"
+        case inputFile = "input_file"
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ContentType.self, forKey: .type)
-        
+
         switch type {
         case .inputText:
             let text = try ResponseInputText(from: decoder)
@@ -304,16 +421,36 @@ public enum ResponseContentItem: Codable {
         case .inputImage:
             let image = try ResponseInputImage(from: decoder)
             self = .inputImage(image)
+        case .inputFile:
+            let file = try ResponseInputFile(from: decoder)
+            self = .inputFile(file)
         }
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         switch self {
         case .inputText(let text):
             try text.encode(to: encoder)
         case .inputImage(let image):
             try image.encode(to: encoder)
+        case .inputFile(let file):
+            try file.encode(to: encoder)
         }
+    }
+}
+
+/// File input content
+public struct ResponseInputFile: Codable {
+    public let type: String = "input_file"
+    public let fileId: String
+
+    public init(fileId: String) {
+        self.fileId = fileId
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case fileId = "file_id"
     }
 }
 
@@ -332,16 +469,19 @@ public struct ResponseInputImage: Codable {
     public let type: String = "input_image"
     public let imageUrl: String?
     public let fileId: String?
-    
-    public init(imageUrl: String? = nil, fileId: String? = nil) {
+    public let detail: String?
+
+    public init(imageUrl: String? = nil, fileId: String? = nil, detail: String? = nil) {
         self.imageUrl = imageUrl
         self.fileId = fileId
+        self.detail = detail
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case type
         case imageUrl = "image_url"
         case fileId = "file_id"
+        case detail
     }
 }
 

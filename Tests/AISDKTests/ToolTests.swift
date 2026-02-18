@@ -15,10 +15,10 @@ struct TestWeatherTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-        return ("Weather in \(city): 22°\(unit == "celsius" ? "C" : "F"), sunny", nil)
+        return ToolResult(content: "Weather in \(city): 22°\(unit == "celsius" ? "C" : "F"), sunny")
     }
 }
 
@@ -37,7 +37,7 @@ struct TestCalculatorTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
         case "+": result = a + b
@@ -48,7 +48,7 @@ struct TestCalculatorTool: Tool {
             result = a / b
         default: throw ToolError.executionFailed("Invalid operation")
         }
-        return ("Result: \(result)", nil)
+        return ToolResult(content: "Result: \(result)")
     }
 }
 
@@ -58,7 +58,7 @@ struct TestFailingTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         throw ToolError.executionFailed("This tool always fails")
     }
 }
@@ -75,8 +75,8 @@ struct TestParameterValidationTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        return ("Required: \(requiredParam), Optional: \(optionalParam)", nil)
+    func execute() async throws -> ToolResult {
+        return ToolResult(content: "Required: \(requiredParam), Optional: \(optionalParam)")
     }
 }
 
@@ -182,19 +182,19 @@ final class ToolTests: XCTestCase {
         var tool = TestWeatherTool()
         try tool.setParameters(from: ["city": "Paris", "unit": "celsius"])
         
-        let (content, metadata) = try await tool.execute()
+        let result = try await tool.execute()
         
-        XCTAssertEqual(content, "Weather in Paris: 22°C, sunny")
-        XCTAssertNil(metadata) // This tool doesn't return metadata
+        XCTAssertEqual(result.content, "Weather in Paris: 22°C, sunny")
+        XCTAssertNil(result.metadata) // This tool doesn't return metadata
     }
     
     func testCalculatorToolExecution() async throws {
         var tool = TestCalculatorTool()
         try tool.setParameters(from: ["a": 10.0, "b": 5.0, "operation": "+"])
         
-        let (content, _) = try await tool.execute()
+        let result = try await tool.execute()
         
-        XCTAssertEqual(content, "Result: 15.0")
+        XCTAssertEqual(result.content, "Result: 15.0")
     }
     
     func testCalculatorDivisionByZero() async throws {
@@ -216,7 +216,7 @@ final class ToolTests: XCTestCase {
     
     // MARK: - Tool Registry Tests
     
-    func testToolRegistryRegistration() {
+    func testAIToolRegistryRegistration() {
         ToolRegistry.register(tool: TestWeatherTool.self)
         
         let toolType = ToolRegistry.toolType(forName: "get_weather")
@@ -226,7 +226,7 @@ final class ToolTests: XCTestCase {
         XCTAssertEqual(tool.name, "get_weather")
     }
     
-    func testToolRegistryMultipleRegistration() {
+    func testAIToolRegistryMultipleRegistration() {
         ToolRegistry.registerAll(tools: [
             TestWeatherTool.self,
             TestCalculatorTool.self
@@ -236,7 +236,7 @@ final class ToolTests: XCTestCase {
         XCTAssertNotNil(ToolRegistry.toolType(forName: "calculate"))
     }
     
-    func testToolRegistryUnknownTool() {
+    func testAIToolRegistryUnknownTool() {
         let toolType = ToolRegistry.toolType(forName: "unknown_tool")
         XCTAssertNil(toolType)
     }

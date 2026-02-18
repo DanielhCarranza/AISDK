@@ -12,7 +12,7 @@ import Foundation
 public struct ChatCompletionRequest: Encodable {
     // Required
     public let model: String
-    public var messages: [Message]
+    public var messages: [LegacyMessage]
 
     // Optional parameters
     public var store: Bool?
@@ -46,7 +46,7 @@ public struct ChatCompletionRequest: Encodable {
     public var user: String?
     
     public init(model: String, 
-               messages: [Message],
+               messages: [LegacyMessage],
                store: Bool? = nil,
                reasoningEffort: String? = nil,
                metadata: [String: String]? = nil,

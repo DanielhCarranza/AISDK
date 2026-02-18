@@ -217,8 +217,9 @@ extension Tool {
 
 // MARK: - Built-in Tool Enum Cases
 
-/// Built-in tool enum that can be mixed with custom Tool instances
-public enum BuiltInTool: ToolConvertible {
+/// OpenAI-specific built-in tool enum that can be mixed with custom Tool instances via ResponseSession/ResponseAgent.
+/// For provider-agnostic built-in tools, use the core `BuiltInTool` enum in `AITextRequest.builtInTools`.
+public enum ResponseBuiltInTool: ToolConvertible {
     case webSearchPreview
     case codeInterpreter  
     case imageGeneration(partialImages: Int? = nil)
@@ -234,7 +235,7 @@ public enum BuiltInTool: ToolConvertible {
         case .imageGeneration(let partialImages):
             return .imageGeneration(partialImages: partialImages)
         case .fileSearch(let vectorStoreId):
-            return .fileSearch(vectorStoreId: vectorStoreId)
+            return .fileSearch(vectorStoreIds: [vectorStoreId])
         case .mcp(let serverLabel, let serverUrl, let requireApproval, let headers):
             return .mcp(serverLabel: serverLabel, serverUrl: serverUrl, requireApproval: requireApproval, headers: headers)
         }

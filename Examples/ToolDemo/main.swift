@@ -7,28 +7,33 @@ struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
     
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
+
     @Parameter(description: "City name")
     var city: String = ""
     
-    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-    var unit: String = "celsius"
+    @Parameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        print("🌤️  Getting weather for \(city) in \(unit)...")
+    func execute() async throws -> ToolResult {
+        print("🌤️  Getting weather for \(city) in \(unit.rawValue)...")
         
         // Simulate API delay
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Generate realistic weather data
-        let temps = unit == "celsius" ? (15...25) : (59...77)
+        let temps = unit == .celsius ? (15...25) : (59...77)
         let temp = Int.random(in: temps)
         let conditions = ["sunny", "partly cloudy", "cloudy", "light rain"]
         let condition = conditions.randomElement()!
         
-        let result = "Weather in \(city): \(temp)°\(unit == "celsius" ? "C" : "F"), \(condition)"
-        return (result, nil)
+        let result = "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)"
+        return ToolResult(content: result)
     }
 }
 
@@ -42,29 +47,34 @@ struct CalculatorTool: Tool {
     @Parameter(description: "Second number")
     var b: Double = 0.0
     
-    @Parameter(description: "Operation", validation: ["enum": ["+", "-", "*", "/"]])
-    var operation: String = "+"
+    enum Operation: String, Codable, CaseIterable {
+        case plus = "+"
+        case minus = "-"
+        case multiply = "*"
+        case divide = "/"
+    }
+
+    @Parameter(description: "Operation")
+    var operation: Operation = .plus
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        print("🧮 Calculating \(a) \(operation) \(b)...")
+    func execute() async throws -> ToolResult {
+        print("🧮 Calculating \(a) \(operation.rawValue) \(b)...")
         
         let result: Double
         switch operation {
-        case "+": result = a + b
-        case "-": result = a - b
-        case "*": result = a * b
-        case "/":
+        case .plus: result = a + b
+        case .minus: result = a - b
+        case .multiply: result = a * b
+        case .divide:
             guard b != 0 else { 
                 throw ToolError.executionFailed("Division by zero")
             }
             result = a / b
-        default:
-            throw ToolError.executionFailed("Invalid operation: \(operation)")
         }
         
-        return ("Result: \(a) \(operation) \(b) = \(result)", nil)
+        return ToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 
@@ -78,7 +88,7 @@ struct TimezoneTool: Tool {
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         print("🕐 Getting time for timezone: \(timezone)...")
         
         let formatter = DateFormatter()
@@ -86,7 +96,7 @@ struct TimezoneTool: Tool {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss z"
         
         let timeString = formatter.string(from: Date())
-        return ("Current time in \(timezone): \(timeString)", nil)
+        return ToolResult(content: "Current time in \(timezone): \(timeString)")
     }
 }
 
@@ -97,12 +107,12 @@ struct FileSearchTool: Tool {
     @Parameter(description: "File extension to search for")
     var fileExtension: String = ""
     
-    @Parameter(description: "Maximum number of results", validation: ["minimum": 1, "maximum": 20])
+    @Parameter(description: "Maximum number of results", .range(1...20))
     var maxResults: Int = 10
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         print("🔍 Searching for .\(fileExtension) files...")
         
         let fileManager = FileManager.default
@@ -115,10 +125,10 @@ struct FileSearchTool: Tool {
                 .prefix(maxResults)
             
             if filteredFiles.isEmpty {
-                return ("No .\(fileExtension) files found in current directory", nil)
+                return ToolResult(content: "No .\(fileExtension) files found in current directory")
             } else {
                 let fileList = filteredFiles.joined(separator: "\n• ")
-                return ("Found \(filteredFiles.count) .\(fileExtension) files:\n• \(fileList)", nil)
+                return ToolResult(content: "Found \(filteredFiles.count) .\(fileExtension) files:\n• \(fileList)")
             }
         } catch {
             throw ToolError.executionFailed("Failed to read directory: \(error.localizedDescription)")
@@ -159,8 +169,8 @@ func testDirectToolCalls() async {
         print("\n1️⃣ Testing Weather Tool:")
         var weatherTool = WeatherTool()
         try weatherTool.setParameters(from: ["city": "San Francisco", "unit": "fahrenheit"])
-        let (result, _) = try await weatherTool.execute()
-        print("✅ \(result)")
+        let result = try await weatherTool.execute()
+        print("✅ \(result.content)")
     } catch {
         print("❌ Weather tool failed: \(error)")
     }
@@ -170,8 +180,8 @@ func testDirectToolCalls() async {
         print("\n2️⃣ Testing Calculator Tool:")
         var calcTool = CalculatorTool()
         try calcTool.setParameters(from: ["a": 15.5, "b": 4.2, "operation": "*"])
-        let (result, _) = try await calcTool.execute()
-        print("✅ \(result)")
+        let result = try await calcTool.execute()
+        print("✅ \(result.content)")
     } catch {
         print("❌ Calculator tool failed: \(error)")
     }
@@ -181,22 +191,22 @@ func testDirectToolCalls() async {
         print("\n3️⃣ Testing Timezone Tool:")
         var timeTool = TimezoneTool()
         try timeTool.setParameters(from: ["timezone": "America/New_York"])
-        let (result, _) = try await timeTool.execute()
-        print("✅ \(result)")
+        let result = try await timeTool.execute()
+        print("✅ \(result.content)")
     } catch {
         print("❌ Timezone tool failed: \(error)")
     }
 }
 
 func testAgentWithTools() async {
-    print("\n🤖 Testing Agent with Tools")
+    print("\n🤖 Testing LegacyAgent with Tools")
     print("-" * 30)
     
-    // Note: This would require actual LLM provider setup
-    print("ℹ️  Agent tool integration requires LLM provider configuration")
+    // Note: This would require actual LegacyLLM provider setup
+    print("ℹ️  LegacyAgent tool integration requires LegacyLLM provider configuration")
     print("   Example usage:")
     print("""
-    let agent = try Agent(
+    let agent = try LegacyAgent(
         model: AgenticModels.gpt4,
         tools: [WeatherTool.self, CalculatorTool.self],
         instructions: "You are a helpful assistant."
@@ -215,8 +225,8 @@ func testToolErrorHandling() async {
         print("\n1️⃣ Testing Division by Zero:")
         var calcTool = CalculatorTool()
         try calcTool.setParameters(from: ["a": 10.0, "b": 0.0, "operation": "/"])
-        let (result, _) = try await calcTool.execute()
-        print("❌ Should have failed: \(result)")
+        let result = try await calcTool.execute()
+        print("❌ Should have failed: \(result.content)")
     } catch {
         print("✅ Correctly caught error: \(error)")
     }
@@ -309,26 +319,26 @@ func executeInteractiveTool(name: String, jsonString: String) async {
         case "weather":
             var tool = WeatherTool()
             let _ = try tool.validateAndSetParameters(jsonData)
-            let (result, _) = try await tool.execute()
-            print("✅ \(result)")
+            let result = try await tool.execute()
+            print("✅ \(result.content)")
             
         case "calculate":
             var tool = CalculatorTool()
             let _ = try tool.validateAndSetParameters(jsonData)
-            let (result, _) = try await tool.execute()
-            print("✅ \(result)")
+            let result = try await tool.execute()
+            print("✅ \(result.content)")
             
         case "timezone":
             var tool = TimezoneTool()
             let _ = try tool.validateAndSetParameters(jsonData)
-            let (result, _) = try await tool.execute()
-            print("✅ \(result)")
+            let result = try await tool.execute()
+            print("✅ \(result.content)")
             
         case "search":
             var tool = FileSearchTool()
             let _ = try tool.validateAndSetParameters(jsonData)
-            let (result, _) = try await tool.execute()
-            print("✅ \(result)")
+            let result = try await tool.execute()
+            print("✅ \(result.content)")
             
         default:
             print("❌ Unknown tool: \(name)")
@@ -348,18 +358,22 @@ struct AnthropicWeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a location"
     
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
+
     @Parameter(description: "City and state, e.g. San Francisco, CA")
     var location: String = ""
     
-    @Parameter(description: "Temperature unit", 
-               validation: ["enum": ["celsius", "fahrenheit"]])
-    var unit: String = "celsius"
+    @Parameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
-        let result = "Weather in \(location): 72°\(unit == "celsius" ? "C" : "F"), sunny"
-        return (result, nil)
+    func execute() async throws -> ToolResult {
+        let result = "Weather in \(location): 72°\(unit == .celsius ? "C" : "F"), sunny"
+        return ToolResult(content: result)
     }
 }
 
@@ -390,16 +404,15 @@ func runAnthropicToolsDemo() async {
         // ✅ NEW: Clean tool execution
         var tool = AnthropicWeatherTool()
         try tool.setParameters(from: mockToolUseBlock.typedInput)
-        let (result, _) = try await tool.execute()
+        let result = try await tool.execute()
         
         print("✅ Tool executed successfully")
-        print("   Result: \(result)")
+        print("   Result: \(result.content)")
         print("   Tool use ID: \(mockToolUseBlock.id)")
         print("   Tool name: \(mockToolUseBlock.name)")
     } catch {
         // ✅ NEW: Enhanced error handling
         print("❌ Tool execution failed: \(error)")
-        print("   Would create error result with isError: true flag")
     }
     
     // Example 3: Server-side tools
@@ -431,7 +444,7 @@ func runAnthropicToolsDemo() async {
     
     // ✅ NEW: Request with beta features  
     print("✅ Creating request with beta features")
-    print("   Model: claude-3-7-sonnet-20250219")
+    print("   Model: claude-sonnet-4-5-20250929")
     print("   Tools: Weather tool")
     
     // ✅ NEW: Beta features configuration

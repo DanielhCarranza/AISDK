@@ -10,6 +10,7 @@ AISDK is a powerful, modular Swift package for building AI-powered applications 
 - 💬 Complete chat management system
 - 🎙️ Native voice interactions (AVFoundation/Speech framework)
 - 👁️ LiveKit-powered vision features
+- 🎥 Video inputs for supported models (Gemini)
 - 🔬 Specialized research capabilities
 - 📱 Full multiplatform support (iOS 18+, macOS, watchOS, tvOS)
 
@@ -103,9 +104,10 @@ AISDK is organized into modular products that you can adopt as needed:
 ```swift
 import AISDK
 
-let agent = try Agent(model: .gpt4o)
-let response = try await agent.send("Hello!")
-print(response.content)
+let client = OpenRouterClient(apiKey: "your-api-key")
+let agent = AIAgentActor(model: client)
+let result = try await agent.execute(messages: [.user("Hello!")])
+print(result.text)
 ```
 
 ### Chat with UI
@@ -113,11 +115,9 @@ print(response.content)
 import AISDK
 import AISDKChat
 
-let chatManager = AIChatManager(
-    agent: try! Agent(model: .gpt4o),
-    storage: MemoryStorage()
-)
-
+let client = OpenRouterClient(apiKey: "your-api-key")
+let agent = AIAgentActor(model: client)
+let chatManager = AIChatManager(agent: agent, storage: MemoryStorage())
 ```
 
 
@@ -150,7 +150,7 @@ AIVoiceModeView(agent: agent)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/AISDK.git", from: "1.0.0")
+    .package(url: "https://github.com/yourusername/AISDK.git", from: "2.0.0")
 ]
 ```
 
@@ -169,9 +169,9 @@ graph TB
     end
     
     subgraph "AISDK Core"
-        Agent[Agent System]
-        Tools[Tool Framework]
-        LLM[LLM Providers]
+        Agent[AIAgentActor]
+        Tools[AITool Framework]
+        LLM[AILanguageModel Providers]
     end
     
     subgraph "Optional Features"
@@ -229,6 +229,7 @@ graph TB
 - Real-time video
 - Camera management
 - Agent interaction
+- Video inputs for Gemini models
 
 ### 🔬 Research Features
 - Specialized research agents

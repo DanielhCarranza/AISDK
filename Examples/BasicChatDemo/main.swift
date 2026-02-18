@@ -90,18 +90,18 @@ struct BasicChatDemo {
         print("\n✅ Demo completed!")
         
         do {
-            print("🚀 Testing Agent with OpenAI Provider...")
+            print("🚀 Testing LegacyAgent with OpenAI Provider...")
             
             // Create OpenAI provider (uses smart default: gpt-4o)
             let openai = OpenAIProvider()
             
             // Create agent with the provider
-            let agent = Agent(
+            let agent = LegacyAgent(
                 llm: openai,
                 instructions: "You are a helpful assistant."
             )
             
-            print("✅ Agent created successfully!")
+            print("✅ LegacyAgent created successfully!")
             
             // Test a conversation
             let response = try await agent.send("Hello! What's 2+2?")
@@ -138,7 +138,7 @@ func loadEnvironmentVariables() {
 
 // MARK: - Test Functions
 
-func testBasicChat(provider: LLM, providerName: String) async {
+func testBasicChat(provider: LegacyLLM, providerName: String) async {
     print("\n📝 Testing Basic Chat with \(providerName)...")
     
     do {
@@ -165,7 +165,7 @@ func testBasicChat(provider: LLM, providerName: String) async {
     }
 }
 
-func testStreamingChat(provider: LLM, providerName: String) async {
+func testStreamingChat(provider: LegacyLLM, providerName: String) async {
     print("\n🔄 Testing Streaming Chat with \(providerName)...")
     
     do {
@@ -194,11 +194,11 @@ func testStreamingChat(provider: LLM, providerName: String) async {
     }
 }
 
-func interactiveChat(provider: LLM) async {
+func interactiveChat(provider: LegacyLLM) async {
     print("\n💬 Interactive Chat Mode (type 'quit' to exit)")
     print("   Using OpenAI provider")
     
-    var conversationHistory: [Message] = [
+    var conversationHistory: [LegacyMessage] = [
         .system(content: .text("You are a helpful assistant."))
     ]
     
@@ -252,14 +252,14 @@ func interactiveChat(provider: LLM) async {
 
 // MARK: - Multimodal Test Functions (Phase 1)
 
-func testImageURL(provider: LLM, providerName: String) async {
+func testImageURL(provider: LegacyLLM, providerName: String) async {
     print("\n🖼️ Testing Image URL + Text with \(providerName)...")
     
     do {
         let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .parts([
                     .text("What do you see in this image? Describe it in detail."),
@@ -284,7 +284,7 @@ func testImageURL(provider: LLM, providerName: String) async {
     }
 }
 
-func testImageBase64(provider: LLM, providerName: String) async {
+func testImageBase64(provider: LegacyLLM, providerName: String) async {
     print("\n📸 Testing Base64 Image + Text with \(providerName)...")
     
     do {
@@ -295,7 +295,7 @@ func testImageBase64(provider: LLM, providerName: String) async {
         }
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .parts([
                     .text("This is a programmatically generated test image. What colors and shapes do you see?"),
@@ -320,7 +320,7 @@ func testImageBase64(provider: LLM, providerName: String) async {
     }
 }
 
-func testMultipleImages(provider: LLM, providerName: String) async {
+func testMultipleImages(provider: LegacyLLM, providerName: String) async {
     print("\n🖼️🖼️ Testing Multiple Images with \(providerName)...")
     
     do {
@@ -328,7 +328,7 @@ func testMultipleImages(provider: LLM, providerName: String) async {
         let imageURL2 = "https://media1.popsugar-assets.com/files/thumbor/gFMaLiceRbGWkZUWwl2Xhkft6eU=/0x159:2003x2162/fit-in/2011x2514/filters:format_auto():quality(85):upscale()/2019/08/07/875/n/24155406/9ffb00255d4b2e079b0b23.01360060_.jpg"
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .parts([
                     .text("Compare these two images. What are the similarities and differences?"),
@@ -356,12 +356,12 @@ func testMultipleImages(provider: LLM, providerName: String) async {
 
 // MARK: - JSON & Structured Output Test Functions (Phase 2)
 
-func testJSONMode(provider: LLM, providerName: String) async {
+func testJSONMode(provider: LegacyLLM, providerName: String) async {
     print("\n📝 Testing JSON Mode with \(providerName)...")
     
     do {
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("You are a helpful assistant that returns valid JSON.")),
                 .user(content: .text("Create a list of 3 programming languages with their main characteristics. Return as JSON with 'languages' array."))
@@ -395,7 +395,7 @@ func testJSONMode(provider: LLM, providerName: String) async {
     }
 }
 
-func testStructuredOutput(provider: LLM, providerName: String) async {
+func testStructuredOutput(provider: LegacyLLM, providerName: String) async {
     print("\n🏗️ Testing Structured Output with \(providerName)...")
     
     do {
@@ -408,7 +408,7 @@ func testStructuredOutput(provider: LLM, providerName: String) async {
         }
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return a JSON object with the exact structure: {\"title\": string, \"author\": string, \"year\": number, \"genre\": string}")),
                 .user(content: .text("Recommend a classic science fiction book."))
@@ -446,7 +446,7 @@ func testStructuredOutput(provider: LLM, providerName: String) async {
     }
 }
 
-func testGenerateObjectMethod(provider: LLM, providerName: String) async {
+func testGenerateObjectMethod(provider: LegacyLLM, providerName: String) async {
     print("\n🏗️ Testing Generate Object Method with \(providerName)...")
     
     do {
@@ -556,7 +556,7 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
         
         // Test 1: Product generation using JSON Schema
         let productRequest = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a laptop product with realistic data"))
@@ -582,7 +582,7 @@ func testGenerateObjectMethod(provider: LLM, providerName: String) async {
         
         // Test 2: User generation using JSON Schema with nested object
         let userRequest = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a user profile for a software developer"))
@@ -619,25 +619,30 @@ struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
     
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
+
     @Parameter(description: "City name")
     var city: String = ""
     
-    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-    var unit: String = "celsius"
+    @Parameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .celsius
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         // Simulate API delay
         try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
         // Generate realistic weather data
-        let temps = unit == "celsius" ? (15...25) : (59...77)
+        let temps = unit == .celsius ? (15...25) : (59...77)
         let temp = Int.random(in: temps)
         let conditions = ["sunny", "partly cloudy", "cloudy", "light rain"]
         let condition = conditions.randomElement()!
         
-        return ("Weather in \(city): \(temp)°\(unit == "celsius" ? "C" : "F"), \(condition)", nil)
+        return ToolResult(content: "Weather in \(city): \(temp)°\(unit == .celsius ? "C" : "F"), \(condition)")
     }
 }
 
@@ -651,23 +656,29 @@ struct CalculatorTool: Tool {
     @Parameter(description: "Second number")
     var b: Double = 0.0
     
-    @Parameter(description: "Operation", validation: ["enum": ["+", "-", "*", "/"]])
-    var operation: String = "+"
+    enum Operation: String, Codable, CaseIterable {
+        case plus = "+"
+        case minus = "-"
+        case multiply = "*"
+        case divide = "/"
+    }
+
+    @Parameter(description: "Operation")
+    var operation: Operation = .plus
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
-        case "+": result = a + b
-        case "-": result = a - b
-        case "*": result = a * b
-        case "/":
+        case .plus: result = a + b
+        case .minus: result = a - b
+        case .multiply: result = a * b
+        case .divide:
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
-        default: throw ToolError.executionFailed("Invalid operation")
         }
-        return ("Result: \(a) \(operation) \(b) = \(result)", nil)
+        return ToolResult(content: "Result: \(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 
@@ -682,8 +693,8 @@ func testDirectToolCalls() async {
         print("   🌤️  Testing Weather Tool:")
         var weatherTool = WeatherTool()
         try weatherTool.setParameters(from: ["city": "San Francisco", "unit": "fahrenheit"])
-        let (result, _) = try await weatherTool.execute()
-        print("   ✅ \(result)")
+        let result = try await weatherTool.execute()
+        print("   ✅ \(result.content)")
     } catch {
         print("   ❌ Weather tool failed: \(error)")
     }
@@ -693,8 +704,8 @@ func testDirectToolCalls() async {
         print("   🧮 Testing Calculator Tool:")
         var calcTool = CalculatorTool()
         try calcTool.setParameters(from: ["a": 15.5, "b": 4.2, "operation": "*"])
-        let (result, _) = try await calcTool.execute()
-        print("   ✅ \(result)")
+        let result = try await calcTool.execute()
+        print("   ✅ \(result.content)")
     } catch {
         print("   ❌ Calculator tool failed: \(error)")
     }
@@ -708,14 +719,14 @@ func testDirectToolCalls() async {
     print("   ✅ Calculator tool schema generated: \(calcSchema.function?.name ?? "N/A")")
 }
 
-func testToolWithLLM(provider: LLM, providerName: String) async {
+func testToolWithLLM(provider: LegacyLLM, providerName: String) async {
     print("\n⚙️ Testing Tool Calling with \(providerName)...")
     
     do {
         let tools = [WeatherTool.jsonSchema()]
         
         let request = ChatCompletionRequest(
-            model: providerName == "OpenAI" ? "gpt-4o" : "claude-3-7-sonnet-20250219",
+            model: providerName == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-5-20250929",
             messages: [
                 .user(content: .text("What's the weather in Boston? Use fahrenheit."))
             ],
@@ -736,12 +747,12 @@ func testToolWithLLM(provider: LLM, providerName: String) async {
                     let jsonData = function.arguments.data(using: .utf8)!
                     var tool = WeatherTool()
                     tool = try tool.validateAndSetParameters(jsonData)
-                    let (result, _) = try await tool.execute()
-                    print("   ✅ Tool Result: \(result)")
+                    let result = try await tool.execute()
+                    print("   ✅ Tool Result: \(result.content)")
                 }
             }
         } else if let content = response.choices.first?.message.content {
-            print("   📄 LLM Response: \(content)")
+            print("   📄 LegacyLLM Response: \(content)")
         }
         
         print("   📊 Usage: \(response.usage?.totalTokens ?? 0) tokens")
@@ -751,10 +762,10 @@ func testToolWithLLM(provider: LLM, providerName: String) async {
     }
 }
 
-func testAgentWithTools(provider: LLM) async {
-    print("\n🤖 Testing Agent with Tools...")
-    print("   ℹ️  Agent functionality requires additional setup - skipping for now")
-    print("   📝 This would test agent integration with tools once Agent is properly exposed")
+func testAgentWithTools(provider: LegacyLLM) async {
+    print("\n🤖 Testing LegacyAgent with Tools...")
+    print("   ℹ️  LegacyAgent functionality requires additional setup - skipping for now")
+    print("   📝 This would test agent integration with tools once LegacyAgent is properly exposed")
 }
 
 // MARK: - Helper Functions
@@ -928,7 +939,7 @@ func testAnthropicGenerateObject(provider: AnthropicProvider) async {
         
         // Test 1: Product generation using JSON Schema
         let productRequest = ChatCompletionRequest(
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a laptop product with realistic data"))
@@ -954,7 +965,7 @@ func testAnthropicGenerateObject(provider: AnthropicProvider) async {
         
         // Test 2: User generation using JSON Schema with nested object
         let userRequest = ChatCompletionRequest(
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             messages: [
                 .system(content: .text("Return valid JSON following the schema")),
                 .user(content: .text("Generate a user profile for a software developer"))

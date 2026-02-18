@@ -140,7 +140,7 @@ public enum LLMError: AIError, Equatable {
     }
 } 
 
-// MARK: - Agent Errors
+// MARK: - LegacyAgent Errors
 public enum AgentError: AIError {
     case invalidModel
     case missingAPIKey
@@ -152,6 +152,7 @@ public enum AgentError: AIError {
     case streamingError(String)
     case underlying(Error)
     case operationCancelled
+    case computerUseHandlerNotConfigured
     public var detailedDescription: String {
         switch self {
         case .invalidModel:
@@ -174,6 +175,8 @@ public enum AgentError: AIError {
             return "Error: \(error.localizedDescription)"
         case .operationCancelled:
             return "Operation was cancelled by a callback handler"
+        case .computerUseHandlerNotConfigured:
+            return "Computer use tool call received but no computerUseHandler is configured on the Agent"
         }
     }
     
@@ -204,6 +207,26 @@ public enum ToolError: AIError {
             return "Tool validation failed: \(message)"
         case .unsupportedOperation(let message):
             return "Unsupported operation: \(message)"
+        }
+    }
+}
+
+// MARK: - Provider Access Errors
+
+/// Errors related to provider access control and PHI protection
+public enum AIProviderAccessError: AIError, Equatable {
+    /// The provider is not in the allowed providers list
+    case providerNotAllowed(provider: String, allowedProviders: Set<String>)
+    /// Sensitive or PHI data requires explicit provider allowlisting
+    case sensitiveDataRequiresAllowlist(sensitivity: DataSensitivity)
+
+    public var detailedDescription: String {
+        switch self {
+        case .providerNotAllowed(let provider, let allowed):
+            let allowedList = allowed.isEmpty ? "(none)" : allowed.sorted().joined(separator: ", ")
+            return "Provider '\(provider)' is not allowed. Allowed providers: \(allowedList)"
+        case .sensitiveDataRequiresAllowlist(let sensitivity):
+            return "Requests with \(sensitivity.rawValue) sensitivity require explicit provider allowlisting via allowedProviders"
         }
     }
 }

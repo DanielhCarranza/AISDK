@@ -197,7 +197,7 @@ public class MockOpenAIResponsesProvider {
             usage: ResponseUsage(
                 inputTokens: inputText.count / 4, // Rough token estimate
                 outputTokens: responseText.count / 4,
-                totalTokens: (inputText.count + responseText.count) / 4,
+                totalTokens: inputText.count / 4 + responseText.count / 4,
                 inputTokensDetails: nil,
                 outputTokensDetails: nil
             ),
@@ -222,7 +222,7 @@ public class MockOpenAIResponsesProvider {
     }
     
     private func createDefaultStreamChunks() -> [ResponseChunk] {
-        let words = ["Hello", "from", "the", "mock", "streaming", "response!"]
+        let words = ["This ", "is ", "a ", "mock ", "streaming ", "response ", "for ", "testing", "."]
         
         return words.enumerated().map { index, word in
             ResponseChunk(

@@ -10,3 +10,6 @@ DerivedData/
 # Environment files
 .env
 .env.local
+.cursor/
+.context/
+.aidoctor/

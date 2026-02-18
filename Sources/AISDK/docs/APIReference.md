@@ -5,14 +5,15 @@ Complete API documentation for the AISDK Swift package.
 ## Table of Contents
 
 - [Core Components](#core-components)
-  - [Agent](#agent)
-  - [Tool](#tool)
+  - [AIAgentActor](#aiagentactor)
+  - [AITool](#aitool)
   - [RenderableTool](#renderabletool)
-  - [LLM Protocol](#llm-protocol)
+  - [AILanguageModel Protocol](#ailanguagemodel-protocol)
 - [Models](#models)
-  - [Message](#message)
-  - [ChatCompletionRequest](#chatcompletionrequest)
-  - [ChatCompletionResponse](#chatcompletionresponse)
+  - [AIMessage](#aimessage)
+  - [AITextRequest](#aitextrequest)
+  - [AITextResult](#aitextresult)
+  - [AIStreamEvent](#aistreamevent)
 - [Chat Module](#chat-module)
   - [AIChatManager](#aichatmanager)
   - [ChatSession](#chatsession)
@@ -33,26 +34,23 @@ Complete API documentation for the AISDK Swift package.
 
 ## Core Components
 
-### Agent
+### AIAgentActor
 
-The central orchestrator for AI interactions.
+The central orchestrator for AI interactions, implemented as a Swift actor for thread safety.
 
 ```swift
-public class Agent {
-    /// The language model configuration
-    public let model: LLMModel
-    
+public actor AIAgentActor {
+    /// The language model provider
+    public let model: any AILanguageModel
+
     /// Available tools for the agent
-    public private(set) var tools: [Tool.Type]
-    
-    /// Conversation history
-    public private(set) var messages: [ChatMessage]
-    
-    /// Current agent state
-    public private(set) var state: AgentState
-    
-    /// State change callback
-    public var onStateChange: ((AgentState) -> Void)?
+    public let tools: [AITool.Type]
+
+    /// System instructions for agent behavior
+    public let instructions: String?
+
+    /// Observable state for SwiftUI binding
+    public let observableState: ObservableAgentState
 }
 ```
 
@@ -60,151 +58,100 @@ public class Agent {
 
 ```swift
 public init(
-    model: LLMModel,
-    tools: [Tool.Type] = [],
-    messages: [ChatMessage] = [],
+    model: any AILanguageModel,
+    tools: [AITool.Type] = [],
     instructions: String? = nil
-) throws
+)
 ```
 
 **Parameters:**
-- `model`: The LLM model to use (e.g., `.gpt4o`, `.claude3`)
-- `tools`: Array of tool types available to the agent
-- `messages`: Initial conversation history
+- `model`: An `AILanguageModel` provider (e.g., `OpenRouterClient`)
+- `tools`: Array of `AITool` types available to the agent
 - `instructions`: System instructions for agent behavior
 
-**Throws:**
-- `AgentError.invalidModel`: If the model is not supported
-- `AgentError.missingAPIKey`: If no API key is provided
+> Note: `AIAgentActor.init` does **not** throw. No `try` is needed.
 
 #### Methods
 
-##### send(_:)
+##### execute(messages:)
 
-Send a message and receive a complete response.
+Send messages and receive a complete response.
 
 ```swift
-public func send(_ content: String) async throws -> ChatMessage
+public func execute(messages: [AIMessage]) async throws -> AIAgentResult
 ```
 
 **Parameters:**
-- `content`: The message content to send
+- `messages`: Array of `AIMessage` values representing the conversation
 
-**Returns:** The agent's response as a `ChatMessage`
+**Returns:** An `AIAgentResult` containing the response text, tool results, and usage data
 
 **Throws:**
 - `AgentError.toolExecutionFailed`: If a tool execution fails
-- `AgentError.invalidToolResponse`: If the LLM response is invalid
-- Network-related errors from the LLM provider
+- Network-related errors from the provider
 
-##### sendStream(_:requiredTool:)
+##### streamExecute(messages:)
 
-Send a message and receive streaming responses.
+Send messages and receive streaming events.
 
 ```swift
-public func sendStream(
-    _ message: ChatMessage,
-    requiredTool: String? = nil
-) -> AsyncThrowingStream<ChatMessage, Error>
+public nonisolated func streamExecute(
+    messages: [AIMessage]
+) -> AsyncThrowingStream<AIStreamEvent, Error>
 ```
 
 **Parameters:**
-- `message`: The message to send
-- `requiredTool`: Optional tool name to force usage
+- `messages`: Array of `AIMessage` values representing the conversation
 
-**Returns:** An async stream of response chunks
+**Returns:** An `AsyncThrowingStream` of `AIStreamEvent` values
 
-##### setMessages(_:)
+### AITool
 
-Update the agent's conversation history.
-
-```swift
-public func setMessages(_ messages: [ChatMessage])
-```
-
-##### clearHistory()
-
-Clear the conversation history.
+Instance-based protocol for defining executable tools.
 
 ```swift
-public func clearHistory()
-```
-
-##### addCallbacks(_:)
-
-Add callbacks for agent events.
-
-```swift
-public func addCallbacks(_ callbacks: AgentCallbacks)
-```
-
-### Tool
-
-Protocol for defining executable tools.
-
-```swift
-public protocol Tool {
-    /// Unique identifier for the tool
+public protocol AITool: Sendable {
     var name: String { get }
-    
-    /// Description of what the tool does
     var description: String { get }
-    
-    /// Whether to return tool response to user
     var returnToolResponse: Bool { get }
-    
-    /// Initialize the tool
+
     init()
-    
-    /// Execute the tool and return results
-    func execute() async throws -> (content: String, metadata: ToolMetadata?)
-    
-    /// Generate JSON schema for the tool
     static func jsonSchema() -> ToolSchema
-    
-    /// Set parameters from arguments
+    static func validate(arguments: [String: Any]) throws
     mutating func setParameters(from arguments: [String: Any]) throws
+    mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
+    func execute() async throws -> AIToolResult
 }
 ```
 
-#### Parameter Property Wrapper
+#### AIParameter Property Wrapper
 
 ```swift
-@propertyWrapper
-public class Parameter<T> {
-    public var wrappedValue: T
-    public let description: String
-    public let validation: [String: Any]?
-    
-    public init(
-        wrappedValue: T,
-        description: String,
-        validation: [String: Any]? = nil
-    )
-}
+@AIParameter(description: "City name")
+var city: String = ""
 ```
 
 **Example:**
 ```swift
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather"
     
-    @Parameter(
+    @AIParameter(
         description: "City name",
         validation: ["minLength": 1, "maxLength": 100]
     )
     var city: String = ""
     
-    @Parameter(
+    @AIParameter(
         description: "Temperature unit",
         validation: ["enum": ["celsius", "fahrenheit"]]
     )
     var unit: String = "celsius"
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let weather = try await fetchWeather(city: city, unit: unit)
-        return ("Temperature in \(city): \(weather.temp)°\(unit)", nil)
+        return AIToolResult(content: "Temperature in \(city): \(weather.temp)°\(unit)")
     }
 }
 ```
@@ -214,7 +161,7 @@ struct WeatherTool: Tool {
 Protocol for tools that can render UI.
 
 ```swift
-public protocol RenderableTool: Tool {
+public protocol RenderableTool: AITool {
     /// Renders a SwiftUI view given the stored metadata
     func render(from data: Data) -> AnyView
 }
@@ -226,15 +173,15 @@ struct ChartTool: RenderableTool {
     let name = "display_chart"
     let description = "Display data in a chart"
     
-    @Parameter(description: "Chart data as JSON")
+    @AIParameter(description: "Chart data as JSON")
     var data: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let chartData = try JSONDecoder().decode(ChartData.self, from: data.data(using: .utf8)!)
         let jsonData = try JSONEncoder().encode(chartData)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return ("Chart created with \(chartData.points.count) data points", metadata)
+        return AIToolResult(content: "Chart created with \(chartData.points.count) data points", metadata: metadata)
     }
     
     func render(from data: Data) -> AnyView {
@@ -256,76 +203,91 @@ struct ChartTool: RenderableTool {
 }
 ```
 
-### LLM Protocol
+### AILanguageModel Protocol
 
 Protocol for language model providers.
 
 ```swift
-public protocol LLM {
-    /// Send a chat completion request
-    func sendChatCompletion(
-        request: ChatCompletionRequest
-    ) async throws -> ChatCompletionResponse
-    
-    /// Send a streaming chat completion request
-    func sendChatCompletionStream(
-        request: ChatCompletionRequest
-    ) async throws -> AsyncThrowingStream<ChatCompletionChunk, Error>
+public protocol AILanguageModel: Sendable {
+    var provider: String { get }
+    var modelId: String { get }
+    var capabilities: LLMCapabilities { get }
+
+    func generateText(request: AITextRequest) async throws -> AITextResult
+    func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error>
+    func generateObject<T: Codable & Sendable>(request: AIObjectRequest<T>) async throws -> AIObjectResult<T>
+    func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error>
 }
 ```
 
 ## Models
 
-### Message
+### AIMessage
 
 Represents a message in the conversation.
 
 ```swift
-public enum Message: Codable {
-    case system(content: MessageContent)
-    case user(content: MessageContent)
-    case assistant(content: MessageContent)
-    case tool(content: MessageContent, toolCallId: String)
-    case developer(content: MessageContent)
+public struct AIMessage: Codable, Sendable {
+    public let role: Role
+    public let content: Content
+
+    public enum Role: String, Codable, Sendable {
+        case system, user, assistant, tool
+    }
+
+    public enum Content: Codable, Sendable {
+        case text(String)
+        case parts([AIContentPart])
+    }
 }
 ```
 
-### MessageContent
-
-Content of a message.
+#### Factory Methods
 
 ```swift
-public enum MessageContent: Codable {
-    case text(String)
-    case parts([UserContent.Part])
-}
+// Text messages
+AIMessage.user("Hello!")
+AIMessage.system("You are helpful")
+AIMessage.assistant("Hi there!")
+AIMessage.tool("72F", toolCallId: "call_123")
 
-public enum UserContent.Part: Codable {
+// Multimodal messages
+AIMessage.user(content: .parts([
+    .text("What's in this image?"),
+    .image(imageData, mimeType: "image/jpeg")
+]))
+```
+
+### AIContentPart
+
+Content parts for multimodal messages.
+
+```swift
+public enum AIContentPart: Codable, Sendable {
     case text(String)
-    case image(Data)
-    case document(URL)
+    case image(Data, mimeType: String)
+    case imageURL(String)
+    case audio(Data, format: AudioFormat)
+    case file(Data, mimeType: String)
+    case json(Data)
 }
 ```
 
-### ChatCompletionRequest
+### AITextRequest
 
-Request structure for chat completions.
+Request structure for text generation.
 
 ```swift
-public struct ChatCompletionRequest: Codable {
-    public let model: String
-    public let messages: [Message]
+public struct AITextRequest: Sendable {
+    public let messages: [AIMessage]
     public let tools: [ToolSchema]?
     public let toolChoice: ToolChoice?
     public let temperature: Double?
     public let maxTokens: Int?
     public let topP: Double?
-    public let frequencyPenalty: Double?
-    public let presencePenalty: Double?
     public let stop: [String]?
-    public let stream: Bool?
-    public let parallelToolCalls: Bool?
     public let responseFormat: ResponseFormat?
+    public let reasoning: AIReasoningConfig?
 }
 ```
 
@@ -339,37 +301,41 @@ public enum ToolChoice: Codable {
     case auto
     case required
     case function(FunctionChoice)
-    
+
     public struct FunctionChoice: Codable {
         public let name: String
     }
 }
 ```
 
-### ChatCompletionResponse
+### AITextResult
 
-Response from chat completion.
+Result from text generation.
 
 ```swift
-public struct ChatCompletionResponse: Codable {
-    public let id: String
-    public let object: String
-    public let created: Int
-    public let model: String
-    public let choices: [Choice]
-    public let usage: Usage?
-    
-    public struct Choice: Codable {
-        public let index: Int
-        public let message: ResponseMessage
-        public let finishReason: String?
-    }
-    
-    public struct ResponseMessage: Codable {
-        public let role: String
-        public let content: String?
-        public let toolCalls: [ToolCall]?
-    }
+public struct AITextResult: Sendable {
+    public let text: String
+    public let toolCalls: [AIToolCall]?
+    public let finishReason: FinishReason
+    public let usage: TokenUsage?
+}
+```
+
+### AIStreamEvent
+
+Typed events emitted during streaming.
+
+```swift
+public enum AIStreamEvent: Sendable {
+    case start
+    case textDelta(String)
+    case toolCallStart(id: String, name: String)
+    case toolCallDelta(id: String, argumentsDelta: String)
+    case toolCall(id: String, name: String, arguments: String)
+    case toolResult(id: String, result: AIToolResult)
+    case usage(TokenUsage)
+    case finish(reason: FinishReason, usage: TokenUsage?)
+    case error(Error)
 }
 ```
 
@@ -407,7 +373,7 @@ public class AIChatManager {
     public var isStreaming: Bool = false
     
     /// Agent instance
-    public let agent: Agent
+    public let agent: AIAgentActor
     
     /// Storage backend
     public let storage: ChatStorageProtocol?
@@ -421,7 +387,7 @@ public class AIChatManager {
 
 ```swift
 public init(
-    agent: Agent,
+    agent: AIAgentActor,
     storage: ChatStorageProtocol? = nil,
     triggerEvent: TriggerEvent? = nil,
     dynamicMessage: DynamicMessage? = nil
@@ -641,7 +607,7 @@ public func speak(_ text: String) async throws
 Start a full conversation loop with an agent.
 
 ```swift
-public func startConversation(with agent: Agent) async throws
+public func startConversation(with agent: AIAgentActor) async throws
 ```
 
 ### SpeechRecognizer
@@ -732,9 +698,9 @@ Vision agent interaction view.
 
 ```swift
 public struct AgentView: View {
-    @ObservedObject var agent: Agent
+    let agent: AIAgentActor
     @ObservedObject var chatContext: ChatContext
-    
+
     public var body: some View
 }
 ```
@@ -746,18 +712,21 @@ public struct AgentView: View {
 Specialized agent for research tasks.
 
 ```swift
-public class ResearcherAgent: Agent {
+public actor ResearcherAgent {
+    /// The underlying agent
+    private let agent: AIAgentActor
+
     /// Research state
-    @Published public var state: ResearcherAgentState
-    
+    public let observableState: ObservableResearchState
+
     /// Current research context
     public var researchContext: ResearchContext?
-    
+
     /// Initialize researcher
     public init(
-        model: LLMModel = .gpt4o,
-        researchTools: [Tool.Type]? = nil
-    ) throws
+        model: any AILanguageModel,
+        researchTools: [AITool.Type]? = nil
+    )
 }
 ```
 
@@ -853,14 +822,8 @@ public enum ToolError: LocalizedError {
 ## Type Aliases
 
 ```swift
-/// Agent state change handler
-public typealias StateChangeHandler = (AgentState) -> Void
-
-/// Stream handler for responses
-public typealias StreamHandler = (ChatMessage) async -> Void
-
 /// Tool execution result
-public typealias ToolResult = Result<(String, ToolMetadata?), Error>
+public typealias ToolResult = Result<AIToolResult, Error>
 
 /// Suggested question
 public struct SuggestedQuestion: Identifiable {
@@ -912,16 +875,16 @@ public enum AISDKConstants {
 ### AgentCallbacks
 
 ```swift
-public protocol AgentCallbacks {
+public protocol AgentCallbacks: Sendable {
     /// Called when a message is received
-    func onMessageReceived(message: Message) async -> CallbackResult
-    
+    func onMessageReceived(message: AIMessage) async -> CallbackResult
+
     /// Called before sending to LLM
-    func onBeforeLLMRequest(messages: [Message]) async -> CallbackResult
-    
-    /// Called on streaming chunk
-    func onStreamChunk(chunk: ChatMessage) async -> CallbackResult
-    
+    func onBeforeLLMRequest(messages: [AIMessage]) async -> CallbackResult
+
+    /// Called on streaming event
+    func onStreamEvent(event: AIStreamEvent) async -> CallbackResult
+
     /// Called on tool execution
     func onToolExecution(tool: String, args: Any) async -> CallbackResult
 }
@@ -933,7 +896,7 @@ public protocol AgentCallbacks {
 public enum CallbackResult {
     case `continue`
     case cancel
-    case replace(Message)
+    case replace(AIMessage)
 }
 ```
 
@@ -958,7 +921,7 @@ Complete conversation interface.
 
 ```swift
 public struct AIConversationView: View {
-    @ObservedObject var manager: AIChatManager
+    @Bindable var manager: AIChatManager
     
     public var body: some View
 }

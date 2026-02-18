@@ -26,6 +26,7 @@ AISDK is a powerful Swift package that provides a unified interface for integrat
 - 🛠️ **Advanced Tool System**: Define tools that can render SwiftUI views
 - 🎙️ **Native Voice Mode**: Built with AVFoundation and Speech framework
 - 👁️ **Vision Mode**: LiveKit-powered real-time video interactions
+- 🎥 **Video Inputs**: Send video content to supported models (Gemini)
 - 🔬 **Research Mode**: Specialized agents for complex analysis
 - 💬 **Complete Chat System**: Session management, attachments, and UI components
 - 🔌 **Flexible Storage**: Protocol-based storage with documentation for adapters
@@ -48,9 +49,9 @@ AISDK is a powerful Swift package that provides a unified interface for integrat
 ```mermaid
 graph TB
     subgraph "AISDK Core (Required)"
-        Agent[Agent System]
-        Tools[Tool Framework]
-        LLM[LLM Providers]
+        AIAgentActor[AIAgentActor System]
+        Tools[AITool Framework]
+        LLM[AILanguageModel Providers]
         Models[Data Models]
     end
     
@@ -65,52 +66,52 @@ graph TB
         App[Application]
     end
     
-    App --> Agent
+    App --> AIAgentActor
     App -.-> Chat
     App -.-> Voice
     App -.-> Vision
     App -.-> Research
-    
-    Chat --> Agent
-    Voice --> Agent
-    Vision --> Agent
-    Research --> Agent
+
+    Chat --> AIAgentActor
+    Voice --> AIAgentActor
+    Vision --> AIAgentActor
+    Research --> AIAgentActor
 ```
 
 ### Component Relationships
 
 ```mermaid
 classDiagram
-    class Agent {
-        +model: LLMModel
-        +tools: [Tool.Type]
-        +messages: [ChatMessage]
-        +send(content: String) ChatMessage
-        +sendStream(message: ChatMessage) AsyncThrowingStream
+    class AIAgentActor {
+        +model: AILanguageModel
+        +tools: [AITool.Type]
+        +messages: [AIMessage]
+        +execute(messages:) AIAgentResult
+        +streamExecute(messages:) AsyncThrowingStream
     }
-    
-    class Tool {
+
+    class AITool {
         <<protocol>>
         +name: String
         +description: String
-        +execute() (String, ToolMetadata?)
+        +execute() AIToolResult
     }
-    
+
     class RenderableTool {
         <<protocol>>
         +render(from: Data) AnyView
     }
-    
+
     class AIChatManager {
-        +agent: Agent
+        +agent: AIAgentActor
         +storage: ChatStorageProtocol
         +currentSession: ChatSession?
         +sendMessage(String)
     }
-    
-    Tool <|-- RenderableTool
-    Agent --> Tool
-    AIChatManager --> Agent
+
+    AITool <|-- RenderableTool
+    AIAgentActor --> AITool
+    AIChatManager --> AIAgentActor
     AIChatManager --> ChatStorageProtocol
 ```
 
@@ -122,7 +123,7 @@ Add AISDK to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/AISDK.git", from: "1.0.0")
+    .package(url: "https://github.com/yourusername/AISDK.git", from: "2.0.0")
 ],
 targets: [
     .target(
@@ -153,36 +154,38 @@ targets: [
 
 ### 1. Agent System
 
-The Agent is the central orchestrator for AI interactions:
+The AIAgentActor is the central orchestrator for AI interactions:
 
 ```swift
 import AISDK
 
 // Initialize an agent
-let agent = try Agent(
-    model: .gpt4o,
+let agent = AIAgentActor(
+    model: OpenRouterClient(apiKey: "your-key"),
     tools: [WeatherTool.self, CalculatorTool.self],
     instructions: "You are a helpful assistant."
 )
 
 // Send a message (non-streaming)
-let response = try await agent.send("What's the weather?")
+let response = try await agent.execute(messages: [.user("What's the weather?")])
 
 // Send with streaming
-for try await chunk in agent.sendStream(message) {
-    print(chunk.content, terminator: "")
-}
-
-// With callbacks
-agent.onStateChange = { state in
-    switch state {
-    case .thinking: print("🤔 Thinking...")
-    case .executingTool(let name): print("🔧 Running \(name)")
-    case .responding: print("💬 Responding...")
-    case .idle: print("✅ Ready")
-    case .error(let error): print("❌ Error: \(error)")
+for try await event in agent.streamExecute(messages: [.user("What's the weather?")]) {
+    switch event {
+    case .textDelta(let text):
+        print(text, terminator: "")
+    case .toolCallStart(_, let name):
+        print("Running \(name)")
+    case .finish(let reason, let usage):
+        print("\nDone")
+    default:
+        break
     }
 }
+
+// Observe state reactively via agent.observableState
+// e.g. in SwiftUI, bind to agent.observableState to track
+// .thinking, .executingTool, .responding, .idle, .error states
 ```
 
 ### 2. Tool System
@@ -190,16 +193,16 @@ agent.onStateChange = { state in
 #### Basic Tool
 
 ```swift
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculator"
     let description = "Perform mathematical calculations"
     
-    @Parameter(description: "Math expression", validation: ["pattern": "^[0-9+\\-*/().\\s]+$"])
+    @AIParameter(description: "Math expression", validation: ["pattern": "^[0-9+\\-*/().\\s]+$"])
     var expression: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let result = NSExpression(format: expression).expressionValue(with: nil, context: nil)
-        return ("Result: \(result ?? "Error")", nil)
+        return AIToolResult(content: "Result: \(result ?? "Error")")
     }
 }
 ```
@@ -211,10 +214,10 @@ struct WeatherTool: RenderableTool {
     let name = "get_weather"
     let description = "Get current weather with visual display"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let weatherData = try await fetchWeather(for: city)
         let jsonData = try JSONEncoder().encode(weatherData)
         
@@ -259,26 +262,19 @@ struct WeatherTool: RenderableTool {
 ### 3. Models
 
 ```swift
-// Message types
-public enum Message {
-    case system(content: MessageContent)
-    case user(content: MessageContent)
-    case assistant(content: MessageContent)
-    case tool(content: MessageContent, toolCallId: String)
+// AIMessage (v2 unified message type)
+public struct AIMessage: Sendable, Equatable, Codable {
+    public let role: Role
+    public let content: Content
+
+    public enum Role: String, Codable { case user, assistant, system, tool }
 }
 
-// Content types
-public enum MessageContent {
-    case text(String)
-    case parts([UserContent.Part])  // For multimodal content
-}
-
-// User content parts
-public enum UserContent.Part {
-    case text(String)
-    case image(Data)
-    case document(URL)
-}
+// Convenience constructors
+AIMessage.user("Hello")
+AIMessage.system("You are helpful")
+AIMessage.assistant("Hi there!")
+AIMessage.tool("result", toolCallId: "call_123")
 ```
 
 ## Feature Modules
@@ -295,7 +291,7 @@ class ChatViewModel {
     let chatManager: AIChatManager
     
     init() {
-        let agent = try! Agent(model: .gpt4o)
+        let agent = AIAgentActor(model: OpenRouterClient())
         let storage = MemoryStorage() // or your custom storage
         self.chatManager = AIChatManager(agent: agent, storage: storage)
     }
@@ -323,8 +319,8 @@ let voiceMode = AIVoiceMode()
 Task {
     for try await audioData in voiceMode.startRecording() {
         let transcript = try await voiceMode.transcribe(audioData)
-        let response = try await agent.send(transcript)
-        try await voiceMode.speak(response.content)
+        let response = try await agent.execute(messages: [.user(transcript)])
+        try await voiceMode.speak(response.text)
     }
 }
 
@@ -357,7 +353,7 @@ Specialized research agents:
 import AISDKResearch
 
 let researcher = ResearcherAgent(
-    model: .gpt4o,
+    model: OpenRouterClient(),
     tools: [
         SearchMedicalEvidenceTool.self,
         ReadEvidenceTool.self,
@@ -380,18 +376,21 @@ struct ChartTool: RenderableTool {
     let name = "display_chart"
     let description = "Display data in a chart"
     
-    @Parameter(description: "Chart data as JSON")
+    @AIParameter(description: "Chart data as JSON")
     var data: String = ""
     
-    @Parameter(description: "Chart type", validation: ["enum": ["bar", "line", "pie"]])
+    @AIParameter(description: "Chart type", validation: ["enum": ["bar", "line", "pie"]])
     var chartType: String = "bar"
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let chartData = try parseChartData(data)
         let jsonData = try JSONEncoder().encode(chartData)
         
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        return ("Chart created with \(chartData.points.count) data points", metadata)
+        return AIToolResult(
+            content: "Chart created with \(chartData.points.count) data points",
+            metadata: metadata
+        )
     }
     
     func render(from data: Data) -> AnyView {
@@ -416,18 +415,18 @@ struct ChartTool: RenderableTool {
 ```mermaid
 sequenceDiagram
     participant User
-    participant Agent
-    participant Tool
+    participant AIAgentActor
+    participant AITool
     participant UI
-    
-    User->>Agent: Send message
-    Agent->>Tool: Execute tool
-    Tool->>Tool: Generate result + metadata
-    Tool->>Agent: Return (text, RenderMetadata)
-    Agent->>UI: Stream response with metadata
+
+    User->>AIAgentActor: execute(messages:)
+    AIAgentActor->>AITool: Execute tool
+    AITool->>AITool: Generate result + metadata
+    AITool->>AIAgentActor: Return (text, RenderMetadata)
+    AIAgentActor->>UI: Stream response with metadata
     UI->>UI: Check for RenderableTool
-    UI->>Tool: render(from: metadata.jsonData)
-    Tool->>UI: Return SwiftUI View
+    UI->>AITool: render(from: metadata.jsonData)
+    AITool->>UI: Return SwiftUI View
     UI->>User: Display text + rendered view
 ```
 
@@ -478,7 +477,7 @@ public protocol ChatStorageProtocol {
     func delete(id: String) async throws
     func list() async throws -> [ChatSession]
     func updateTitle(sessionId: String, title: String) async throws
-    func appendMessage(sessionId: String, message: ChatMessage) async throws
+    func appendMessage(sessionId: String, message: AIMessage) async throws
 }
 ```
 
@@ -507,8 +506,8 @@ import AISDKChat
 @main
 struct ChatApp: App {
     @State private var chatManager = AIChatManager(
-        agent: try! Agent(
-            model: .gpt4o,
+        agent: AIAgentActor(
+            model: OpenRouterClient(),
             tools: [WeatherTool.self, CalculatorTool.self]
         ),
         storage: MemoryStorage()
@@ -530,7 +529,7 @@ import AISDKVoice
 
 struct VoiceAssistantView: View {
     @StateObject private var voiceMode = AIVoiceMode()
-    private let agent = try! Agent(model: .gpt4o)
+    private let agent = AIAgentActor(model: OpenRouterClient())
     
     var body: some View {
         VStack {
@@ -582,21 +581,26 @@ print(result.sources)
 
 ```swift
 // ✅ Good: Single responsibility, clear parameters
-struct TranslateTool: Tool {
-    @Parameter(description: "Text to translate")
+struct TranslateTool: AITool {
+    let name = "translate"
+    let description = "Translate text into a target language"
+
+    @AIParameter(description: "Text to translate")
     var text: String = ""
     
-    @Parameter(description: "Target language code")
+    @AIParameter(description: "Target language code")
     var targetLanguage: String = "es"
     
-    func execute() async throws -> (String, ToolMetadata?) {
+    init() {}
+
+    func execute() async throws -> AIToolResult {
         let translated = try await translateAPI(text, to: targetLanguage)
-        return (translated, nil)
+        return AIToolResult(content: translated)
     }
 }
 
 // ❌ Bad: Multiple responsibilities
-struct SuperTool: Tool {
+struct SuperTool: AITool {
     // Does translation, weather, calculations, etc.
 }
 ```
@@ -605,7 +609,7 @@ struct SuperTool: Tool {
 
 ```swift
 do {
-    let response = try await agent.send("Hello")
+    let response = try await agent.execute(messages: [.user("Hello")])
 } catch let error as AgentError {
     switch error {
     case .invalidModel:
@@ -625,19 +629,19 @@ do {
 ```swift
 @Observable
 class ChatViewModel {
-    var messages: [ChatMessage] = []
+    var messages: [AIMessage] = []
     var isLoading = false
     var error: Error?
-    
-    private let agent: Agent
-    
+
+    private let agent: AIAgentActor
+
     func sendMessage(_ text: String) async {
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
-            let response = try await agent.send(text)
-            messages.append(response)
+            let response = try await agent.execute(messages: [.user(text)])
+            messages.append(.assistant(response.text))
         } catch {
             self.error = error
         }
@@ -667,15 +671,16 @@ if agent.messages.count > 100 {
 export OPENAI_API_KEY="your-key"
 
 // Or in code (not recommended for production)
-let agent = try Agent(
-    model: .gpt4o(apiKey: "your-key")
+let agent = AIAgentActor(
+    model: OpenRouterClient(apiKey: "your-key"),
+    instructions: "You are a helpful assistant."
 )
 ```
 
 2. **Tool Not Found**
 ```swift
 // Ensure tools are registered
-ToolRegistry.registerAll(tools: [YourTool.self])
+AIToolRegistry.registerAll(tools: [YourTool.self])
 ```
 
 3. **UI Not Rendering**

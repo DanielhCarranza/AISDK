@@ -68,15 +68,16 @@ public enum ResponseStatus: String, Codable {
     case queued = "queued"
     case failed = "failed"
     case cancelled = "cancelled"
-    
+    case incomplete = "incomplete"
+
     /// Check if the response is still processing
     public var isProcessing: Bool {
         return self == .inProgress || self == .queued
     }
-    
+
     /// Check if the response is in a final state
     public var isFinal: Bool {
-        return self == .completed || self == .failed || self == .cancelled
+        return self == .completed || self == .failed || self == .cancelled || self == .incomplete
     }
 }
 
@@ -147,11 +148,14 @@ public enum ResponseOutputItem: Codable {
     case imageGenerationCall(ResponseOutputImageGenerationCall)
     case codeInterpreterCall(ResponseOutputCodeInterpreterCall)
     case mcpApprovalRequest(ResponseOutputMCPApprovalRequest)
-    
+    case computerCall(ResponseOutputComputerCall)
+    /// Unrecognized output type — allows forward compatibility with new API types (e.g. "reasoning")
+    case unknown(String)
+
     enum CodingKeys: String, CodingKey {
         case type
     }
-    
+
     enum OutputType: String, Codable {
         case message = "message"
         case functionCall = "function_call"
@@ -160,12 +164,18 @@ public enum ResponseOutputItem: Codable {
         case imageGenerationCall = "image_generation_call"
         case codeInterpreterCall = "code_interpreter_call"
         case mcpApprovalRequest = "mcp_approval_request"
+        case computerCall = "computer_call"
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(OutputType.self, forKey: .type)
-        
+        let typeString = try container.decode(String.self, forKey: .type)
+
+        guard let type = OutputType(rawValue: typeString) else {
+            self = .unknown(typeString)
+            return
+        }
+
         switch type {
         case .message:
             let message = try ResponseOutputMessage(from: decoder)
@@ -188,9 +198,12 @@ public enum ResponseOutputItem: Codable {
         case .mcpApprovalRequest:
             let mcpRequest = try ResponseOutputMCPApprovalRequest(from: decoder)
             self = .mcpApprovalRequest(mcpRequest)
+        case .computerCall:
+            let computerCall = try ResponseOutputComputerCall(from: decoder)
+            self = .computerCall(computerCall)
         }
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         switch self {
         case .message(let message):
@@ -207,13 +220,18 @@ public enum ResponseOutputItem: Codable {
             try codeInterpreter.encode(to: encoder)
         case .mcpApprovalRequest(let mcpRequest):
             try mcpRequest.encode(to: encoder)
+        case .computerCall(let computerCall):
+            try computerCall.encode(to: encoder)
+        case .unknown(let typeString):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(typeString, forKey: .type)
         }
     }
 }
 
 // MARK: - Output Item Types
 
-/// Message output item
+/// LegacyMessage output item
 public struct ResponseOutputMessage: Codable {
     public let id: String
     public let type: String = "message"
@@ -339,6 +357,64 @@ public struct ResponseOutputMCPApprovalRequest: Codable {
     enum CodingKeys: String, CodingKey {
         case id, type, name, arguments
         case serverLabel = "server_label"
+    }
+}
+
+/// Computer call output item (OpenAI computer use)
+public struct ResponseOutputComputerCall: Codable {
+    public let id: String
+    public let type: String
+    public let callId: String
+    public let action: ComputerCallAction
+    public let pendingSafetyChecks: [PendingSafetyCheck]?
+    public let status: String?
+
+    public struct ComputerCallAction: Codable {
+        public let type: String
+        public let x: Int?
+        public let y: Int?
+        public let button: String?
+        public let text: String?
+        public let keys: [String]?
+        public let scrollX: Int?
+        public let scrollY: Int?
+        public let path: [PathPoint]?
+        public let ms: Int?
+
+        public init(type: String, x: Int? = nil, y: Int? = nil, button: String? = nil,
+                    text: String? = nil, keys: [String]? = nil,
+                    scrollX: Int? = nil, scrollY: Int? = nil,
+                    path: [PathPoint]? = nil, ms: Int? = nil) {
+            self.type = type; self.x = x; self.y = y; self.button = button
+            self.text = text; self.keys = keys
+            self.scrollX = scrollX; self.scrollY = scrollY
+            self.path = path; self.ms = ms
+        }
+
+        public struct PathPoint: Codable {
+            public let x: Int
+            public let y: Int
+
+            public init(x: Int, y: Int) { self.x = x; self.y = y }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type, x, y, button, text, keys, ms, path
+            case scrollX = "scroll_x"
+            case scrollY = "scroll_y"
+        }
+    }
+
+    public struct PendingSafetyCheck: Codable {
+        public let id: String
+        public let code: String
+        public let message: String
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, status, action
+        case callId = "call_id"
+        case pendingSafetyChecks = "pending_safety_checks"
     }
 }
 
@@ -472,4 +548,25 @@ public struct AnyCodable: Codable {
             throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: encoder.codingPath, debugDescription: "Unsupported type"))
         }
     }
-} 
+}
+
+extension AnyCodable: Equatable {
+    public static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
+        switch (lhs.value, rhs.value) {
+        case (is NSNull, is NSNull):
+            return true
+        case let (l as Bool, r as Bool):
+            return l == r
+        case let (l as Int, r as Int):
+            return l == r
+        case let (l as Double, r as Double):
+            return l == r
+        case let (l as String, r as String):
+            return l == r
+        default:
+            return false
+        }
+    }
+}
+
+extension AnyCodable: @unchecked Sendable {}

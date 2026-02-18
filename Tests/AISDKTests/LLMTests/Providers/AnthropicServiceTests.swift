@@ -92,12 +92,12 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         XCTAssertEqual(request.maxTokens, 100)
         XCTAssertEqual(request.messages.count, 1)
-        XCTAssertEqual(request.model, "claude-3-7-sonnet-20250219")
+        XCTAssertEqual(request.model, "claude-sonnet-4-5-20250929")
         XCTAssertNil(request.stream)
         XCTAssertNil(request.temperature)
     }
@@ -125,7 +125,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [weatherTool]
         )
@@ -147,7 +147,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         // Beta features should be applied during request processing
@@ -172,7 +172,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -207,7 +207,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -218,7 +218,7 @@ final class AnthropicServiceTests: XCTestCase {
             case .networkError(let code, _):
                 XCTAssertNotNil(code)
             default:
-                break // Other LLM errors are acceptable
+                break // Other LegacyLLM errors are acceptable
             }
         } catch {
             XCTFail("Expected LLMError, got \(error)")
@@ -257,7 +257,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -295,7 +295,7 @@ final class AnthropicServiceTests: XCTestCase {
             "id": "msg_test123",
             "type": "message",
             "role": "assistant",
-            "model": "claude-3-7-sonnet-20250219",
+            "model": "claude-sonnet-4-5-20250929",
             "content": [
                 {
                     "type": "text",
@@ -327,14 +327,14 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
             let response = try await service.messageRequest(body: request)
             
             XCTAssertEqual(response.id, "msg_test123")
-            XCTAssertEqual(response.model, "claude-3-7-sonnet-20250219")
+            XCTAssertEqual(response.model, "claude-sonnet-4-5-20250929")
             XCTAssertEqual(response.content.count, 1)
             
             if case .text(let text, citations: _) = response.content.first {
@@ -358,7 +358,7 @@ final class AnthropicServiceTests: XCTestCase {
             "id": "msg_tool123",
             "type": "message",
             "role": "assistant",
-            "model": "claude-3-7-sonnet-20250219",
+            "model": "claude-sonnet-4-5-20250929",
             "content": [
                 {
                     "type": "tool_use",
@@ -408,7 +408,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             toolChoice: .auto,
             tools: [weatherTool]
         )
@@ -495,7 +495,7 @@ final class AnthropicServiceTests: XCTestCase {
                     "id": "msg_retry123",
                     "type": "message",
                     "role": "assistant",
-                    "model": "claude-3-7-sonnet-20250219",
+                    "model": "claude-sonnet-4-5-20250929",
                     "content": [{"type": "text", "text": "Success after retry"}],
                     "stop_reason": "end_turn",
                     "usage": {"input_tokens": 5, "output_tokens": 5}
@@ -522,7 +522,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219"
+            model: "claude-sonnet-4-5-20250929"
         )
         
         do {
@@ -556,7 +556,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             temperature: 0.1
         )
         
@@ -564,7 +564,7 @@ final class AnthropicServiceTests: XCTestCase {
             let response = try await realService.messageRequest(body: request)
             
             XCTAssertFalse(response.id.isEmpty)
-            XCTAssertEqual(response.model, "claude-3-7-sonnet-20250219")
+            XCTAssertEqual(response.model, "claude-sonnet-4-5-20250929")
             XCTAssertGreaterThan(response.content.count, 0)
             
             if case .text(let text, citations: _) = response.content.first {
@@ -595,7 +595,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             responseFormat: .jsonObject
         )
         
@@ -610,7 +610,7 @@ final class AnthropicServiceTests: XCTestCase {
         let mockResponse = AnthropicMessageResponseBody(
             content: [.text(mockJSON, citations: nil)],
             id: "test-id",
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             role: "assistant",
             stopReason: "end_turn",
             stopSequence: nil,
@@ -641,7 +641,7 @@ final class AnthropicServiceTests: XCTestCase {
                     role: .user
                 )
             ],
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             system: originalSystem,
             responseFormat: .jsonObject
         )
@@ -649,7 +649,7 @@ final class AnthropicServiceTests: XCTestCase {
         let mockResponse = AnthropicMessageResponseBody(
             content: [.text("{\"response\": \"hello\"}", citations: nil)],
             id: "test-id",
-            model: "claude-3-7-sonnet-20250219",
+            model: "claude-sonnet-4-5-20250929",
             role: "assistant",
             stopReason: "end_turn",
             stopSequence: nil,

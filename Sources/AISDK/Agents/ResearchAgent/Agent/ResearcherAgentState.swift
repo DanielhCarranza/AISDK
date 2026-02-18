@@ -1,5 +1,5 @@
 //
-//  ResearcherAgentState.swift
+//  ResearcherLegacyAgentState.swift
 //  HealthCompanion
 //
 //  Created by Abhigael Mendez Carranza on 03/01/25.
@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 /// Represents the current state of the research process
-public enum ResearcherAgentState: Equatable, Codable {
+public enum ResearcherLegacyAgentState: Equatable, Codable {
     case idle
     case start(topic: String, startTime: Date)
     case processing(topic: String, startTime: Date, sourceCount: Int)

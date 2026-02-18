@@ -42,7 +42,7 @@ final class OpenAIResponsesSessionTests: XCTestCase {
             // Test Response wrapper provides clean access
             XCTAssertNotNil(response.text)
             XCTAssertNotNil(response.id)
-            XCTAssertEqual(response.model, "gpt-4o-mini")
+            XCTAssertTrue(response.model.contains("gpt-4o-mini"), "Expected model containing 'gpt-4o-mini', got: \(response.model)")
             XCTAssertTrue(response.status.isFinal)
             XCTAssertGreaterThan(response.content.count, 0)
             
@@ -118,13 +118,13 @@ final class OpenAIResponsesSessionTests: XCTestCase {
     
     // MARK: - Mixed Tool Syntax Tests
     
-    func testBuiltInToolConfiguration() {
+    func testResponseBuiltInToolConfiguration() {
         if let provider = provider {
             let session = provider.response("Test with built-in tools")
                 .tools([
-                    BuiltInTool.webSearchPreview,
-                    BuiltInTool.codeInterpreter,
-                    BuiltInTool.imageGeneration()
+                    ResponseBuiltInTool.webSearchPreview,
+                    ResponseBuiltInTool.codeInterpreter,
+                    ResponseBuiltInTool.imageGeneration()
                 ])
             
             XCTAssertNotNil(session)
@@ -135,7 +135,7 @@ final class OpenAIResponsesSessionTests: XCTestCase {
         if let provider = provider {
             let session = provider.response("Test with MCP tools")
                 .tools([
-                    BuiltInTool.mcp(
+                    ResponseBuiltInTool.mcp(
                         serverLabel: "test-server",
                         serverUrl: "https://test.com/mcp"
                     )
@@ -146,19 +146,19 @@ final class OpenAIResponsesSessionTests: XCTestCase {
     }
     
     func testToolConversionMechanisms() {
-        // Test BuiltInTool conversion
-        let webSearchTool = BuiltInTool.webSearchPreview
+        // Test ResponseBuiltInTool conversion
+        let webSearchTool = ResponseBuiltInTool.webSearchPreview
         let convertedTool = webSearchTool.toResponseTool()
         
         switch convertedTool {
         case .webSearchPreview:
-            XCTAssert(true, "Successfully converted BuiltInTool to ResponseTool")
+            XCTAssert(true, "Successfully converted ResponseBuiltInTool to ResponseTool")
         default:
-            XCTFail("Failed to convert BuiltInTool.webSearchPreview")
+            XCTFail("Failed to convert ResponseBuiltInTool.webSearchPreview")
         }
         
         // Test MCP tool conversion
-        let mcpTool = BuiltInTool.mcp(serverLabel: "test", serverUrl: "https://test.com")
+        let mcpTool = ResponseBuiltInTool.mcp(serverLabel: "test", serverUrl: "https://test.com")
         let convertedMCPTool = mcpTool.toResponseTool()
         
         switch convertedMCPTool {
@@ -166,7 +166,7 @@ final class OpenAIResponsesSessionTests: XCTestCase {
             XCTAssertEqual(label, "test")
             XCTAssertEqual(url, "https://test.com")
         default:
-            XCTFail("Failed to convert BuiltInTool.mcp")
+            XCTFail("Failed to convert ResponseBuiltInTool.mcp")
         }
     }
     

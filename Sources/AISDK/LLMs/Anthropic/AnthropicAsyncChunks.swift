@@ -17,6 +17,12 @@ import Foundation
 ///             print(text)
 ///         case .toolUse(name: let toolName, input: let toolInput):
 ///             print("Claude wants to call tool \(toolName) with input \(toolInput)")
+///         case .thinkingDelta(let delta):
+///             print("Thinking: \(delta)")
+///         case .thinkingComplete(let block):
+///             print("Thinking complete: \(block.thinking)")
+///         default:
+///             break
 ///         }
 ///     }
 public struct AnthropicAsyncChunks: AsyncSequence {
@@ -30,43 +36,112 @@ public struct AnthropicAsyncChunks: AsyncSequence {
     public struct AsyncIterator: AsyncIteratorProtocol {
         var asyncBytesIterator: AsyncLineSequence<URLSession.AsyncBytes>.AsyncIterator
 
+        private struct ToolCallState {
+            var name: String
+            var arguments: String = ""
+        }
+
+        private struct ThinkingBlockState {
+            var thinking: String = ""
+            var signature: String = ""
+        }
+
+        private var currentToolState: ToolCallState?
+        private var currentThinkingState: ThinkingBlockState?
+        private var currentBlockType: AnthropicStreamingContentBlockType?
+
+        init(asyncBytesIterator: AsyncLineSequence<URLSession.AsyncBytes>.AsyncIterator) {
+            self.asyncBytesIterator = asyncBytesIterator
+        }
+
         /// This buffers up any tool calls that are part of the streaming response before
-        /// emitting the next streaming chunk. That is, tool calls are not emitted to the
-        /// caller as partial values. I see no value in a partial tool call, as we don't have
-        /// enough context to form the full local function call (we don't have the arguments!)
-        /// until the full tool call is buffered in. If you have a use case where partial tool
-        /// calls are necessary, please reach out to me.
-        ///
-        /// Text chunks are immediately emitted.
+        /// emitting the next streaming chunk. Tool calls are not emitted to the
+        /// caller as partial values.
         mutating public func next() async throws -> AnthropicMessageStreamingChunk? {
-            var toolUseAccumulator = ""
-            var toolName: String? = nil
             while true {
                 guard let value = try await self.asyncBytesIterator.next() else {
-                    return nil // No more streaming lines to consume
+                    return nil
                 }
-                if value.starts(with: #"data: {"type":"content_block_start""#) {
-                    if let blockStart = AnthropicMessageStreamingContentBlockStart.from(line: value) {
-                        if case .toolUse(name: let name) = blockStart.contentBlock {
-                            toolName = name
-                        }
-                    }
-                }
-                if value.starts(with: #"data: {"type":"content_block_stop""#) {
-                    if let toolName = toolName {
-                        return .toolUse(
-                            name: toolName,
-                            input: try JSONDecoder().decode([String: AIProxyJSONValue].self, from: toolUseAccumulator.data(using: .utf8) ?? Data()).mapValues { $0.anyValue }
+
+                if let blockStart = AnthropicContentBlockStart.from(line: value) {
+                    currentBlockType = AnthropicStreamingContentBlockType(rawValue: blockStart.contentBlock.type)
+
+                    switch currentBlockType {
+                    case .thinking:
+                        currentThinkingState = ThinkingBlockState()
+                    case .toolUse:
+                        currentToolState = ToolCallState(
+                            name: blockStart.contentBlock.name ?? ""
                         )
+                    case .text, .none:
+                        break
                     }
+                    continue
                 }
-                if let block = AnthropicMessageStreamingDeltaBlock.from(line: value) {
-                    switch block.delta {
-                    case .text(let string):
-                        return .text(string)
-                    case .toolUse(let string):
-                        toolUseAccumulator += string
+
+                if let blockDelta = AnthropicContentBlockDelta.from(line: value) {
+                    switch blockDelta.delta {
+                    case .textDelta(let text):
+                        return .text(text)
+                    case .thinkingDelta(let thinking):
+                        if currentThinkingState == nil {
+                            currentThinkingState = ThinkingBlockState()
+                        }
+                        currentThinkingState?.thinking += thinking
+                        return .thinkingDelta(thinking)
+                    case .signatureDelta(let signature):
+                        if currentThinkingState == nil {
+                            currentThinkingState = ThinkingBlockState()
+                        }
+                        currentThinkingState?.signature = signature
+                    case .inputJsonDelta(let json):
+                        if currentToolState == nil {
+                            currentToolState = ToolCallState(name: "")
+                        }
+                        currentToolState?.arguments += json
                     }
+                    continue
+                }
+
+                if let _ = AnthropicContentBlockStop.from(line: value) {
+                    switch currentBlockType {
+                    case .thinking:
+                        if let state = currentThinkingState {
+                            let block = AnthropicThinkingBlock(
+                                thinking: state.thinking,
+                                signature: state.signature
+                            )
+                            currentThinkingState = nil
+                            currentBlockType = nil
+                            return .thinkingComplete(block)
+                        }
+                    case .toolUse:
+                        if let state = currentToolState {
+                            let input = try JSONDecoder()
+                                .decode([String: AIProxyJSONValue].self, from: state.arguments.data(using: .utf8) ?? Data())
+                                .mapValues { $0.anyValue }
+                            currentToolState = nil
+                            currentBlockType = nil
+                            return .toolUse(name: state.name, input: input)
+                        }
+                    case .text, .none:
+                        currentBlockType = nil
+                        break
+                    }
+                    continue
+                }
+
+                if let messageDelta = AnthropicMessageDeltaEvent.from(line: value) {
+                    let payload = AnthropicMessageDelta(
+                        stopReason: messageDelta.delta.stopReason,
+                        stopSequence: messageDelta.delta.stopSequence,
+                        usage: messageDelta.usage
+                    )
+                    return .messageDelta(payload)
+                }
+
+                if AnthropicMessageStopEvent.from(line: value) != nil {
+                    return .done
                 }
             }
         }

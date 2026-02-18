@@ -42,7 +42,7 @@ final class MultimodalTests: XCTestCase {
             choices: [
                 ChatCompletionResponse.Choice(
                     index: 0,
-                    message: ChatCompletionResponse.Message(
+                    message: ChatCompletionResponse.LegacyMessage(
                         role: "assistant",
                         content: "I can see a beautiful landscape with a wooden boardwalk extending through a green meadow. The image shows rolling hills in the background and a clear blue sky.",
                         toolCalls: nil,
@@ -274,8 +274,9 @@ final class MultimodalTests: XCTestCase {
         // Initialize real OpenAI provider
         let provider = OpenAIProvider(apiKey: apiKey)
         
-        // Use a simple nature image (same as main.swift)
-        let imageURL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+        // Use a reliable, publicly accessible image URL
+        // Note: Wikipedia URLs return 400 because Wikipedia blocks automated fetches from OpenAI
+        let imageURL = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800"
         
         let request = ChatCompletionRequest(
             model: model,
@@ -298,16 +299,21 @@ final class MultimodalTests: XCTestCase {
         let content = response.choices.first?.message.content ?? ""
         XCTAssertFalse(content.isEmpty)
         
-        // Should mention nature elements
+        // Should mention nature/landscape elements
         let lowerContent = content.lowercased()
         XCTAssertTrue(
-            lowerContent.contains("water") || 
-            lowerContent.contains("wood") || 
-            lowerContent.contains("boardwalk") ||
-            lowerContent.contains("path") ||
+            lowerContent.contains("water") ||
+            lowerContent.contains("mountain") ||
+            lowerContent.contains("lake") ||
+            lowerContent.contains("landscape") ||
             lowerContent.contains("nature") ||
-            lowerContent.contains("green"),
-            "Response should describe the boardwalk nature scene"
+            lowerContent.contains("valley") ||
+            lowerContent.contains("forest") ||
+            lowerContent.contains("tree") ||
+            lowerContent.contains("sky") ||
+            lowerContent.contains("green") ||
+            lowerContent.contains("scene"),
+            "Response should describe the nature scene"
         )
         
         print("✅ Image URL analysis: \(content)")

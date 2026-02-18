@@ -1,0 +1,1442 @@
+//
+//  AnthropicClientAdapter.swift
+//  AISDK
+//
+//  Direct Anthropic provider client adapter for Phase 2 routing layer
+//  Provides direct access to Anthropic API as a ProviderClient
+//
+
+import Foundation
+import os
+
+// MARK: - AnthropicClientAdapter
+
+/// Direct Anthropic provider client for the Phase 2 routing layer
+///
+/// This adapter provides direct access to Anthropic's Messages API,
+/// bypassing routers like OpenRouter or LiteLLM when direct provider access
+/// is needed (e.g., for cost optimization, specific model access, or failover).
+///
+/// ## Features
+/// - Direct Anthropic API access
+/// - Full streaming support with SSE parsing
+/// - Tool calling support
+/// - Health status tracking
+/// - Thinking delta passthrough (when enabled via beta headers externally)
+///
+/// ## Usage
+/// ```swift
+/// let client = AnthropicClientAdapter(apiKey: "sk-ant-...")
+/// let request = ProviderRequest(modelId: "claude-sonnet-4-20250514", messages: [...])
+/// let response = try await client.execute(request: request)
+/// ```
+public actor AnthropicClientAdapter: ProviderClient {
+    // MARK: - Identity
+
+    public nonisolated let providerId: String = "anthropic"
+    public nonisolated let displayName: String = "Anthropic"
+    public nonisolated let baseURL: URL
+
+    // MARK: - Configuration
+
+    private let apiKey: String
+    private let session: URLSession
+    private let anthropicVersion: String
+    private let betaConfiguration: BetaConfiguration
+    private let thinkingBudgetOverride: Int?
+    private let retryPolicy: RetryPolicy
+
+    // MARK: - State
+
+    private var _healthStatus: ProviderHealthStatus = .unknown
+
+    // MARK: - Constants
+
+    private static let defaultBaseURL = URL(string: "https://api.anthropic.com")!
+    private static let messagesEndpoint = "v1/messages"
+    private static let defaultAnthropicVersion = "2023-06-01"
+    private static let logger = Logger(subsystem: "AISDK", category: "AnthropicClientAdapter")
+
+    // Known Claude models (Anthropic doesn't have a models endpoint)
+    private static let knownModels = [
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-1-20250805",
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-sonnet-20240620",
+        "claude-3-5-haiku-20241022",
+        "claude-3-opus-20240229",
+        "claude-3-sonnet-20240229",
+        "claude-3-haiku-20240307"
+    ]
+
+    // MARK: - Initialization
+
+    /// Initialize AnthropicClientAdapter with API key and optional configuration
+    /// - Parameters:
+    ///   - apiKey: Anthropic API key (starts with "sk-ant-")
+    ///   - baseURL: Optional custom base URL (defaults to https://api.anthropic.com)
+    ///   - session: Optional URLSession for dependency injection
+    ///   - anthropicVersion: API version string (defaults to 2023-06-01)
+    /// - Parameter retryPolicy: Retry policy for transient failures (default: 3 retries with exponential backoff)
+    public init(
+        apiKey: String,
+        baseURL: URL? = nil,
+        session: URLSession? = nil,
+        anthropicVersion: String? = nil,
+        betaConfiguration: BetaConfiguration = .none,
+        thinkingBudgetOverride: Int? = nil,
+        retryPolicy: RetryPolicy = .default
+    ) {
+        self.apiKey = apiKey
+        self.baseURL = baseURL ?? Self.defaultBaseURL
+        self.session = session ?? .shared
+        self.anthropicVersion = anthropicVersion ?? Self.defaultAnthropicVersion
+        self.betaConfiguration = betaConfiguration
+        self.thinkingBudgetOverride = thinkingBudgetOverride
+        self.retryPolicy = retryPolicy
+    }
+
+    // MARK: - Health & Status
+
+    public var healthStatus: ProviderHealthStatus {
+        _healthStatus
+    }
+
+    public var isAvailable: Bool {
+        _healthStatus.acceptsTraffic
+    }
+
+    /// Refresh health status by making a lightweight API call
+    public func refreshHealthStatus() async {
+        do {
+            // Anthropic doesn't have a health endpoint, so we try a minimal message
+            // Using a simple request to verify API key and connectivity
+            let testRequest = ProviderRequest(
+                modelId: "claude-haiku-4-5-20251001",
+                messages: [.user("Hi")],
+                maxTokens: 1,
+                timeout: 10
+            )
+            let httpRequest = try buildHTTPRequest(for: testRequest, streaming: false)
+            let (data, response) = try await performRequest(httpRequest, timeout: 10)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                _healthStatus = .unhealthy(reason: "Invalid response type")
+                return
+            }
+
+            // Any 2xx or even 4xx (except auth) means the API is reachable
+            switch httpResponse.statusCode {
+            case 200..<300:
+                _healthStatus = .healthy
+            case 401, 403:
+                let errorMessage = parseErrorMessage(from: data) ?? "Authentication failed"
+                _healthStatus = .unhealthy(reason: errorMessage)
+            case 429:
+                _healthStatus = .degraded(reason: "Rate limited")
+            case 500..<600:
+                let errorMessage = parseErrorMessage(from: data) ?? "Server error"
+                _healthStatus = .unhealthy(reason: errorMessage)
+            default:
+                _healthStatus = .healthy // API is reachable
+            }
+        } catch let error as ProviderError {
+            switch error {
+            case .authenticationFailed:
+                _healthStatus = .unhealthy(reason: "Authentication failed")
+            case .rateLimited:
+                _healthStatus = .degraded(reason: "Rate limited")
+            case .serverError(let statusCode, let message):
+                _healthStatus = .unhealthy(reason: "Server error \(statusCode): \(message)")
+            case .networkError(let message):
+                _healthStatus = .unhealthy(reason: "Network error: \(message)")
+            default:
+                _healthStatus = .unhealthy(reason: error.localizedDescription)
+            }
+        } catch {
+            _healthStatus = .unhealthy(reason: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Request Execution
+
+    public func execute(request: ProviderRequest) async throws -> ProviderResponse {
+        let startTime = Date()
+        let httpRequest = try buildHTTPRequest(for: request, streaming: false)
+
+        let (data, response) = try await RetryExecutor(policy: retryPolicy).execute {
+            try await self.performRequest(httpRequest, timeout: request.timeout)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ProviderError.networkError("Invalid response type")
+        }
+
+        try validateHTTPResponse(httpResponse, data: data)
+
+        let messageResponse = try parseMessageResponse(data)
+        let latencyMs = Int(Date().timeIntervalSince(startTime) * 1000)
+
+        // Update health status on successful request
+        _healthStatus = .healthy
+
+        return buildProviderResponse(from: messageResponse, latencyMs: latencyMs)
+    }
+
+    public nonisolated func stream(request: ProviderRequest) -> AsyncThrowingStream<ProviderStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await self.performStreaming(request: request, continuation: continuation)
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            // Cancel the producer task when the consumer cancels
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
+    }
+
+    // MARK: - Model Information
+
+    public var availableModels: [String] {
+        get async throws {
+            // Anthropic doesn't have a models endpoint, return known models
+            return Self.knownModels
+        }
+    }
+
+    public func isModelAvailable(_ modelId: String) async -> Bool {
+        // Check if it's a known model or matches Claude naming pattern
+        return Self.knownModels.contains(modelId) || modelId.hasPrefix("claude-")
+    }
+
+    public func capabilities(for modelId: String) async -> LLMCapabilities? {
+        // Return known capabilities for Claude models
+        switch modelId {
+        case let id where id.contains("opus"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .reasoning, .longContext]
+        case let id where id.contains("sonnet"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .longContext]
+        case let id where id.contains("haiku"):
+            return [.text, .vision, .tools, .streaming, .functionCalling]
+        default:
+            // Generic Claude capabilities
+            return [.text, .tools, .streaming, .functionCalling]
+        }
+    }
+
+    // MARK: - Private Methods
+
+    private static func supportsReasoning(for modelId: String) -> Bool {
+        modelId.contains("opus")
+    }
+
+    private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) throws -> URLRequest {
+        let endpoint = baseURL.appendingPathComponent(Self.messagesEndpoint)
+        var httpRequest = URLRequest(url: endpoint)
+        httpRequest.httpMethod = "POST"
+        httpRequest.timeoutInterval = request.timeout
+
+        // Required headers for Anthropic API
+        httpRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        httpRequest.setValue(anthropicVersion, forHTTPHeaderField: "anthropic-version")
+        httpRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Accept header for streaming
+        if streaming {
+            httpRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        }
+
+        // Build request body
+        let body = try buildRequestBody(from: request, streaming: streaming)
+        if let betaHeader = betaHeaderValue(for: request, body: body) {
+            httpRequest.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta")
+        }
+        httpRequest.httpBody = try JSONEncoder().encode(body)
+
+        return httpRequest
+    }
+
+    private func betaHeaderValue(for request: ProviderRequest, body: ACARequestBody) -> String? {
+        var effectiveConfig = betaConfiguration
+        if shouldAddThinkingBetaHeader(for: request, body: body) {
+            effectiveConfig = effectiveConfig.merging(with: BetaConfiguration(interleavedThinking: true))
+        }
+        // Auto-enable extended cache TTL header when request uses 1h cache control
+        if let blocks = body.systemBlocks, blocks.contains(where: { $0.cacheControl?.ttl == "1h" }) {
+            effectiveConfig = effectiveConfig.merging(with: BetaConfiguration(extendedCacheTTL: true))
+        }
+
+        var headers: [String] = []
+        if let baseHeader = effectiveConfig.headerValue() {
+            headers.append(contentsOf: baseHeader.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        }
+
+        if let builtInTools = request.builtInTools,
+           builtInTools.contains(where: { $0.kind == "codeExecution" }) {
+            if !headers.contains("code-execution-2025-08-25") {
+                headers.append("code-execution-2025-08-25")
+            }
+        }
+
+        if let builtInTools = request.builtInTools,
+           builtInTools.contains(where: { $0.kind == "computerUse" }) {
+            let hasZoom = builtInTools.contains(where: {
+                if case .computerUse(let config) = $0 { return config.enableZoom == true }
+                return false
+            })
+            let header = hasZoom ? "computer-use-2025-11-24" : "computer-use-2025-01-24"
+            if !headers.contains(header) {
+                headers.append(header)
+            }
+        }
+
+        return headers.isEmpty ? nil : headers.joined(separator: ",")
+    }
+
+    private func shouldAddThinkingBetaHeader(for request: ProviderRequest, body: ACARequestBody) -> Bool {
+        let hasUnified = request.reasoning?.effort != nil || request.reasoning?.budgetTokens != nil
+        return hasUnified && (body.thinking?.isEnabled ?? false)
+    }
+
+    private func buildRequestBody(from request: ProviderRequest, streaming: Bool) throws -> ACARequestBody {
+        // Extract system message if present (Anthropic handles system separately)
+        var systemContent: String?
+        var nonSystemMessages: [AIMessage] = []
+
+        for message in request.messages {
+            if message.role == .system {
+                // Combine multiple system messages
+                let text = message.content.textValue
+                if let existing = systemContent {
+                    systemContent = existing + "\n\n" + text
+                } else {
+                    systemContent = text
+                }
+            } else {
+                nonSystemMessages.append(message)
+            }
+        }
+
+        // Convert messages to Anthropic format
+        let messages = try nonSystemMessages.map { message -> ACAMessage in
+            let content: [ACAContentBlock]
+
+            switch message.content {
+            case .text(let text):
+                if message.role == .tool {
+                    // Tool results use tool_result content type - require toolCallId
+                    guard let toolCallId = message.toolCallId, !toolCallId.isEmpty else {
+                        throw ProviderError.invalidRequest("Tool message requires non-empty toolCallId")
+                    }
+
+                    // Check for computer use result payload
+                    if text.contains("\"__computer_use_result__\""),
+                       let payloadData = text.data(using: .utf8),
+                       let payload = try? JSONDecoder().decode(ComputerUseResultPayload.self, from: payloadData),
+                       payload.type == "__computer_use_result__" {
+                        // Build content blocks for computer use result
+                        var resultBlocks: [[String: ProviderJSONValue]] = []
+                        if let screenshot = payload.screenshot, let mediaType = payload.mediaType {
+                            resultBlocks.append([
+                                "type": .string("image"),
+                                "source": .object([
+                                    "type": .string("base64"),
+                                    "media_type": .string(mediaType),
+                                    "data": .string(screenshot)
+                                ])
+                            ])
+                        }
+                        if let text = payload.text {
+                            resultBlocks.append([
+                                "type": .string("text"),
+                                "text": .string(text)
+                            ])
+                        }
+                        if resultBlocks.isEmpty {
+                            resultBlocks.append([
+                                "type": .string("text"),
+                                "text": .string("Action completed")
+                            ])
+                        }
+                        content = [.computerUseResult(ACAComputerUseResultContent(
+                            type: "tool_result",
+                            toolUseId: toolCallId,
+                            content: resultBlocks,
+                            isError: payload.isError
+                        ))]
+                    } else {
+                        content = [.toolResult(ACAToolResultContent(
+                            type: "tool_result",
+                            toolUseId: toolCallId,
+                            content: text
+                        ))]
+                    }
+                } else {
+                    content = [.text(ACATextContent(type: "text", text: text))]
+                }
+            case .parts(let parts):
+                content = try parts.map { part -> ACAContentBlock in
+                    switch part {
+                    case .text(let text):
+                        return .text(ACATextContent(type: "text", text: text))
+                    case .image(let data, let mimeType):
+                        let base64 = data.base64EncodedString()
+                        return .image(ACAImageContent(
+                            type: "image",
+                            source: ACAImageSource(
+                                type: "base64",
+                                mediaType: mimeType,
+                                data: base64
+                            )
+                        ))
+                    case .imageURL:
+                        // Anthropic requires base64 images, URLs not supported
+                        throw ProviderError.invalidRequest("Anthropic does not support image URLs - provide base64 image data instead")
+                    case .audio:
+                        throw ProviderError.invalidRequest("Anthropic does not support audio content")
+                    case .file:
+                        throw ProviderError.invalidRequest("Anthropic does not support file content in this format")
+                    case .video:
+                        throw ProviderError.invalidRequest("Anthropic does not support video content")
+                    case .videoURL:
+                        throw ProviderError.invalidRequest("Anthropic does not support video URLs")
+                    }
+                }
+            }
+
+            // Handle tool calls in assistant messages
+            var finalContent = content
+            if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                for toolCall in toolCalls {
+                    // Parse arguments JSON string to dictionary
+                    var inputDict: [String: ProviderJSONValue] = [:]
+                    if let argsData = toolCall.arguments.data(using: .utf8),
+                       let parsedArgs = try? JSONDecoder().decode([String: ProviderJSONValue].self, from: argsData) {
+                        inputDict = parsedArgs
+                    }
+
+                    finalContent.append(.toolUse(ACAToolUseContent(
+                        type: "tool_use",
+                        id: toolCall.id,
+                        name: toolCall.name,
+                        input: inputDict
+                    )))
+                }
+            }
+
+            return ACAMessage(
+                role: message.role == .assistant ? "assistant" : "user",
+                content: finalContent
+            )
+        }
+
+        let maxTokens = request.maxTokens ?? 4096
+        var body = ACARequestBody(
+            model: request.modelId,
+            messages: messages,
+            maxTokens: maxTokens // Anthropic requires max_tokens
+        )
+
+        // Optional parameters — apply caching if enabled
+        if let cacheConfig = request.caching, cacheConfig.enabled, let systemText = systemContent {
+            let ttl: String? = (cacheConfig.retention == .extended) ? "1h" : nil
+            body.systemBlocks = [ACASystemBlock(text: systemText, cacheControl: ACACacheControl(ttl: ttl))]
+        } else {
+            body.system = systemContent
+        }
+        body.temperature = request.temperature
+        body.topP = request.topP
+        body.stopSequences = request.stop
+        body.stream = streaming
+
+        let hasUnified = request.reasoning?.effort != nil || request.reasoning?.budgetTokens != nil
+        if Self.supportsReasoning(for: request.modelId), hasUnified {
+            if maxTokens <= AnthropicThinkingConfigParam.minimumBudget {
+                Self.logger.warning("Skipping reasoning: max_tokens \(maxTokens) is too small for minimum thinking budget.")
+            } else if let budget = request.reasoning?.budgetTokens {
+                body.thinking = .enabled(budgetTokens: budget)
+            } else if let effort = request.reasoning?.effort {
+                let proposedBudget: Int
+                switch effort {
+                case .low:
+                    proposedBudget = AnthropicThinkingConfigParam.minimumBudget
+                case .medium:
+                    proposedBudget = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens / 4)
+                case .high:
+                    proposedBudget = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens / 2)
+                }
+                let maxAllowed = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens - 1)
+                body.thinking = .enabled(budgetTokens: min(proposedBudget, maxAllowed))
+            }
+        }
+
+        if body.thinking == nil, !hasUnified, betaConfiguration.extendedThinking {
+            let proposedBudget = thinkingBudgetOverride ?? max(AnthropicThinkingConfigParam.minimumBudget, maxTokens / 4)
+            let maxAllowed = max(AnthropicThinkingConfigParam.minimumBudget, maxTokens - 1)
+            if proposedBudget >= AnthropicThinkingConfigParam.minimumBudget, maxTokens > AnthropicThinkingConfigParam.minimumBudget {
+                body.thinking = .enabled(budgetTokens: min(proposedBudget, maxAllowed))
+            }
+        }
+
+        if let thinking = body.thinking {
+            try thinking.validate(maxTokens: maxTokens)
+        }
+
+        // Tool choice - handle before tools conversion
+        var shouldOmitTools = false
+        if let toolChoice = request.toolChoice {
+            switch toolChoice {
+            case .auto:
+                body.toolChoice = ACAToolChoice(type: "auto")
+            case .none:
+                // Anthropic doesn't have explicit "none" - omit tools entirely
+                shouldOmitTools = true
+            case .required:
+                body.toolChoice = ACAToolChoice(type: "any")
+            case .tool(let name):
+                body.toolChoice = ACAToolChoice(type: "tool", name: name)
+            }
+        }
+
+        // Tools - convert from ProviderJSONValue to Anthropic format (unless toolChoice is .none)
+        if !shouldOmitTools, let tools = request.tools {
+            var convertedTools: [ACAToolEntry] = []
+            for (index, toolValue) in tools.enumerated() {
+                guard case .object(let toolDict) = toolValue else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) is not an object")
+                }
+                guard case .object(let functionDict)? = toolDict["function"] else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) missing function definition")
+                }
+                guard case .string(let name)? = functionDict["name"], !name.isEmpty else {
+                    throw ProviderError.invalidRequest("Tool at index \(index) missing function name")
+                }
+
+                let description: String?
+                if case .string(let desc)? = functionDict["description"] {
+                    description = desc
+                } else {
+                    description = nil
+                }
+
+                // Convert parameters (input_schema in Anthropic)
+                let inputSchema: [String: ProviderJSONValue]?
+                if case .object(let params)? = functionDict["parameters"] {
+                    inputSchema = params
+                } else {
+                    inputSchema = nil
+                }
+
+                convertedTools.append(.function(ACATool(
+                    name: name,
+                    description: description,
+                    inputSchema: inputSchema ?? ["type": .string("object")]
+                )))
+            }
+            body.tools = convertedTools
+        }
+
+        // Built-in tools
+        if let builtInTools = request.builtInTools, !builtInTools.isEmpty {
+            if body.tools == nil { body.tools = [] }
+            for tool in builtInTools {
+                switch tool {
+                case .webSearch(let config):
+                    var toolDict: [String: Any] = [
+                        "type": "web_search_20250305",
+                        "name": "web_search"
+                    ]
+                    if let maxUses = config.maxUses { toolDict["max_uses"] = maxUses }
+                    if let allowed = config.allowedDomains { toolDict["allowed_domains"] = allowed }
+                    if let blocked = config.blockedDomains { toolDict["blocked_domains"] = blocked }
+                    if let loc = config.userLocation {
+                        var locDict: [String: String] = ["type": "approximate"]
+                        if let city = loc.city { locDict["city"] = city }
+                        if let region = loc.region { locDict["region"] = region }
+                        if let country = loc.country { locDict["country"] = country }
+                        if let tz = loc.timezone { locDict["timezone"] = tz }
+                        toolDict["user_location"] = locDict
+                    }
+                    body.tools?.append(.builtIn(toolDict))
+
+                case .webSearchDefault:
+                    body.tools?.append(.builtIn([
+                        "type": "web_search_20250305",
+                        "name": "web_search"
+                    ]))
+
+                case .codeExecution, .codeExecutionDefault:
+                    body.tools?.append(.builtIn([
+                        "type": "code_execution_20250825",
+                        "name": "code_execution"
+                    ]))
+
+                case .computerUse(let config):
+                    var toolDict: [String: Any] = [
+                        "name": "computer"
+                    ]
+                    if config.enableZoom == true {
+                        toolDict["type"] = "computer_20251124"
+                        toolDict["enable_zoom"] = true
+                    } else {
+                        toolDict["type"] = "computer_20250124"
+                    }
+                    toolDict["display_width_px"] = config.displayWidth
+                    toolDict["display_height_px"] = config.displayHeight
+                    if let displayNumber = config.displayNumber {
+                        toolDict["display_number"] = displayNumber
+                    }
+                    body.tools?.append(.builtIn(toolDict))
+
+                case .computerUseDefault:
+                    body.tools?.append(.builtIn([
+                        "type": "computer_20250124",
+                        "name": "computer",
+                        "display_width_px": 1024,
+                        "display_height_px": 768
+                    ]))
+
+                case .fileSearch:
+                    throw ProviderError.invalidRequest(
+                        "fileSearch is not supported by Anthropic. Supported: webSearch, codeExecution, computerUse."
+                    )
+                case .imageGeneration, .imageGenerationDefault:
+                    throw ProviderError.invalidRequest(
+                        "imageGeneration is not supported by Anthropic. Supported: webSearch, codeExecution, computerUse."
+                    )
+                case .urlContext:
+                    throw ProviderError.invalidRequest(
+                        "urlContext is not supported by Anthropic. Supported: webSearch, codeExecution, computerUse."
+                    )
+                }
+            }
+        }
+
+        return body
+    }
+
+    private func performRequest(_ request: URLRequest, timeout: TimeInterval) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut:
+                throw ProviderError.timeout(timeout)
+            case .notConnectedToInternet, .networkConnectionLost:
+                throw ProviderError.networkError("No internet connection")
+            case .cannotFindHost, .cannotConnectToHost:
+                throw ProviderError.networkError("Cannot connect to Anthropic")
+            default:
+                throw ProviderError.networkError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func validateHTTPResponse(_ response: HTTPURLResponse, data: Data) throws {
+        switch response.statusCode {
+        case 200..<300:
+            return
+        case 400:
+            let errorMessage = parseErrorMessage(from: data) ?? "Bad request"
+            throw ProviderError.invalidRequest(errorMessage)
+        case 401:
+            let errorMessage = parseErrorMessage(from: data) ?? "Invalid API key"
+            throw ProviderError.authenticationFailed(errorMessage)
+        case 403:
+            let errorMessage = parseErrorMessage(from: data) ?? "Access forbidden"
+            throw ProviderError.authenticationFailed(errorMessage)
+        case 404:
+            let errorMessage = parseErrorMessage(from: data) ?? "Resource not found"
+            if errorMessage.lowercased().contains("model") {
+                throw ProviderError.modelNotFound(errorMessage)
+            }
+            throw ProviderError.invalidRequest("Not found: \(errorMessage)")
+        case 422:
+            let errorMessage = parseErrorMessage(from: data) ?? "Unprocessable entity"
+            throw ProviderError.invalidRequest(errorMessage)
+        case 429:
+            let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
+                .flatMap { TimeInterval($0) }
+            throw ProviderError.rateLimited(retryAfter: retryAfter)
+        case 500..<600:
+            let errorMessage = parseErrorMessage(from: data) ?? "Server error"
+            throw ProviderError.serverError(statusCode: response.statusCode, message: errorMessage)
+        default:
+            let errorMessage = parseErrorMessage(from: data) ?? "Unknown error"
+            throw ProviderError.unknown("HTTP \(response.statusCode): \(errorMessage)")
+        }
+    }
+
+    private func parseErrorMessage(from data: Data) -> String? {
+        struct ErrorResponse: Decodable {
+            struct ErrorDetail: Decodable {
+                let message: String?
+                let type: String?
+            }
+            let error: ErrorDetail?
+            let type: String?
+            let message: String?
+        }
+
+        guard let response = try? JSONDecoder().decode(ErrorResponse.self, from: data) else {
+            return nil
+        }
+
+        // Anthropic can return error in either format
+        if let error = response.error {
+            var message = error.message ?? "Unknown error"
+            if let type = error.type {
+                message += " [type: \(type)]"
+            }
+            return message
+        } else if let message = response.message {
+            var result = message
+            if let type = response.type {
+                result += " [type: \(type)]"
+            }
+            return result
+        }
+
+        return nil
+    }
+
+    private func parseMessageResponse(_ data: Data) throws -> ACAMessageResponse {
+        do {
+            return try JSONDecoder().decode(ACAMessageResponse.self, from: data)
+        } catch {
+            throw ProviderError.parseError("Failed to parse message response: \(error.localizedDescription)")
+        }
+    }
+
+    private func buildProviderResponse(from response: ACAMessageResponse, latencyMs: Int) -> ProviderResponse {
+        // Extract text content
+        var textContent = ""
+        var toolCalls: [ProviderToolCall] = []
+
+        for block in response.content {
+            switch block {
+            case .text(let textBlock):
+                textContent += textBlock.text
+            case .toolUse(let toolUseBlock):
+                // Convert input dictionary to JSON string
+                let encoder = JSONEncoder()
+                let argsString: String
+                if let argsData = try? encoder.encode(toolUseBlock.input),
+                   let argsStr = String(data: argsData, encoding: .utf8) {
+                    argsString = argsStr
+                } else {
+                    argsString = "{}"
+                }
+
+                toolCalls.append(ProviderToolCall(
+                    id: toolUseBlock.id,
+                    name: toolUseBlock.name,
+                    arguments: argsString
+                ))
+            case .serverToolUse:
+                // Server-side tool calls don't require client execution
+                break
+            case .webSearchResult(let resultBlock):
+                for result in resultBlock.content {
+                    let parts = [result.title, result.url].compactMap { value in
+                        if let value, !value.isEmpty { return value }
+                        return nil
+                    }
+                    guard !parts.isEmpty else { continue }
+                    if !textContent.isEmpty { textContent += "\n" }
+                    textContent += parts.joined(separator: " - ")
+                }
+            case .toolResult, .image:
+                // These shouldn't appear in responses
+                break
+            }
+        }
+
+        let usage = ProviderUsage(
+            promptTokens: response.usage.inputTokens,
+            completionTokens: response.usage.outputTokens,
+            cachedTokens: response.usage.cacheReadInputTokens
+        )
+
+        let finishReason = ProviderFinishReason(providerReason: response.stopReason)
+
+        return ProviderResponse(
+            id: response.id,
+            model: response.model,
+            provider: providerId,
+            content: textContent,
+            toolCalls: toolCalls,
+            usage: usage,
+            finishReason: finishReason,
+            latencyMs: latencyMs
+        )
+    }
+
+    private func performStreaming(
+        request: ProviderRequest,
+        continuation: AsyncThrowingStream<ProviderStreamEvent, Error>.Continuation
+    ) async throws {
+        let httpRequest = try buildHTTPRequest(for: request, streaming: true)
+
+        let streamRetry = RetryPolicy(maxRetries: 1, baseDelay: .milliseconds(500))
+        let (bytes, response) = try await RetryExecutor(policy: streamRetry).execute {
+            try await self.session.bytes(for: httpRequest)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ProviderError.networkError("Invalid response type")
+        }
+
+        // Handle non-2xx responses
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            var errorData = Data()
+            for try await byte in bytes {
+                errorData.append(byte)
+            }
+            try validateHTTPResponse(httpResponse, data: errorData)
+            return
+        }
+
+        // Track tool calls by content block index (not by tool_use_id) since Anthropic
+        // sends deltas and stop events by index. Map index -> tool state.
+        struct ToolCallState {
+            var id: String
+            var name: String
+            var arguments: String
+            var startEmitted: Bool
+        }
+        var toolCallsByIndex: [Int: ToolCallState] = [:]
+        var totalUsage: ProviderUsage?
+        var lastFinishReason: ProviderFinishReason?
+        var decodeErrorCount = 0
+        let maxDecodeErrors = 5
+
+        for try await line in bytes.lines {
+            // Skip empty lines and comments
+            guard !line.isEmpty, !line.hasPrefix(":") else { continue }
+
+            // Parse SSE event type
+            if line.hasPrefix("event:") {
+                // We handle events implicitly based on data content
+                continue
+            }
+
+            // Parse SSE data line
+            guard line.hasPrefix("data:") else { continue }
+            let jsonString = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+
+            guard let chunkData = jsonString.data(using: .utf8) else { continue }
+
+            do {
+                let event = try JSONDecoder().decode(ACAStreamEvent.self, from: chunkData)
+
+                switch event.type {
+                case "message_start":
+                    if let message = event.message {
+                        continuation.yield(.start(id: message.id, model: message.model))
+
+                        // Emit initial usage if present
+                        if let usage = message.usage {
+                            totalUsage = ProviderUsage(
+                                promptTokens: usage.inputTokens ?? 0,
+                                completionTokens: usage.outputTokens ?? 0
+                            )
+                        }
+                    }
+
+                case "content_block_start":
+                    if let contentBlock = event.contentBlock, let index = event.index {
+                        switch contentBlock {
+                        case .toolUse(let toolUse):
+                            // Start of a tool call - track by index
+                            toolCallsByIndex[index] = ToolCallState(
+                                id: toolUse.id,
+                                name: toolUse.name,
+                                arguments: "",
+                                startEmitted: true
+                            )
+                            continuation.yield(.toolCallStart(id: toolUse.id, name: toolUse.name))
+                        case .text:
+                            // Text block starting, nothing special needed
+                            break
+                        case .serverToolUse:
+                            // Server-side tool use doesn't require client action
+                            break
+                        case .webSearchResult(let resultBlock):
+                            for (resultIndex, result) in resultBlock.content.enumerated() {
+                                let sourceId = result.url ?? "source_\(resultIndex)"
+                                continuation.yield(.source(AISource(
+                                    id: sourceId,
+                                    url: result.url,
+                                    title: result.title
+                                )))
+                            }
+                        }
+                    }
+
+                case "content_block_delta":
+                    if let delta = event.delta {
+                        switch delta {
+                        case .textDelta(let textDelta):
+                            continuation.yield(.textDelta(textDelta.text))
+                        case .inputJsonDelta(let jsonDelta):
+                            // Tool call argument delta - look up by index
+                            if let index = event.index, var toolCall = toolCallsByIndex[index] {
+                                toolCall.arguments += jsonDelta.partialJson
+                                toolCallsByIndex[index] = toolCall
+                                continuation.yield(.toolCallDelta(id: toolCall.id, argumentsDelta: jsonDelta.partialJson))
+                            }
+                        case .thinkingDelta(let thinking):
+                            continuation.yield(.reasoningDelta(thinking.thinking))
+                        case .messageDelta:
+                            // Message delta shouldn't appear in content_block_delta, but handle gracefully
+                            break
+                        }
+                    }
+
+                case "content_block_stop":
+                    // End of a content block - emit tool call finish only if this index was a tool_use block
+                    if let index = event.index, let toolCall = toolCallsByIndex[index] {
+                        if toolCall.startEmitted {
+                            continuation.yield(.toolCallFinish(
+                                id: toolCall.id,
+                                name: toolCall.name,
+                                arguments: toolCall.arguments
+                            ))
+                        }
+                    }
+
+                case "message_delta":
+                    if let delta = event.delta,
+                       case .messageDelta(let msgDelta) = delta {
+                        if let stopReason = msgDelta.stopReason {
+                            lastFinishReason = ProviderFinishReason(providerReason: stopReason)
+                        }
+                    }
+
+                    if let usage = event.usage {
+                        totalUsage = ProviderUsage(
+                            promptTokens: usage.inputTokens ?? totalUsage?.promptTokens ?? 0,
+                            completionTokens: usage.outputTokens ?? 0
+                        )
+                        continuation.yield(.usage(totalUsage!))
+                    }
+
+                case "message_stop":
+                    // Stream complete
+                    let reason = lastFinishReason ?? .stop
+                    continuation.yield(.finish(reason: reason, usage: totalUsage))
+                    continuation.finish()
+                    return
+
+                case "error":
+                    if let error = event.error {
+                        throw ProviderError.serverError(
+                            statusCode: 0,
+                            message: "\(error.type): \(error.message)"
+                        )
+                    }
+
+                case "ping":
+                    // Keep-alive, ignore
+                    break
+
+                default:
+                    // Unknown event type, ignore
+                    break
+                }
+            } catch let error as ProviderError {
+                throw error
+            } catch {
+                decodeErrorCount += 1
+                if decodeErrorCount >= maxDecodeErrors {
+                    throw ProviderError.parseError("Too many SSE decode failures (\(decodeErrorCount)). Last line: \(jsonString.prefix(200))")
+                }
+                continue
+            }
+        }
+
+        // Stream ended without message_stop
+        continuation.yield(.finish(reason: lastFinishReason ?? .unknown, usage: totalUsage))
+        continuation.finish()
+    }
+}
+
+// MARK: - AnthropicClientAdapter API Types (ACA prefix to avoid collision with existing types)
+
+/// Anthropic request body structure for AnthropicClientAdapter
+private struct ACARequestBody: Encodable {
+    let model: String
+    let messages: [ACAMessage]
+    let maxTokens: Int
+
+    var system: String?
+    var systemBlocks: [ACASystemBlock]?
+    var temperature: Double?
+    var topP: Double?
+    var stopSequences: [String]?
+    var stream: Bool?
+    var tools: [ACAToolEntry]?
+    var toolChoice: ACAToolChoice?
+    var thinking: AnthropicThinkingConfigParam?
+
+    enum CodingKeys: String, CodingKey {
+        case model, messages, system, temperature, stream, tools
+        case maxTokens = "max_tokens"
+        case topP = "top_p"
+        case stopSequences = "stop_sequences"
+        case toolChoice = "tool_choice"
+        case thinking
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(model, forKey: .model)
+        try container.encode(messages, forKey: .messages)
+        try container.encode(maxTokens, forKey: .maxTokens)
+        if let systemBlocks = systemBlocks {
+            try container.encode(systemBlocks, forKey: .system)
+        } else {
+            try container.encodeIfPresent(system, forKey: .system)
+        }
+        try container.encodeIfPresent(temperature, forKey: .temperature)
+        try container.encodeIfPresent(topP, forKey: .topP)
+        try container.encodeIfPresent(stopSequences, forKey: .stopSequences)
+        try container.encodeIfPresent(stream, forKey: .stream)
+        try container.encodeIfPresent(tools, forKey: .tools)
+        try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
+        try container.encodeIfPresent(thinking, forKey: .thinking)
+    }
+}
+
+/// System content block with optional cache control for AnthropicClientAdapter
+private struct ACASystemBlock: Encodable {
+    let type: String
+    let text: String
+    let cacheControl: ACACacheControl?
+
+    init(text: String, cacheControl: ACACacheControl? = nil) {
+        self.type = "text"
+        self.text = text
+        self.cacheControl = cacheControl
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, text
+        case cacheControl = "cache_control"
+    }
+}
+
+/// Cache control annotation for Anthropic prompt caching
+private struct ACACacheControl: Encodable {
+    let type: String
+    let ttl: String?
+
+    init(type: String = "ephemeral", ttl: String? = nil) {
+        self.type = type
+        self.ttl = ttl
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(ttl, forKey: .ttl)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, ttl
+    }
+}
+
+private struct ACAMessage: Encodable {
+    let role: String
+    let content: [ACAContentBlock]
+}
+
+private enum ACAContentBlock: Encodable {
+    case text(ACATextContent)
+    case image(ACAImageContent)
+    case toolUse(ACAToolUseContent)
+    case toolResult(ACAToolResultContent)
+    case computerUseResult(ACAComputerUseResultContent)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let content):
+            try container.encode(content)
+        case .image(let content):
+            try container.encode(content)
+        case .toolUse(let content):
+            try container.encode(content)
+        case .toolResult(let content):
+            try container.encode(content)
+        case .computerUseResult(let content):
+            try container.encode(content)
+        }
+    }
+}
+
+private struct ACATextContent: Codable {
+    let type: String
+    let text: String
+}
+
+private struct ACAImageContent: Encodable {
+    let type: String
+    let source: ACAImageSource
+}
+
+private struct ACAImageSource: Encodable {
+    let type: String
+    let mediaType: String
+    let data: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mediaType = "media_type"
+        case data
+    }
+}
+
+private struct ACAToolUseContent: Codable {
+    let type: String
+    let id: String
+    let name: String
+    let input: [String: ProviderJSONValue]
+}
+
+private struct ACAToolResultContent: Encodable {
+    let type: String
+    let toolUseId: String
+    let content: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
+    }
+}
+
+/// Tool result with rich content blocks (used for computer use results with images)
+private struct ACAComputerUseResultContent: Encodable {
+    let type: String
+    let toolUseId: String
+    let content: [[String: ProviderJSONValue]]
+    let isError: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
+        case isError = "is_error"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(toolUseId, forKey: .toolUseId)
+        try container.encode(content, forKey: .content)
+        if isError {
+            try container.encode(isError, forKey: .isError)
+        }
+    }
+}
+
+private struct ACATool: Encodable {
+    let name: String
+    let description: String?
+    let inputSchema: [String: ProviderJSONValue]
+
+    enum CodingKeys: String, CodingKey {
+        case name, description
+        case inputSchema = "input_schema"
+    }
+}
+
+private enum ACAToolEntry: Encodable {
+    case function(ACATool)
+    case builtIn([String: Any])
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .function(let tool):
+            try tool.encode(to: encoder)
+        case .builtIn(let dict):
+            var container = encoder.singleValueContainer()
+            let data = try JSONSerialization.data(withJSONObject: dict)
+            let json = try JSONDecoder().decode(ProviderJSONValue.self, from: data)
+            try container.encode(json)
+        }
+    }
+}
+
+private struct ACAToolChoice: Encodable {
+    let type: String
+    let name: String?
+
+    init(type: String, name: String? = nil) {
+        self.type = type
+        self.name = name
+    }
+}
+
+// MARK: - Response Types
+
+private struct ACAMessageResponse: Decodable {
+    let id: String
+    let type: String
+    let role: String
+    let content: [ACAResponseContentBlock]
+    let model: String
+    let stopReason: String?
+    let usage: ACAUsage
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, role, content, model, usage
+        case stopReason = "stop_reason"
+    }
+}
+
+private enum ACAResponseContentBlock: Decodable {
+    case text(ACATextContent)
+    case toolUse(ACAToolUseContent)
+    case toolResult(ACAToolResultContent)
+    case image(ACAImageContent)
+    case serverToolUse(ACAServerToolUseContent)
+    case webSearchResult(ACAWebSearchResultContent)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "text":
+            self = .text(try ACATextContent(from: decoder))
+        case "tool_use":
+            self = .toolUse(try ACAToolUseContent(from: decoder))
+        case "tool_result":
+            self = .toolResult(try ACAToolResultContentDecodable(from: decoder).toContent())
+        case "server_tool_use":
+            self = .serverToolUse(try ACAServerToolUseContent(from: decoder))
+        case "web_search_tool_result":
+            self = .webSearchResult(try ACAWebSearchResultContent(from: decoder))
+        default:
+            // Default to empty text for unknown types
+            self = .text(ACATextContent(type: type, text: ""))
+        }
+    }
+}
+
+// Helper for decoding tool_result which has different encoding/decoding shapes
+private struct ACAToolResultContentDecodable: Decodable {
+    let type: String
+    let toolUseId: String
+    let content: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
+    }
+
+    func toContent() -> ACAToolResultContent {
+        ACAToolResultContent(type: type, toolUseId: toolUseId, content: content)
+    }
+}
+
+private struct ACAServerToolUseContent: Decodable {
+    let type: String
+    let id: String
+    let name: String
+    let input: [String: ProviderJSONValue]?
+}
+
+private struct ACAWebSearchResultContent: Decodable {
+    let type: String
+    let toolUseId: String
+    let content: [ACAWebSearchResult]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case toolUseId = "tool_use_id"
+        case content
+    }
+}
+
+private struct ACAWebSearchResult: Decodable {
+    let type: String
+    let title: String?
+    let url: String?
+    let pageAge: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type, title, url
+        case pageAge = "page_age"
+    }
+}
+
+private struct ACAUsage: Decodable {
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case cacheCreationInputTokens = "cache_creation_input_tokens"
+        case cacheReadInputTokens = "cache_read_input_tokens"
+    }
+}
+
+// MARK: - Streaming Types
+
+private struct ACAStreamEvent: Decodable {
+    let type: String
+    let message: ACAStreamMessage?
+    let index: Int?
+    let contentBlock: ACAStreamContentBlock?
+    let delta: ACAStreamDelta?
+    let usage: ACAStreamUsage?
+    let error: ACAStreamError?
+
+    enum CodingKeys: String, CodingKey {
+        case type, message, index, delta, usage, error
+        case contentBlock = "content_block"
+    }
+}
+
+private struct ACAStreamMessage: Decodable {
+    let id: String
+    let type: String
+    let role: String
+    let model: String
+    let usage: ACAStreamUsage?
+}
+
+private enum ACAStreamContentBlock: Decodable {
+    case text(ACATextContent)
+    case toolUse(ACAStreamToolUse)
+    case serverToolUse(ACAServerToolUseContent)
+    case webSearchResult(ACAWebSearchResultContent)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "text":
+            self = .text(try ACATextContent(from: decoder))
+        case "tool_use":
+            self = .toolUse(try ACAStreamToolUse(from: decoder))
+        case "server_tool_use":
+            self = .serverToolUse(try ACAServerToolUseContent(from: decoder))
+        case "web_search_tool_result":
+            self = .webSearchResult(try ACAWebSearchResultContent(from: decoder))
+        default:
+            self = .text(ACATextContent(type: type, text: ""))
+        }
+    }
+}
+
+private struct ACAStreamToolUse: Decodable {
+    let type: String
+    let id: String
+    let name: String
+}
+
+private enum ACAStreamDelta: Decodable {
+    case textDelta(ACATextDelta)
+    case inputJsonDelta(ACAInputJsonDelta)
+    case thinkingDelta(ACAThinkingDelta)
+    case messageDelta(ACAMessageDelta)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "text_delta":
+            self = .textDelta(try ACATextDelta(from: decoder))
+        case "input_json_delta":
+            self = .inputJsonDelta(try ACAInputJsonDelta(from: decoder))
+        case "thinking_delta":
+            self = .thinkingDelta(try ACAThinkingDelta(from: decoder))
+        case "message_delta":
+            self = .messageDelta(try ACAMessageDelta(from: decoder))
+        default:
+            // Default to empty text delta for unknown types
+            self = .textDelta(ACATextDelta(type: type, text: ""))
+        }
+    }
+}
+
+private struct ACATextDelta: Decodable {
+    let type: String
+    let text: String
+}
+
+private struct ACAInputJsonDelta: Decodable {
+    let type: String
+    let partialJson: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case partialJson = "partial_json"
+    }
+}
+
+private struct ACAThinkingDelta: Decodable {
+    let type: String
+    let thinking: String
+}
+
+private struct ACAMessageDelta: Decodable {
+    let type: String
+    let stopReason: String?
+    let stopSequence: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case stopReason = "stop_reason"
+        case stopSequence = "stop_sequence"
+    }
+}
+
+private struct ACAStreamUsage: Decodable {
+    let inputTokens: Int?
+    let outputTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+    }
+}
+
+private struct ACAStreamError: Decodable {
+    let type: String
+    let message: String
+}

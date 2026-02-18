@@ -116,9 +116,9 @@ Tests/AISDKTests/
 - `testFailingToolExecution()` - Graceful failure handling
 
 #### **Tool Registry** (3 tests)
-- `testToolRegistryRegistration()` - Single tool registration
-- `testToolRegistryMultipleRegistration()` - Batch registration
-- `testToolRegistryUnknownTool()` - Missing tool handling
+- `testAIToolRegistryRegistration()` - Single tool registration
+- `testAIToolRegistryMultipleRegistration()` - Batch registration
+- `testAIToolRegistryUnknownTool()` - Missing tool handling
 
 #### **LLM Integration** (2 tests)
 - `testChatCompletionWithTools()` - End-to-end tool calling
@@ -167,6 +167,19 @@ Tests/AISDKTests/
 **Status**: Disabled due to API changes, replaced by AgentIntegrationTests  
 **Coverage**: Superseded by comprehensive AgentIntegrationTests
 
+### 8. **OpenRouter Integration Tests** (`OpenRouterIntegrationTests.swift`)
+**Purpose**: Real OpenRouter provider validation with free models  
+**Test Coverage**:
+- Basic chat across multiple OpenRouter models
+- Streaming responses (SSE)
+- JSON response format validation
+- Reasoning prompt behavior (short justification)
+- Tool calling (configurable model)
+
+**Environment**:
+- Requires `OPENROUTER_API_KEY`
+- Optional: `OPENROUTER_TEST_MODELS`, `OPENROUTER_DEFAULT_MODEL`, `OPENROUTER_TOOL_MODEL`
+
 ## 🚀 Usage Instructions
 
 ### Running All Tests
@@ -202,6 +215,9 @@ swift test --filter StructuredOutputTests
 
 # Streaming functionality
 swift test --filter StreamingChatTests
+
+# OpenRouter integration tests
+swift test --filter OpenRouterIntegrationTests
 ```
 
 ### Running Individual Tests
@@ -227,6 +243,13 @@ ANTHROPIC_API_KEY=your_anthropic_key_here
 
 # Optional for specific provider tests
 GROQ_API_KEY=your_groq_key_here
+OPENROUTER_API_KEY=your_openrouter_key_here
+
+# Optional OpenRouter test configuration
+OPENROUTER_TEST_MODELS=model-a,model-b
+OPENROUTER_DEFAULT_MODEL=model-a
+OPENROUTER_STREAM_MODEL=model-a
+OPENROUTER_TOOL_MODEL=model-a
 ```
 
 ### Mock vs Real API Testing
@@ -253,9 +276,10 @@ Some tests use external resources:
 ## 📊 Test Metrics & Performance
 
 ### Current Test Status
-- **Total Tests**: 64 tests across all categories
-- **Success Rate**: 100% (64/64 passing) 
-- **Coverage**: Comprehensive across all major features including Agent integration
+- **Total Tests**: 2,397 tests (2,071 XCTest + 326 Swift Testing)
+- **Success Rate**: 100% (0 failures)
+- **Test Files**: ~130 Swift test files across 163 XCTest suites and 42 Swift Testing suites
+- **Coverage**: Comprehensive across all features including agents, computer use, sessions, reliability, generative UI, MCP, skills, and multi-provider LLM support
 
 ### Performance Benchmarks
 - **Schema Generation**: <100ms for 1000 iterations
@@ -317,7 +341,7 @@ Agent integration tests use a comprehensive black box approach:
    - **Basic Functionality**: send(), sendStream(), conversation flow
    - **Tool Integration**: Combined Agent + tool execution scenarios
    - **Multimodal**: Image analysis with tools and streaming
-   - **Error Scenarios**: Tool failures, invalid inputs, missing tools
+   - **Error Scenarios**: AITool failures, invalid inputs, missing tools
    - **Callbacks**: Event tracking and execution monitoring
 
 3. **Black Box Validation**:
@@ -443,6 +467,6 @@ Tests are designed for CI/CD environments:
 
 ---
 
-*Last Updated: June 10, 2025*  
-*Test Suite Version: 1.1*  
-*Total Tests: 64 | Success Rate: 100% | Agent Integration: COMPLETE ✅* 
+*Last Updated: February 13, 2026*
+*Test Suite Version: 2.0*
+*Total Tests: 2,397 | Success Rate: 100% | All Features: COMPLETE*

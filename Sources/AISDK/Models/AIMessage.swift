@@ -2,15 +2,15 @@
 //  AIMessage.swift
 //  AISDK
 //
-//  Universal Message System for AI
-//  Provider-agnostic message format that converts to specific LLM provider formats
+//  Universal LegacyMessage System for AI
+//  Provider-agnostic message format that converts to specific LegacyLLM provider formats
 //
 
 import Foundation
 
-// MARK: - Universal Message
+// MARK: - Universal LegacyMessage
 
-/// Universal message that works across all LLM providers
+/// Universal message that works across all LegacyLLM providers
 public struct AIInputMessage {
     public let role: AIMessageRole
     public let content: [AIContentPart]
@@ -239,7 +239,8 @@ extension AIInputMessage {
     
     /// Create an assistant message with tool calls
     public static func assistant(_ text: String, toolCalls: [AIToolCall]) -> AIInputMessage {
-        return AIInputMessage(role: .assistant, content: [.text(text)], name: nil, toolCalls: toolCalls)
+        let content: [AIContentPart] = text.isEmpty ? [] : [.text(text)]
+        return AIInputMessage(role: .assistant, content: content, name: nil, toolCalls: toolCalls)
     }
     
     /// Create a system message
@@ -339,6 +340,14 @@ extension AIInputMessage {
             return false
         }
     }
+
+    /// Check if this message contains any video
+    public var hasVideo: Bool {
+        return content.contains { contentPart in
+            if case .video = contentPart { return true }
+            return false
+        }
+    }
     
     /// Get all images from this message
     public var images: [AIImageContent] {
@@ -365,6 +374,16 @@ extension AIInputMessage {
         return content.compactMap { contentPart in
             if case .file(let fileContent) = contentPart {
                 return fileContent
+            }
+            return nil
+        }
+    }
+
+    /// Get all videos from this message
+    public var videos: [AIVideoContent] {
+        return content.compactMap { contentPart in
+            if case .video(let videoContent) = contentPart {
+                return videoContent
             }
             return nil
         }

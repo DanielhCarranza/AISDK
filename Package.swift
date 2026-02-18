@@ -5,8 +5,8 @@ import PackageDescription
 
 let package = Package(
     name: "AISDK",
-    // Version: 1.0.0 - Comprehensive AI SDK for Swift
-    // Release Date: January 24, 2025
+    // Version: 2.0.0-beta.1 - Comprehensive AI SDK for Swift
+    // Release Date: February 17, 2026
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
@@ -49,6 +49,30 @@ let package = Package(
         .executable(
             name: "ToolDemo",
             targets: ["ToolDemo"]
+        ),
+        .executable(
+            name: "OpenRouterDemo",
+            targets: ["OpenRouterDemo"]
+        ),
+        // Comprehensive AISDK Demo - showcases all features
+        .executable(
+            name: "AISDKDemo",
+            targets: ["AISDKDemo"]
+        ),
+        // AISDK Test Runner - real model testing and validation
+        .executable(
+            name: "AISDKTestRunner",
+            targets: ["AISDKTestRunner"]
+        ),
+        // AISDK CLI - Interactive terminal AI assistant
+        .executable(
+            name: "AISDKCLI",
+            targets: ["AISDKCLI"]
+        ),
+        // Smoke Test App - Layer 1 production validation
+        .executable(
+            name: "SmokeTestApp",
+            targets: ["SmokeTestApp"]
         )
     ],
     dependencies: [
@@ -166,6 +190,31 @@ let package = Package(
             name: "ToolDemo",
             dependencies: ["AISDK"],
             path: "Examples/ToolDemo"
+        ),
+        .executableTarget(
+            name: "OpenRouterDemo",
+            dependencies: ["AISDK"],
+            path: "Examples/OpenRouterDemo"
+        ),
+        .executableTarget(
+            name: "AISDKDemo",
+            dependencies: ["AISDK"],
+            path: "Examples/AISDKDemo"
+        ),
+        .executableTarget(
+            name: "AISDKTestRunner",
+            dependencies: ["AISDK"],
+            path: "Examples/AISDKTestRunner"
+        ),
+        .executableTarget(
+            name: "AISDKCLI",
+            dependencies: ["AISDK"],
+            path: "Examples/AISDKCLI"
+        ),
+        .executableTarget(
+            name: "SmokeTestApp",
+            dependencies: ["AISDK"],
+            path: "Examples/SmokeTestApp"
         )
     ]
 )

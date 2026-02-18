@@ -71,11 +71,11 @@ public class CancellationToken {
 
 /// Enhanced background task result
 public struct BackgroundTaskResult {
-    public let response: ResponseChatMessage
+    public let response: ResponseLegacyChatMessage
     public let taskId: String
     public let duration: TimeInterval
     public let reasoning: [ReasoningStep]?
-    public let toolExecutions: [ToolExecutionResult]
+    public let toolExecutions: [ResponseToolExecutionResult]
     public let status: ResponseStatus
 }
 
@@ -93,7 +93,7 @@ public struct ReasoningStep {
 }
 
 /// Tool execution result information
-public struct ToolExecutionResult {
+public struct ResponseToolExecutionResult {
     public let toolName: String
     public let arguments: String
     public let result: String
@@ -117,7 +117,7 @@ public class ResponseAgent {
     
     private let provider: OpenAIProvider
     private let tools: [Tool.Type]
-    private let builtInTools: [BuiltInTool]
+    private let builtInTools: [ResponseBuiltInTool]
     private let mcpServers: [MCPServerConfiguration]
     private let instructions: String?
     private let model: String
@@ -150,7 +150,7 @@ public class ResponseAgent {
     public init(
         provider: OpenAIProvider,
         tools: [Tool.Type] = [],
-        builtInTools: [BuiltInTool] = [.webSearchPreview, .codeInterpreter, .imageGeneration(), .fileSearch(vectorStoreId: "")],
+        builtInTools: [ResponseBuiltInTool] = [.webSearchPreview, .codeInterpreter, .imageGeneration(), .fileSearch(vectorStoreId: "")],
         mcpServers: [MCPServerConfiguration] = [],
         instructions: String? = nil,
         model: String = "gpt-4o"
@@ -185,17 +185,17 @@ public class ResponseAgent {
     /// - Parameters:
     ///   - message: The input message (supports multimodal content)
     ///   - streaming: Enable streaming responses (default: false)
-    /// - Returns: AsyncThrowingStream of ResponseChatMessage responses
+    /// - Returns: AsyncThrowingStream of ResponseLegacyChatMessage responses
     public func send(
         _ message: AIInputMessage,
         streaming: Bool = false
-    ) -> AsyncThrowingStream<ResponseChatMessage, Error> {
+    ) -> AsyncThrowingStream<ResponseLegacyChatMessage, Error> {
         
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     // Validate agent state
-                    try validateAgentState()
+                    try validateLegacyAgentState()
                     
                     // Add user message to conversation
                     messages.append(message)
@@ -223,11 +223,11 @@ public class ResponseAgent {
     /// - Parameters:
     ///   - text: The text message to send
     ///   - streaming: Enable streaming responses (default: false)
-    /// - Returns: AsyncThrowingStream of ResponseChatMessage responses
+    /// - Returns: AsyncThrowingStream of ResponseLegacyChatMessage responses
     public func send(
         _ text: String,
         streaming: Bool = false
-    ) -> AsyncThrowingStream<ResponseChatMessage, Error> {
+    ) -> AsyncThrowingStream<ResponseLegacyChatMessage, Error> {
         return send(.user(text), streaming: streaming)
     }
     
@@ -235,11 +235,11 @@ public class ResponseAgent {
     /// - Parameters:
     ///   - contentParts: Array of content parts (text, images, etc.)
     ///   - streaming: Enable streaming responses (default: false)
-    /// - Returns: AsyncThrowingStream of ResponseChatMessage responses
+    /// - Returns: AsyncThrowingStream of ResponseLegacyChatMessage responses
     public func send(
         _ contentParts: [AIContentPart],
         streaming: Bool = false
-    ) -> AsyncThrowingStream<ResponseChatMessage, Error> {
+    ) -> AsyncThrowingStream<ResponseLegacyChatMessage, Error> {
         return send(.user(contentParts), streaming: streaming)
     }
     
@@ -255,7 +255,7 @@ public class ResponseAgent {
         configuration: BackgroundTaskConfiguration = .default
     ) async throws -> BackgroundTaskResult {
         
-        try validateAgentState()
+        try validateLegacyAgentState()
         
         // Check cancellation before starting
         if configuration.cancellationToken?.isCancelled == true {
@@ -270,7 +270,7 @@ public class ResponseAgent {
         configuration.onStatusChange?(.queued)
         
         let startTime = Date()
-        var toolExecutions: [ToolExecutionResult] = []
+        var toolExecutions: [ResponseToolExecutionResult] = []
         var reasoningSteps: [ReasoningStep] = []
         
         do {
@@ -409,7 +409,7 @@ public class ResponseAgent {
     // MARK: - Private Methods
     
     /// Validate agent state before processing
-    private func validateAgentState() throws {
+    private func validateLegacyAgentState() throws {
         switch state {
         case .processing, .backgroundProcessing:
             throw ResponseAgentError.agentBusy
@@ -444,7 +444,7 @@ public class ResponseAgent {
     /// Process streaming response with enhanced state tracking
     private func processStreamingResponse(
         _ message: AIInputMessage,
-        continuation: AsyncThrowingStream<ResponseChatMessage, Error>.Continuation
+        continuation: AsyncThrowingStream<ResponseLegacyChatMessage, Error>.Continuation
     ) async throws {
         
         setState(.initializing)
@@ -464,9 +464,9 @@ public class ResponseAgent {
                 setState(.streamingResponse(contentType: .text))
                 
                 // Create streaming message
-                let responseChatMessage = ResponseChatMessage(message: .assistant(responseContent))
-                responseChatMessage.isPending = true
-                continuation.yield(responseChatMessage)
+                let responseLegacyChatMessage = ResponseLegacyChatMessage(message: .assistant(responseContent))
+                responseLegacyChatMessage.isPending = true
+                continuation.yield(responseLegacyChatMessage)
             }
             
             // Check for reasoning
@@ -483,7 +483,7 @@ public class ResponseAgent {
         
         // Finalize response
         if !responseContent.isEmpty {
-            let finalMessage = ResponseChatMessage(message: .assistant(responseContent))
+            let finalMessage = ResponseLegacyChatMessage(message: .assistant(responseContent))
             messages.append(.assistant(responseContent))
             continuation.yield(finalMessage)
         }
@@ -495,7 +495,7 @@ public class ResponseAgent {
     /// Process non-streaming response with enhanced state tracking
     private func processNonStreamingResponse(
         _ message: AIInputMessage,
-        continuation: AsyncThrowingStream<ResponseChatMessage, Error>.Continuation
+        continuation: AsyncThrowingStream<ResponseLegacyChatMessage, Error>.Continuation
     ) async throws {
         
         setState(.initializing)
@@ -517,7 +517,7 @@ public class ResponseAgent {
                 )
                 
                 // Send tool result
-                let toolMessage = ResponseChatMessage(
+                let toolMessage = ResponseLegacyChatMessage(
                     message: .tool(result.response, callId: functionCall.id, name: functionCall.name),
                     metadata: result.metadata
                 )
@@ -593,13 +593,13 @@ public class ResponseAgent {
         tool = try tool.validateAndSetParameters(argumentsData)
         
         // Line 4: Execute tool
-        let (response, metadata) = try await tool.execute()
+        let result = try await tool.execute()
         
-        return (response: response, metadata: metadata)
+        return (response: result.content, metadata: result.metadata)
     }
     
-    /// Convert ResponseObject to ResponseChatMessage
-    private func convertToChat(_ response: ResponseObject) throws -> ResponseChatMessage {
+    /// Convert ResponseObject to ResponseLegacyChatMessage
+    private func convertToChat(_ response: ResponseObject) throws -> ResponseLegacyChatMessage {
         
         // Store response ID for conversation continuation
         lastResponseId = response.id
@@ -612,13 +612,13 @@ public class ResponseAgent {
             messages.append(.assistant(textContent))
         }
         
-        // Create ResponseChatMessage
-        let responseChatMessage = ResponseChatMessage(
+        // Create ResponseLegacyChatMessage
+        let responseLegacyChatMessage = ResponseLegacyChatMessage(
             message: .assistant(textContent),
             metadata: extractMetadata(from: response)
         )
         
-        return responseChatMessage
+        return responseLegacyChatMessage
     }
     
     /// Extract metadata from ResponseObject
@@ -685,13 +685,13 @@ public class ResponseAgent {
     }
     
     /// Extract tool executions from response
-    private func extractToolExecutions(from response: ResponseObject) -> [ToolExecutionResult] {
-        var executions: [ToolExecutionResult] = []
+    private func extractToolExecutions(from response: ResponseObject) -> [ResponseToolExecutionResult] {
+        var executions: [ResponseToolExecutionResult] = []
         
         for output in response.output {
             switch output {
             case .functionCall(let functionCall):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: functionCall.name,
                     arguments: functionCall.arguments,
                     result: "Function called", // Simplified for now
@@ -701,7 +701,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .webSearchCall(let webSearch):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "web_search_preview",
                     arguments: webSearch.query ?? "",
                     result: "Web search completed",
@@ -711,7 +711,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .codeInterpreterCall(let codeInterpreter):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "code_interpreter",
                     arguments: codeInterpreter.code ?? "",
                     result: "Code executed",
@@ -721,7 +721,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .imageGenerationCall(let imageGen):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "image_generation",
                     arguments: imageGen.prompt ?? "",
                     result: "Image generated",
@@ -731,7 +731,7 @@ public class ResponseAgent {
                 executions.append(execution)
                 
             case .mcpApprovalRequest(let mcpRequest):
-                let execution = ToolExecutionResult(
+                let execution = ResponseToolExecutionResult(
                     toolName: "mcp_approval_request",
                     arguments: "MCP approval requested",
                     result: "MCP approval requested",
@@ -871,10 +871,10 @@ public enum ResponseAgentState: Equatable {
     }
 }
 
-// MARK: - ResponseChatMessage
+// MARK: - ResponseLegacyChatMessage
 
 /// ResponseAgent-specific message class
-public class ResponseChatMessage: Identifiable {
+public class ResponseLegacyChatMessage: Identifiable {
     public let id: UUID
     public let timestamp: Date
     public let message: AIInputMessage
@@ -896,22 +896,22 @@ public class ResponseChatMessage: Identifiable {
     }
     
     /// Creates a pending message for streaming
-    public static func pending(message: AIInputMessage) -> ResponseChatMessage {
-        let chatMessage = ResponseChatMessage(message: message)
+    public static func pending(message: AIInputMessage) -> ResponseLegacyChatMessage {
+        let chatMessage = ResponseLegacyChatMessage(message: message)
         chatMessage.isPending = true
         return chatMessage
     }
 }
 
-extension ResponseChatMessage: Equatable {
-    public static func == (lhs: ResponseChatMessage, rhs: ResponseChatMessage) -> Bool {
+extension ResponseLegacyChatMessage: Equatable {
+    public static func == (lhs: ResponseLegacyChatMessage, rhs: ResponseLegacyChatMessage) -> Bool {
         return lhs.id == rhs.id
     }
 }
 
 // MARK: - Built-in Tools Extension
 
-extension BuiltInTool {
+extension ResponseBuiltInTool {
     var name: String {
         switch self {
         case .webSearchPreview:
@@ -928,35 +928,22 @@ extension BuiltInTool {
     }
 }
 
+// MARK: - MCP Types (Backwards Compatibility)
+
+// These types have been moved to Sources/AISDK/MCP/MCPServerConfiguration.swift
+// Typealiases are provided here for backwards compatibility.
+
 /// MCP Server Configuration for ResponseAgent
-public struct MCPServerConfiguration {
-    let serverUrl: String
-    let serverLabel: String
-    let requireApproval: MCPApprovalLevel
-    let connectionTimeout: TimeInterval
-    let requestTimeout: TimeInterval
-    
-    public init(
-        serverUrl: String,
-        serverLabel: String,
-        requireApproval: MCPApprovalLevel = .never,
-        connectionTimeout: TimeInterval = 30,
-        requestTimeout: TimeInterval = 120
-    ) {
-        self.serverUrl = serverUrl
-        self.serverLabel = serverLabel
-        self.requireApproval = requireApproval
-        self.connectionTimeout = connectionTimeout
-        self.requestTimeout = requestTimeout
-    }
-}
+/// - Note: This type has been moved to `AISDK.MCPServerConfiguration`.
+///   This typealias is provided for backwards compatibility.
+@available(*, deprecated, renamed: "AISDK.MCPServerConfiguration", message: "MCPServerConfiguration has been moved to the MCP module")
+public typealias ResponseAgentMCPServerConfiguration = MCPServerConfiguration
 
 /// MCP Approval levels for server interactions
-public enum MCPApprovalLevel: String, Codable {
-    case never = "never"
-    case always = "always"
-    case dangerous = "dangerous"
-}
+/// - Note: This type has been moved to `AISDK.MCPApprovalLevel`.
+///   This typealias is provided for backwards compatibility.
+@available(*, deprecated, renamed: "AISDK.MCPApprovalLevel", message: "MCPApprovalLevel has been moved to the MCP module")
+public typealias ResponseAgentMCPApprovalLevel = MCPApprovalLevel
 
 /// MCP Tool execution result
 public struct MCPToolResult {

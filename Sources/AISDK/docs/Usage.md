@@ -27,7 +27,7 @@ Add AISDK to your Swift package or Xcode project:
 **Package.swift:**
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/AISDK.git", from: "1.0.0")
+    .package(url: "https://github.com/yourusername/AISDK.git", from: "2.0.0")
 ]
 
 targets: [
@@ -61,12 +61,10 @@ export GOOGLE_API_KEY="your-gemini-key-here"
 **Option 2: Runtime Configuration**
 ```swift
 // Provider-centric approach with explicit API keys
-let openai = OpenAIProvider(apiKey: "your-openai-key")
-let anthropic = AnthropicService(apiKey: "your-anthropic-key")
-let gemini = GeminiProvider(apiKey: "your-gemini-key")
+let client = OpenRouterClient(apiKey: "your-api-key")
 
-// Create agents with specific providers
-let agent = Agent(llm: openai)
+// Create agents with providers
+let agent = AIAgentActor(model: client)
 ```
 
 ### 5-Minute Example
@@ -74,18 +72,19 @@ let agent = Agent(llm: openai)
 ```swift
 import AISDK
 
-// 1. Create an agent with provider (uses smart default: gpt-4o)
-let openai = OpenAIProvider()
-let agent = Agent(llm: openai)
+// 1. Create an agent with provider
+let client = OpenRouterClient()
+let agent = AIAgentActor(model: client)
 
 // 2. Send a simple message
-let response = try await agent.send("Hello, world!")
-print(response.displayContent)
+let response = try await agent.execute(messages: [.user("Hello, world!")])
+print(response.text)
 
 // 3. Stream responses for better UX
-let userMessage = ChatMessage(message: .user(content: .text("Tell me a joke")))
-for try await chunk in agent.sendStream(userMessage) {
-    print(chunk.displayContent, terminator: "")
+for try await event in agent.streamExecute(messages: [.user("Tell me a joke")]) {
+    if case .textDelta(let text) = event {
+        print(text, terminator: "")
+    }
 }
 print() // New line after streaming
 ```
@@ -96,8 +95,8 @@ print() // New line after streaming
 
 AISDK is built around several key concepts:
 
-**🤖 Agent**: The main orchestrator that manages conversations with AI models
-**🏗️ LLM Providers**: Direct interfaces to OpenAI, Anthropic, and Gemini APIs
+**🤖 AIAgentActor**: The main orchestrator that manages conversations with AI models
+**🏗️ AILanguageModel Providers**: Unified protocol for OpenAI, Anthropic, and Gemini APIs
 **🛠️ Tools**: Functions the AI can call to perform specific tasks
 **💬 ChatManager**: Handles session management and storage
 **🗣️ VoiceMode**: Manages speech recognition and synthesis
@@ -106,23 +105,21 @@ AISDK is built around several key concepts:
 
 ### Provider-Centric Architecture
 
-AISDK uses a provider-centric approach where you create specific provider instances and pass them to agents:
+AISDK 2.0 uses a unified `AILanguageModel` protocol. The recommended provider is `OpenRouterClient` which supports multiple models:
 
 ```swift
-// Create provider with smart defaults
-let openai = OpenAIProvider()        // Uses gpt-4o by default
-let anthropic = AnthropicService()   // Uses sonnet-3.7 by default
-let gemini = GeminiProvider()        // Uses gemini-2.5-flash by default
+// Create a client
+let client = OpenRouterClient()
 
-// Create agents that use these providers
-let agent = Agent(llm: openai)
+// Create agents that use the client
+let agent = AIAgentActor(model: client)
 ```
 
 This approach provides:
-- **Smart Defaults**: Each provider has an optimal default model
-- **Type Safety**: Provider-specific model enums prevent configuration errors
+- **Unified Protocol**: All providers conform to `AILanguageModel`
+- **Actor-Based Safety**: `AIAgentActor` ensures thread-safe concurrent access
 - **Easy Switching**: Change providers without changing agent code
-- **Model Flexibility**: Override defaults with specific models when needed
+- **Modern Streaming**: Typed `AIStreamEvent` for real-time responses
 
 ### Modular Design
 
@@ -156,26 +153,22 @@ let claudeProvider = ClaudeProvider(apiKey: "your-claude-key")
 let openAIProvider = OpenAIProvider(apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "")
 ```
 
-### Basic Chat Completion
+### Basic Request
 
 ```swift
-// Simple text completion
-let request = ChatCompletionRequest(
-    model: "gpt-4o",
+// Simple text request using ProviderRequest
+let client = OpenRouterClient(apiKey: "your-api-key")
+
+let request = ProviderRequest(
+    modelId: "openai/gpt-4o",
     messages: [
-        .system(content: .text("You are a helpful assistant.")),
-        .user(content: .text("What is the capital of France?"))
-    ],
-    maxTokens: 100,
-    temperature: 0.7
+        .system("You are a helpful assistant."),
+        .user("What is the capital of France?")
+    ]
 )
 
-let response = try await openAIProvider.sendChatCompletion(request: request)
-
-if let content = response.choices.first?.message.content {
-    print("Response: \(content)")
-    print("Tokens used: \(response.usage?.totalTokens ?? 0)")
-}
+let response = try await client.execute(request: request)
+print("Response: \(response.content)")
 ```
 
 ### Streaming Responses
@@ -183,18 +176,15 @@ if let content = response.choices.first?.message.content {
 Stream responses for better user experience:
 
 ```swift
-let streamRequest = ChatCompletionRequest(
-    model: "gpt-4o",
-    messages: [.user(content: .text("Tell me a story"))],
-    maxTokens: 200,
-    stream: true
+let request = ProviderRequest(
+    modelId: "openai/gpt-4o",
+    messages: [.user("Tell me a story")]
 )
 
 print("Story: ", terminator: "")
-for try await chunk in try await openAIProvider.sendChatCompletionStream(request: streamRequest) {
-    if let content = chunk.choices.first?.delta.content {
-        print(content, terminator: "")
-        fflush(stdout) // Flush output for real-time display
+for try await event in client.stream(request: request) {
+    if case .textDelta(let text) = event {
+        print(text, terminator: "")
     }
 }
 print() // New line when done
@@ -205,53 +195,66 @@ print() // New line when done
 Send images along with text:
 
 ```swift
-// With image URL
-let imageRequest = ChatCompletionRequest(
-    model: "gpt-4o", // Vision-capable model
-    messages: [
-        .user(content: .parts([
-            .text("What do you see in this image?"),
-            .imageURL(.url(URL(string: "https://example.com/image.jpg")!))
-        ]))
-    ]
+// With image data
+let imageMsg = AIMessage.user(content: .parts([
+    .text("What do you see in this image?"),
+    .image(imageData, mimeType: "image/jpeg")
+]))
+
+let request = ProviderRequest(
+    modelId: "openai/gpt-4o",
+    messages: [imageMsg]
 )
 
-// With base64 image data
-let imageData = // ... your image data
-let base64Request = ChatCompletionRequest(
-    model: "gpt-4o",
-    messages: [
-        .user(content: .parts([
-            .text("Analyze this image"),
-            .imageURL(.base64(imageData), detail: .high)
-        ]))
-    ]
-)
-
-let response = try await openAIProvider.sendChatCompletion(request: base64Request)
+let response = try await client.execute(request: request)
 ```
+
+Send videos along with text (Gemini models only):
+
+```swift
+let client = GeminiClientAdapter(apiKey: "your-gemini-key")
+
+let videoMsg = AIMessage.user(content: .parts([
+    .text("Describe the key moments in this clip."),
+    .videoURL("https://example.com/clip.mp4")
+]))
+
+let request = ProviderRequest(
+    modelId: "gemini-2.5-flash",
+    messages: [videoMsg]
+)
+
+let response = try await client.execute(request: request)
+
+// Inline video data
+let data = try Data(contentsOf: URL(fileURLWithPath: "/path/to/video.mp4"))
+let localVideoMsg = AIMessage.user(content: .parts([
+    .text("Describe this local video."),
+    .video(data, mimeType: "video/mp4")
+]))
+```
+
+Note: Only Gemini models currently support video parts. OpenAI, Anthropic, and OpenRouter ignore `.video`/`.videoURL`.
 
 ### JSON Mode & Structured Outputs
 
-Get structured JSON responses:
+Get structured JSON responses using the `generateObject` method on an `AILanguageModel`:
 
 ```swift
-// Simple JSON mode
-let jsonRequest = ChatCompletionRequest(
-    model: "gpt-4o",
-    messages: [
-        .system(content: .text("Return valid JSON only")),
-        .user(content: .text("List 3 programming languages with their main uses"))
-    ],
-    responseFormat: .jsonObject
+struct LanguageList: Codable {
+    let languages: [Language]
+    struct Language: Codable {
+        let name: String
+        let mainUse: String
+    }
+}
+
+let objectRequest = AIObjectRequest<LanguageList>(
+    messages: [.user("List 3 programming languages with their main uses")]
 )
 
-let jsonResponse = try await openAIProvider.sendChatCompletion(request: jsonRequest)
-if let jsonContent = jsonResponse.choices.first?.message.content {
-    let data = jsonContent.data(using: .utf8)!
-    let parsed = try JSONSerialization.jsonObject(with: data)
-    print("Parsed JSON: \(parsed)")
-}
+let result = try await model.generateObject(request: objectRequest)
+print("Languages: \(result.object.languages)")
 ```
 
 ### Schema-Validated Structured Output
@@ -309,21 +312,26 @@ Use tools directly with LLMs:
 
 ```swift
 // Define a simple tool
-struct WeatherTool: Tool {
+struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a city"
+
+    enum TemperatureUnit: String, Codable, CaseIterable {
+        case celsius
+        case fahrenheit
+    }
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
     
-    @Parameter(description: "Temperature unit", validation: ["enum": ["celsius", "fahrenheit"]])
-    var unit: String = "fahrenheit"
+    @AIParameter(description: "Temperature unit")
+    var unit: TemperatureUnit = .fahrenheit
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Your weather API call here
-        return ("Weather in \(city): 72°F, sunny", nil)
+        return AIToolResult(content: "Weather in \(city): 72°F, sunny")
     }
 }
 
@@ -399,37 +407,20 @@ let extendedRequest = claudeProvider.withExtendedThinking(
 
 ### Conversation Management
 
-Build conversational flows:
+Build conversational flows with `AIAgentActor`:
 
 ```swift
-var conversationHistory: [Message] = [
-    .system(content: .text("You are a helpful coding assistant."))
-]
+let agent = AIAgentActor(
+    model: OpenRouterClient(),
+    instructions: "You are a helpful coding assistant."
+)
 
-func sendMessage(_ userInput: String) async throws -> String {
-    // Add user message
-    conversationHistory.append(.user(content: .text(userInput)))
-    
-    let request = ChatCompletionRequest(
-        model: "gpt-4o",
-        messages: conversationHistory,
-        maxTokens: 150
-    )
-    
-    let response = try await openAIProvider.sendChatCompletion(request: request)
-    
-    if let content = response.choices.first?.message.content {
-        // Add assistant response to history
-        conversationHistory.append(.assistant(content: .text(content)))
-        return content
-    }
-    
-    throw AISDKError.custom("No response content")
-}
+// Agent maintains conversation history automatically
+let response1 = try await agent.execute(messages: [.user("What's a good programming language for beginners?")])
+print(response1.text)
 
-// Usage
-let response1 = try await sendMessage("What's a good programming language for beginners?")
-let response2 = try await sendMessage("How do I get started with that language?")
+let response2 = try await agent.execute(messages: [.user("How do I get started with that language?")])
+print(response2.text)
 ```
 
 ### Error Handling with LLMs
@@ -496,64 +487,41 @@ func getCachedResponse(for prompt: String) async throws -> String {
 
 ## Basic Agent Usage
 
-### Creating an Agent (Provider-Centric Approach)
+### Creating an Agent
 
 ```swift
 import AISDK
 
-// Basic agent with OpenAI (uses smart default: gpt-4o)
-let openai = OpenAIProvider()
-let agent = Agent(llm: openai)
+// Basic agent
+let client = OpenRouterClient()
+let agent = AIAgentActor(model: client)
 
 // Agent with system instructions
-let openai = OpenAIProvider()
-let agent = Agent(
-    llm: openai,
+let agent = AIAgentActor(
+    model: OpenRouterClient(),
     instructions: "You are a helpful coding assistant."
 )
 
 // Agent with tools
-let openai = OpenAIProvider()
-let agent = Agent(
-    llm: openai,
+let agent = AIAgentActor(
+    model: OpenRouterClient(),
     tools: [WeatherTool.self, CalculatorTool.self]
 )
-
-// Agent with specific model
-let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
-let agent = Agent(llm: openaiMini)
 ```
 
-### Available Providers and Models
+### Available Providers
 
 ```swift
-// OpenAI Provider
-let openai = OpenAIProvider() // Uses gpt-4o by default
-let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
-let openaiO3 = OpenAIProvider(model: OpenAIModels.o3)
+// OpenRouterClient (recommended - supports multiple models)
+let client = OpenRouterClient()
 
-// Anthropic Provider  
-let anthropic = AnthropicService() // Uses sonnet-3.7 by default
-let anthropicSonnet4 = AnthropicService(model: AnthropicModels.sonnet4)
+// Direct provider clients also available
+let openai = OpenAIProvider(apiKey: "sk-...")
+let anthropic = AnthropicService(apiKey: "sk-ant-...")
+let gemini = GeminiProvider(apiKey: "...")
 
-// Gemini Provider
-let gemini = GeminiProvider() // Uses gemini-2.5-flash by default
-let geminiPro = GeminiProvider(model: GeminiModels.gemini25Pro)
-
-// Create agents with any provider
-let openaiAgent = Agent(llm: openai)
-let claudeAgent = Agent(llm: anthropic)
-let geminiAgent = Agent(llm: gemini)
-```
-
-### Legacy Approach (Still Supported)
-
-```swift
-// Legacy model-based initialization - deprecated but functional
-let agent = Agent(
-    model: AgenticModels.gpt4,
-    instructions: "You are a helpful assistant."
-)
+// Create agents with any AILanguageModel-conforming provider
+let agent = AIAgentActor(model: client)
 ```
 
 ### Sending Messages
@@ -561,48 +529,34 @@ let agent = Agent(
 #### Simple Text Messages
 
 ```swift
-let response = try await agent.send("What's the weather like?")
-print(response.displayContent)
+let response = try await agent.execute(messages: [.user("What's the weather like?")])
+print(response.text)
 ```
 
 #### Streaming Responses
 
 ```swift
-let message = ChatMessage(message: .user(content: .text("Tell me a story")))
-
-for try await chunk in agent.sendStream(message) {
-    print(chunk.displayContent, terminator: "")
-}
-```
-
-#### With Required Tool
-
-```swift
-let message = ChatMessage(message: .user(content: .text("What's the weather in Paris?")))
-
-// Force the agent to use a specific tool
-for try await response in agent.sendStream(message, requiredTool: "get_weather") {
-    print(response.displayContent)
-}
-```
-
-### Agent State Monitoring
-
-```swift
-agent.onStateChange = { state in
-    switch state {
-    case .idle:
-        print("Agent is ready")
-    case .thinking:
-        print("Agent is thinking...")
-    case .executingTool(let toolName):
-        print("Executing \(toolName)...")
-    case .responding:
-        print("Generating response...")
-    case .error(let error):
-        print("Error: \(error.localizedDescription)")
+for try await event in agent.streamExecute(messages: [.user("Tell me a story")]) {
+    switch event {
+    case .textDelta(let text):
+        print(text, terminator: "")
+    case .toolCallStart(_, let name):
+        print("\n[Calling \(name)...]")
+    case .finish:
+        print()
+    default:
+        break
     }
 }
+```
+
+#### Agent State Monitoring
+
+Use the `observableState` property in SwiftUI for reactive state updates:
+
+```swift
+// In SwiftUI, bind to agent.observableState
+// States: .thinking, .executingTool, .responding, .idle, .error
 ```
 
 ## Working with Tools
@@ -612,39 +566,41 @@ agent.onStateChange = { state in
 ```swift
 import AISDK
 
-struct CalculatorTool: Tool {
+struct CalculatorTool: AITool {
     let name = "calculator"
     let description = "Perform basic mathematical calculations"
     
-    @Parameter(description: "First number")
+    @AIParameter(description: "First number")
     var a: Double = 0
     
-    @Parameter(description: "Second number") 
+    @AIParameter(description: "Second number") 
     var b: Double = 0
     
-    @Parameter(
-        description: "Operation to perform",
-        validation: ["enum": ["add", "subtract", "multiply", "divide"]]
-    )
-    var operation: String = "add"
+    enum Operation: String, Codable, CaseIterable {
+        case add
+        case subtract
+        case multiply
+        case divide
+    }
+
+    @AIParameter(description: "Operation to perform")
+    var operation: Operation = .add
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         let result: Double
         
         switch operation {
-        case "add": result = a + b
-        case "subtract": result = a - b
-        case "multiply": result = a * b
-        case "divide": 
+        case .add: result = a + b
+        case .subtract: result = a - b
+        case .multiply: result = a * b
+        case .divide:
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
-        default: 
-            throw ToolError.invalidParameters("Invalid operation: \(operation)")
         }
         
-        return ("The result is \(result)", nil)
+        return AIToolResult(content: "The result is \(result)")
     }
 }
 ```
@@ -660,15 +616,15 @@ struct ChartTool: RenderableTool {
     let name = "create_chart"
     let description = "Create a visual chart from data"
     
-    @Parameter(description: "Chart title")
+    @AIParameter(description: "Chart title")
     var title: String = ""
     
-    @Parameter(description: "Data points as JSON array")
+    @AIParameter(description: "Data points as JSON array")
     var data: String = ""
     
     init() {}
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Parse the data
         guard let jsonData = data.data(using: .utf8),
               let chartData = try? JSONDecoder().decode(ChartData.self, from: jsonData) else {
@@ -678,7 +634,10 @@ struct ChartTool: RenderableTool {
         // Create metadata for rendering
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
         
-        return ("Created chart '\(title)' with \(chartData.points.count) data points", metadata)
+        return AIToolResult(
+            content: "Created chart '\(title)' with \(chartData.points.count) data points",
+            metadata: metadata
+        )
     }
     
     func render(from data: Data) -> AnyView {
@@ -721,13 +680,13 @@ struct ChartData: Codable {
 
 ```swift
 // Register tools with agent
-let agent = try Agent(
-    model: AgenticModels.gpt4,
+let agent = AIAgentActor(
+    model: OpenRouterClient(),
     tools: [CalculatorTool.self, ChartTool.self]
 )
 
 // Agent will automatically use tools when needed
-let response = try await agent.send("Calculate 15 * 23 and show the result in a chart")
+let response = try await agent.execute(messages: [.user("Calculate 15 * 23 and show the result in a chart")])
 ```
 
 ## Chat Management
@@ -738,9 +697,9 @@ let response = try await agent.send("Calculate 15 * 23 and show the result in a 
 import AISDK
 import AISDKChat
 
-// Create chat manager with provider-centric approach
-let openai = OpenAIProvider()
-let agent = Agent(llm: openai)
+// Create chat manager with v2 agent
+let client = OpenRouterClient()
+let agent = AIAgentActor(model: client)
 let storage = MemoryStorage() // or your custom storage
 let chatManager = AIChatManager(agent: agent, storage: storage)
 
@@ -761,8 +720,8 @@ struct ChatView: View {
     @State private var chatManager: AIChatManager
     
     init() {
-        let openai = OpenAIProvider()
-        let agent = Agent(llm: openai)
+        let client = OpenRouterClient()
+        let agent = AIAgentActor(model: client)
         let storage = MemoryStorage()
         _chatManager = State(wrappedValue: AIChatManager(agent: agent, storage: storage))
     }
@@ -818,9 +777,9 @@ import AISDKVoice
 let hasPermission = try await SpeechRecognizer.requestAuthorization()
 guard hasPermission else { return }
 
-// Start voice conversation  
-let openai = OpenAIProvider()
-let agent = Agent(llm: openai)
+// Start voice conversation
+let client = OpenRouterClient()
+let agent = AIAgentActor(model: client)
 try await voiceMode.startConversation(with: agent)
 ```
 
@@ -831,7 +790,7 @@ import SwiftUI
 import AISDKVoice
 
 struct VoiceChatView: View {
-    let agent: Agent
+    let agent: AIAgentActor
     
     var body: some View {
         AIVoiceModeView(agent: agent)
@@ -909,7 +868,7 @@ struct VisionView: View {
 
 ```swift
 struct VisionAgentView: View {
-    let agent: Agent
+    let agent: AIAgentActor
     @StateObject private var chatContext = ChatContext()
     
     var body: some View {
@@ -926,8 +885,8 @@ struct VisionAgentView: View {
 import AISDKResearch
 
 // Create research agent
-let openai = OpenAIProvider()
-let researcher = try ResearcherAgent(llm: openai)
+let client = OpenRouterClient()
+let researcher = ResearcherAgent(model: client)
 
 // Conduct research
 let result = try await researcher.research(
@@ -946,17 +905,17 @@ result.keyFindings.forEach { finding in
 ### Custom Research Tools
 
 ```swift
-struct WebSearchTool: Tool {
+struct WebSearchTool: AITool {
     let name = "web_search"
     let description = "Search the web for information"
     
-    @Parameter(description: "Search query")
+    @AIParameter(description: "Search query")
     var query: String = ""
     
-    @Parameter(description: "Number of results", validation: ["minimum": 1, "maximum": 10])
+    @AIParameter(description: "Number of results", validation: ["minimum": 1, "maximum": 10])
     var maxResults: Int = 5
     
-    func execute() async throws -> (content: String, metadata: ToolMetadata?) {
+    func execute() async throws -> AIToolResult {
         // Implement web search logic
         let results = try await performWebSearch(query: query, maxResults: maxResults)
         
@@ -1052,7 +1011,7 @@ class FirebaseStorage: ChatStorageProtocol {
 
 ```swift
 do {
-    let response = try await agent.send("Hello")
+    let response = try await agent.execute(messages: [.user("Hello")])
 } catch let error as AgentError {
     switch error {
     case .invalidModel:
@@ -1083,12 +1042,12 @@ do {
 ### Retry Logic
 
 ```swift
-func sendWithRetry(_ message: String, maxRetries: Int = 3) async throws -> ChatMessage {
+func sendWithRetry(_ message: String, maxRetries: Int = 3) async throws -> AIAgentResult {
     var lastError: Error?
-    
+
     for attempt in 1...maxRetries {
         do {
-            return try await agent.send(message)
+            return try await agent.execute(messages: [.user(message)])
         } catch let error as AISDKError {
             lastError = error
             
@@ -1113,25 +1072,21 @@ func sendWithRetry(_ message: String, maxRetries: Int = 3) async throws -> ChatM
 ### 1. Provider and Model Selection
 
 ```swift
-// For general chat applications - OpenAI with smart defaults
-let openai = OpenAIProvider()
-let chatAgent = Agent(llm: openai)
+// For general chat applications
+let client = OpenRouterClient()
+let chatAgent = AIAgentActor(model: client)
 
-// For tool-heavy applications - OpenAI excels at function calling
-let openaiProvider = OpenAIProvider(model: OpenAIModels.gpt4o)
-let toolAgent = Agent(llm: openaiProvider)
+// For tool-heavy applications
+let toolAgent = AIAgentActor(
+    model: OpenRouterClient(),
+    tools: [WeatherTool.self, CalculatorTool.self]
+)
 
-// For faster, cost-effective responses
-let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
-let fastAgent = Agent(llm: openaiMini)
-
-// For complex reasoning tasks - Anthropic Claude
-let anthropic = AnthropicService(model: AnthropicModels.sonnet37)
-let reasoningAgent = Agent(llm: anthropic)
-
-// For multimodal tasks - Gemini  
-let gemini = GeminiProvider(model: GeminiModels.gemini25Pro)
-let multimodalAgent = Agent(llm: gemini)
+// For complex reasoning tasks
+let reasoningAgent = AIAgentActor(
+    model: OpenRouterClient(),
+    instructions: "Think step by step."
+)
 ```
 
 ### 2. Memory Management
@@ -1153,22 +1108,22 @@ if agent.messages.count > 100 {
 
 ```swift
 // ✅ Good: Specific, focused tool
-struct GetWeatherTool: Tool {
+struct GetWeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a specific location"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
     
     // Implementation...
 }
 
 // ❌ Avoid: Overly broad tool
-struct UniversalTool: Tool {
+struct UniversalTool: AITool {
     let name = "do_everything"
     let description = "Does everything you need"
     
-    @Parameter(description: "What to do")
+    @AIParameter(description: "What to do")
     var action: String = ""
     
     // Too broad, hard for LLM to use correctly
@@ -1178,16 +1133,12 @@ struct UniversalTool: Tool {
 ### 4. Error Recovery
 
 ```swift
-agent.onStateChange = { state in
-    if case .error(let error) = state {
-        // Log error for debugging
-        print("Agent error: \(error)")
-        
-        // Potentially recover or show user-friendly message
-        DispatchQueue.main.async {
-            // Update UI to show error state
-        }
-    }
+do {
+    let response = try await agent.execute(messages: [.user("Hello")])
+} catch {
+    // Log error for debugging
+    print("Agent error: \(error)")
+    // Update UI to show error state
 }
 ```
 
@@ -1195,27 +1146,18 @@ agent.onStateChange = { state in
 
 ```swift
 // Use streaming for better user experience
-for try await chunk in agent.sendStream(message) {
-    DispatchQueue.main.async {
-        // Update UI immediately with each chunk
-        self.updateUI(with: chunk)
+for try await event in agent.streamExecute(messages: [.user("Tell me a story")]) {
+    if case .textDelta(let text) = event {
+        await MainActor.run {
+            self.responseText += text
+        }
     }
 }
 
-// Batch similar operations
-let messages = [
-    ChatMessage(message: .user(content: .text("Question 1"))),
-    ChatMessage(message: .user(content: .text("Question 2"))),
-    ChatMessage(message: .user(content: .text("Question 3")))
-]
-
-// Instead of sending one by one, combine context
-let combinedMessage = ChatMessage(message: .user(content: .text("""
-Please answer these questions:
-1. \(messages[0].displayContent)
-2. \(messages[1].displayContent)  
-3. \(messages[2].displayContent)
-""")))
+// Batch similar questions into a single request
+let response = try await agent.execute(messages: [
+    .user("Please answer these questions: 1. What is Swift? 2. What is SwiftUI? 3. What is AISDK?")
+])
 ```
 
 ## Common Patterns
@@ -1224,12 +1166,11 @@ Please answer these questions:
 
 ```swift
 struct ChatBot {
-    private let agent: Agent
-    
+    private let agent: AIAgentActor
+
     init() {
-        let openai = OpenAIProvider()
-        self.agent = Agent(
-            llm: openai,
+        self.agent = AIAgentActor(
+            model: OpenRouterClient(),
             tools: [
                 WeatherTool.self,
                 CalculatorTool.self,
@@ -1244,8 +1185,8 @@ struct ChatBot {
     }
     
     func respond(to message: String) async throws -> String {
-        let response = try await agent.send(message)
-        return response.displayContent
+        let response = try await agent.execute(messages: [.user(message)])
+        return response.text
     }
 }
 ```
@@ -1254,12 +1195,11 @@ struct ChatBot {
 
 ```swift
 struct DocumentAnalyzer {
-    private let agent: Agent
-    
+    private let agent: AIAgentActor
+
     init() {
-        let openai = OpenAIProvider()
-        self.agent = Agent(
-            llm: openai,
+        self.agent = AIAgentActor(
+            model: OpenRouterClient(),
             tools: [PDFReaderTool.self, SummarizerTool.self],
             instructions: """
             You are a document analysis expert. 
@@ -1269,13 +1209,8 @@ struct DocumentAnalyzer {
     }
     
     func analyze(document: URL) async throws -> DocumentAnalysis {
-        let message = ChatMessage(message: .user(content: .text("Analyze this document")))
-        // Add document as attachment
-        let attachment = Attachment(url: document, name: document.lastPathComponent)
-        message.attachments = [attachment]
-        
-        let response = try await agent.send("Analyze the attached document")
-        return DocumentAnalysis(summary: response.displayContent)
+        let response = try await agent.execute(messages: [.user("Analyze the attached document")])
+        return DocumentAnalysis(summary: response.text)
     }
 }
 ```
@@ -1284,27 +1219,23 @@ struct DocumentAnalyzer {
 
 ```swift
 struct MultiModalAgent {
-    private let agent: Agent
-    
+    private let agent: AIAgentActor
+
     init() {
-        // Use OpenAI for vision capabilities
-        let openai = OpenAIProvider(model: OpenAIModels.gpt4o) // Vision-capable model
-        self.agent = Agent(
-            llm: openai,
+        self.agent = AIAgentActor(
+            model: OpenRouterClient(),
             tools: [ImageAnalysisTool.self, TextToSpeechTool.self]
         )
     }
     
     func processImage(_ imageData: Data, question: String) async throws -> String {
-        let imagePart = UserContent.Part.imageURL(.base64(imageData))
-        let textPart = UserContent.Part.text(question)
-        
-        // Create message with both text and image
-        let content = UserContent.parts([textPart, imagePart])
-        let message = ChatMessage(message: .user(content: content))
-        
-        let response = try await agent.send(question)
-        return response.displayContent
+        let imageMsg = AIMessage.user(content: .parts([
+            .text(question),
+            .image(imageData, mimeType: "image/jpeg")
+        ]))
+
+        let response = try await agent.execute(messages: [imageMsg])
+        return response.text
     }
 }
 ```
@@ -1313,25 +1244,22 @@ struct MultiModalAgent {
 
 ```swift
 struct StreamingChatView: View {
-    @State private var messages: [ChatMessage] = []
+    @State private var responseText = ""
     @State private var inputText = ""
     @State private var isStreaming = false
-    
-    private let agent: Agent
-    
+
+    private let agent = AIAgentActor(model: OpenRouterClient())
+
     var body: some View {
         VStack {
             ScrollView {
-                LazyVStack {
-                    ForEach(messages) { message in
-                        MessageBubble(message: message)
-                    }
-                }
+                Text(responseText)
+                    .padding()
             }
-            
+
             HStack {
                 TextField("Type a message...", text: $inputText)
-                
+
                 Button("Send") {
                     sendMessage()
                 }
@@ -1340,41 +1268,29 @@ struct StreamingChatView: View {
             .padding()
         }
     }
-    
+
     private func sendMessage() {
-        let userMessage = ChatMessage(message: .user(content: .text(inputText)))
-        messages.append(userMessage)
-        
         let messageText = inputText
         inputText = ""
         isStreaming = true
-        
+        responseText = ""
+
         Task {
-            var responseContent = ""
-            let responseMessage = ChatMessage(message: .assistant(content: .text("")))
-            responseMessage.isPending = true
-            
-            await MainActor.run {
-                messages.append(responseMessage)
-            }
-            
             do {
-                for try await chunk in agent.sendStream(userMessage) {
-                    responseContent = chunk.displayContent
-                    
-                    await MainActor.run {
-                        if let index = messages.firstIndex(where: { $0.id == responseMessage.id }) {
-                            messages[index] = ChatMessage(message: .assistant(content: .text(responseContent)))
+                for try await event in agent.streamExecute(messages: [.user(messageText)]) {
+                    if case .textDelta(let text) = event {
+                        await MainActor.run {
+                            responseText += text
                         }
                     }
                 }
-                
+
                 await MainActor.run {
                     isStreaming = false
                 }
             } catch {
                 await MainActor.run {
-                    // Handle error
+                    responseText = "Error: \(error.localizedDescription)"
                     isStreaming = false
                 }
             }
@@ -1397,9 +1313,9 @@ struct StreamingChatView: View {
 print("OpenAI Key:", ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "Not found")
 
 // Set API key manually
-var model = AgenticModels.gpt4
-model.apiKey = "your-api-key-here"
-let agent = try Agent(model: model)
+let agent = AIAgentActor(
+    model: OpenRouterClient(apiKey: "your-api-key-here")
+)
 ```
 
 #### 2. Tool Execution Failures
@@ -1413,8 +1329,8 @@ print("Tool JSON Schema:")
 print(YourTool.jsonSchema().prettyPrintJSON())
 
 // Check parameter types match exactly
-struct DebugTool: Tool {
-    @Parameter(description: "Must be string, not number")
+struct DebugTool: AITool {
+    @AIParameter(description: "Must be string, not number")
     var city: String = ""  // ✅ Correct
     
     // var city: Int = 0   // ❌ Wrong type
@@ -1434,8 +1350,8 @@ let timeoutTask = Task {
 }
 
 let streamTask = Task {
-    for try await chunk in agent.sendStream(message) {
-        // Process chunk
+    for try await event in agent.streamExecute(messages: [.user("Tell me a story")]) {
+        // Process event
     }
 }
 
@@ -1449,21 +1365,9 @@ _ = try await [timeoutTask, streamTask].first { _ in true }
 
 **Solutions**:
 ```swift
-// Implement conversation pruning
-extension Agent {
-    func pruneConversation(maxMessages: Int = 50) {
-        guard messages.count > maxMessages else { return }
-        
-        // Keep system messages and recent messages
-        let systemMessages = messages.filter { 
-            if case .system = $0.message { return true }
-            return false
-        }
-        let recentMessages = Array(messages.suffix(maxMessages - systemMessages.count))
-        
-        setMessages(systemMessages + recentMessages)
-    }
-}
+// The AIAgentActor manages conversation history automatically.
+// For long conversations, consider creating a new agent instance
+// or managing message history externally.
 ```
 
 #### 5. SwiftUI State Issues
@@ -1473,17 +1377,19 @@ extension Agent {
 **Solutions**:
 ```swift
 // Ensure updates happen on main thread
-for try await chunk in agent.sendStream(message) {
-    await MainActor.run {
-        self.responseText = chunk.displayContent
+for try await event in agent.streamExecute(messages: [.user("Hello")]) {
+    if case .textDelta(let text) = event {
+        await MainActor.run {
+            self.responseText += text
+        }
     }
 }
 
 // Use @MainActor for your view model
 @Observable
 class ChatViewModel {
-    var messages: [ChatMessage] = []
-    
+    var messages: [AIMessage] = []
+
     func sendMessage(_ text: String) async {
         // This automatically runs on main thread
     }
@@ -1496,36 +1402,39 @@ class ChatViewModel {
 
 ```swift
 // For simple tasks - faster and cheaper
-let openaiMini = OpenAIProvider(model: OpenAIModels.gpt4oMini)
-let quickAgent = Agent(llm: openaiMini)
+let quickAgent = AIAgentActor(model: OpenRouterClient())
 
-// For complex reasoning - Anthropic Claude
-let anthropic = AnthropicService(model: AnthropicModels.sonnet37)
-let smartAgent = Agent(llm: anthropic)
+// For complex reasoning
+let smartAgent = AIAgentActor(
+    model: OpenRouterClient(),
+    instructions: "Think step by step."
+)
 
-// For tool-heavy workflows - OpenAI excels at function calling
-let openai = OpenAIProvider(model: OpenAIModels.gpt4o)
-let toolAgent = Agent(llm: openai)
+// For tool-heavy workflows
+let toolAgent = AIAgentActor(
+    model: OpenRouterClient(),
+    tools: [WeatherTool.self, CalculatorTool.self]
+)
 ```
 
 #### 2. Optimize Tool Design
 
 ```swift
 // ✅ Good: Focused, single-purpose tool
-struct GetWeatherTool: Tool {
+struct GetWeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a specific city"
     
-    @Parameter(description: "City name")
+    @AIParameter(description: "City name")
     var city: String = ""
 }
 
 // ❌ Avoid: Overly broad tool
-struct DoEverythingTool: Tool {
+struct DoEverythingTool: AITool {
     let name = "do_everything"
     let description = "Handles all possible tasks"
     
-    @Parameter(description: "What to do")
+    @AIParameter(description: "What to do")
     var task: String = ""
 }
 ```
@@ -1542,7 +1451,7 @@ Please help me with these tasks:
 """
 
 // Instead of three separate API calls
-let response = try await agent.send(combinedMessage)
+let response = try await agent.execute(messages: [.user(combinedMessage)])
 ```
 
 ### Debugging Tips
@@ -1550,12 +1459,11 @@ let response = try await agent.send(combinedMessage)
 #### 1. Enable Detailed Logging
 
 ```swift
-// Add to your agent initialization
-agent.onStateChange = { state in
-    print("Agent State: \(state)")
-    
-    switch state {
-    case .executingTool(let name):
+// Use agent.observableState for reactive state monitoring in SwiftUI
+// Or handle errors in the streaming event loop:
+for try await event in agent.streamExecute(messages: messages) {
+    switch event {
+    case .toolCallStart(_, let name):
         print("Executing tool: \(name)")
     case .error(let error):
         print("Error details: \(error.localizedDescription)")

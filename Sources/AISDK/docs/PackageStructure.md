@@ -162,12 +162,21 @@ AISDK/
 │   │   │       ├── ConversationalAgent.swift
 │   │   │       └── SpecializedAgent.swift
 │   │   ├── Core/
+│   │   │   ├── Adapters/
+│   │   │   ├── Configuration/
+│   │   │   ├── Errors/
+│   │   │   ├── Models/
+│   │   │   ├── Protocols/
+│   │   │   ├── Providers/
+│   │   │   ├── Reliability/
+│   │   │   ├── Telemetry/
+│   │   │   └── Utilities/
+│   │   ├── Tools/
+│   │   │   ├── AIParameter.swift
+│   │   │   ├── AITool.swift
 │   │   │   ├── Tool.swift
-│   │   │   ├── ToolRegistry.swift
-│   │   │   ├── Parameter.swift
-│   │   │   ├── ToolMetadata.swift
-│   │   │   ├── RenderableTool.swift
-│   │   │   └── ToolSchema.swift
+│   │   │   ├── ToolCallRepair.swift
+│   │   │   └── WebSearchTool.swift
 │   │   ├── LLMs/
 │   │   │   ├── LLMProtocol.swift
 │   │   │   ├── OpenAIProvider.swift
@@ -372,7 +381,7 @@ AISDK/
 The core module is the only required dependency and contains:
 
 1. **Agents/**: Agent system, callbacks, and state management
-2. **Core/**: Tool infrastructure and metadata handling
+2. **Core/**: AITool infrastructure and metadata handling
 3. **LLMs/**: Language model provider implementations
 4. **Models/**: Data structures for API communication
 5. **Client/**: Network client for API calls
@@ -475,27 +484,24 @@ swiftSettings: [
 import XCTest
 
 final class AgentTests: XCTestCase {
-    var agent: Agent!
-    var mockProvider: MockLLMProvider!
-    
+    var agent: AIAgentActor!
+    var mockModel: MockAILanguageModel!
+
     override func setUp() {
         super.setUp()
-        mockProvider = MockLLMProvider()
-        agent = try! Agent(
-            model: .gpt4o,
-            llm: mockProvider
-        )
+        mockModel = MockAILanguageModel()
+        agent = AIAgentActor(model: mockModel)
     }
-    
+
     func testSendMessage() async throws {
         // Arrange
-        mockProvider.mockResponse = ChatCompletionResponse(/* ... */)
-        
+        mockModel.mockResponse = .text("Expected response")
+
         // Act
-        let response = try await agent.send("Hello")
-        
+        let result = try await agent.execute(messages: [.user("Hello")])
+
         // Assert
-        XCTAssertEqual(response.content, "Expected response")
+        XCTAssertEqual(result.text, "Expected response")
     }
 }
 ```
