@@ -8,7 +8,6 @@ on:
   push:
     branches:
       - main
-      - aisdk-2.0-modernization
       - 'release/**'
 
 concurrency:
