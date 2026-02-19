@@ -14,7 +14,11 @@ final class ResponseAgentIntegrationTests: XCTestCase {
     var agent: ResponseAgent!
     
     override func setUpWithError() throws {
-        provider = OpenAIProvider(apiKey: "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")
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+              !apiKey.isEmpty else {
+            throw XCTSkip("OPENAI_API_KEY not set — skipping ResponseAgent live tests")
+        }
+        provider = OpenAIProvider(apiKey: apiKey)
         agent = try ResponseAgent(
             provider: provider,
             tools: [],

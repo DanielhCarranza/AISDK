@@ -1,64 +1,50 @@
 #!/bin/zsh
-# Conductor workspace setup for AISDK v2 development.
-# Ensures all new workspaces are based on aisdk-2.0-modernization, not main.
+# Conductor workspace setup for AISDK.
+# Runs each time a workspace is created.
 
 set -e
 
-V2_BRANCH="aisdk-2.0-modernization"
+BASE_BRANCH="${CONDUCTOR_DEFAULT_BRANCH:-main}"
 CURRENT_BRANCH=$(git branch --show-current)
 
 echo "==================================="
-echo "  AISDK v2 Workspace Setup"
+echo "  AISDK Workspace Setup"
 echo "==================================="
 echo ""
 echo "  Workspace: ${CONDUCTOR_WORKSPACE_NAME:-unknown}"
 echo "  Branch:    $CURRENT_BRANCH"
-echo "  Target:    $V2_BRANCH"
+echo "  Base:      $BASE_BRANCH"
 echo ""
 
 # 1. Fetch latest remote state
 echo "[1/4] Fetching remote changes..."
 git fetch origin --quiet
 
-# 2. Rebase onto aisdk-2.0-modernization
-echo "[2/4] Ensuring branch is based on $V2_BRANCH..."
-
-if [ -z "$CURRENT_BRANCH" ]; then
-    echo "  Detached HEAD state. Creating branch from $V2_BRANCH..."
-    git checkout -b "${CONDUCTOR_WORKSPACE_NAME:-workspace}-$(date +%s)" "origin/$V2_BRANCH"
-
-elif [ "$CURRENT_BRANCH" = "$V2_BRANCH" ]; then
-    # Workspace was created from the Branches tab directly on v2 branch.
-    echo "  Already on $V2_BRANCH. Pulling latest..."
-    git pull origin "$V2_BRANCH" --rebase --quiet 2>/dev/null || \
+# 2. Rebase onto latest base branch
+echo "[2/4] Syncing with origin/$BASE_BRANCH..."
+if [ "$CURRENT_BRANCH" = "$BASE_BRANCH" ]; then
+    git pull origin "$BASE_BRANCH" --rebase --quiet 2>/dev/null || \
         echo "  Already up to date."
-
 else
-    # Workspace was created from main (Conductor default). Rebase onto v2.
-    MERGE_BASE=$(git merge-base HEAD "origin/$V2_BRANCH" 2>/dev/null || echo "")
-    V2_HEAD=$(git rev-parse "origin/$V2_BRANCH" 2>/dev/null || echo "")
-
-    if [ "$MERGE_BASE" = "$V2_HEAD" ]; then
-        echo "  Already based on latest $V2_BRANCH. No rebase needed."
-    else
-        echo "  Rebasing $CURRENT_BRANCH onto origin/$V2_BRANCH..."
-        if ! git rebase "origin/$V2_BRANCH" --quiet 2>/dev/null; then
-            echo ""
-            echo "  Rebase conflict detected. Resetting to origin/$V2_BRANCH..."
-            git rebase --abort 2>/dev/null || true
-            git reset --hard "origin/$V2_BRANCH"
-            echo "  Branch reset to origin/$V2_BRANCH. Ready for new work."
-        else
-            echo "  Rebased onto $V2_BRANCH."
-        fi
-    fi
+    git rebase "origin/$BASE_BRANCH" --quiet 2>/dev/null || {
+        echo "  Rebase had conflicts. Aborting and resetting to origin/$BASE_BRANCH..."
+        git rebase --abort 2>/dev/null || true
+        git reset --hard "origin/$BASE_BRANCH"
+        echo "  Branch reset to origin/$BASE_BRANCH."
+    }
 fi
 
-# 3. Set upstream tracking to target v2 branch for PRs
-echo "[3/4] Configuring git upstream..."
-CURRENT_BRANCH=$(git branch --show-current)
-git config branch."$CURRENT_BRANCH".merge "refs/heads/$V2_BRANCH" 2>/dev/null || true
-git config branch."$CURRENT_BRANCH".remote origin 2>/dev/null || true
+# 3. Copy .env from repo root if available (for live API testing)
+echo "[3/4] Checking for .env..."
+if [ -n "$CONDUCTOR_ROOT_PATH" ] && [ -f "$CONDUCTOR_ROOT_PATH/.env" ]; then
+    cp "$CONDUCTOR_ROOT_PATH/.env" .env
+    echo "  Copied .env from repo root."
+elif [ -f .env ]; then
+    echo "  Using existing .env."
+else
+    echo "  No .env found. Live API tests will be skipped."
+    echo "  To enable: copy Tests/env.example to $CONDUCTOR_ROOT_PATH/.env and fill in keys."
+fi
 
 # 4. Resolve Swift package dependencies
 echo "[4/4] Resolving Swift package dependencies..."
@@ -70,5 +56,4 @@ echo ""
 echo "==================================="
 echo "  Setup complete!"
 echo "==================================="
-echo "  PRs should target: $V2_BRANCH"
 echo ""
