@@ -1,20 +1,34 @@
 # AISDK Development Instructions
 
-## Branch Strategy (CRITICAL)
+Read `.claude/soul.md` at session start. Review `tasks/lessons.md` for known patterns.
 
-**The target branch for ALL work is `aisdk-2.0-modernization`, NOT `main`.**
+## Project Identity
 
-- Ignore the `CONDUCTOR_DEFAULT_BRANCH` environment variable (it defaults to `main`).
-- When creating PRs, ALWAYS target `aisdk-2.0-modernization`:
-  ```
-  gh pr create --base aisdk-2.0-modernization
-  ```
-- When rebasing or syncing, use `origin/aisdk-2.0-modernization` as the base:
-  ```
-  git fetch origin
-  git rebase origin/aisdk-2.0-modernization
-  ```
-- Do NOT merge into or target `main`. The `main` branch is frozen until v2 is complete.
+AISDK is a single-import Swift SDK for multi-provider LLM integration on Apple platforms (iOS 17+, macOS 14+, watchOS 10+, tvOS 17+). It provides agents, tool calling, streaming, structured output, generative UI, and session management.
+
+**Vision:** The definitive AI SDK for iOS/macOS development — multimodal, supporting all frontier models (OpenAI, Anthropic, Gemini) with model routing via LiteLLM and OpenRouter. One import, any model, any modality.
+
+**Current state:** `2.0.0-beta.1` on `main`. Active development toward stable v2 release.
+
+**Key abstractions:**
+- `LLM` protocol — unified interface for all providers (`generateText`, `streamText`, `generateObject`)
+- `Agent` actor — Swift 6 concurrency, configurable stop conditions, `@Observable` state
+- `AILanguageModelAdapter` — bridges legacy providers to v2 `LLM` protocol
+- `ProviderLanguageModelAdapter` — wraps v2 provider clients (OpenRouter, LiteLLM)
+
+## Branch Strategy
+
+- **`main`** is the active development branch. All PRs target `main`.
+- **`release/1.x`** for v1 maintenance hotfixes only.
+- Tag format: bare semver `X.Y.Z` (no `v` prefix — SPM requires this).
+- Beta tags: `2.0.0-beta.N` on `main` for consumer testing.
+- Consumers use `.exact("2.0.0-beta.N")` in Package.swift (SPM won't resolve pre-release with ranges).
+- GitHub Releases auto-created when tags are pushed (`.github/workflows/release.yml`).
+- CI runs on PRs to `main` and `release/**` (`.github/workflows/ci.yml`).
+
+### Hotfix flow (v1)
+1. Branch from `release/1.x`, apply fix, PR back to `release/1.x`
+2. Tag: `git tag -a 1.0.X -m "Release 1.0.X - [description]" && git push origin 1.0.X`
 
 ## Build and Test
 
@@ -23,41 +37,47 @@
 - `swift test --filter <TestClass>` — run specific tests
 - `swift package resolve` — resolve dependencies without building
 - `RUN_LIVE_TESTS=1 swift test` — include live API integration tests (requires `.env` with API keys)
+- `swift run BasicChatDemo` — run CLI chat demo
+- `swift run ToolDemo` — run tool calling demo
 
-## Commit Messages
+## Commit Messages and PRs
 
 - Short, imperative, sentence-case (e.g., "Add retry mechanism for chat requests")
 - Never attribute commits to Claude or Anthropic
+- PR workflow:
+  1. Make changes on your workspace branch
+  2. Run `swift build` and `swift test` to verify
+  3. Push: `git push -u origin HEAD`
+  4. Create PR: `gh pr create --base main`
 
-## PR Workflow
+## Compound Engineering Workflows
 
-1. Make changes on your workspace branch
-2. Run `swift build` and `swift test` to verify
-3. Push your branch: `git push -u origin HEAD`
-4. Create PR targeting the v2 branch:
-   ```
-   gh pr create --base aisdk-2.0-modernization
-   ```
-5. After merge, the workspace can be archived in Conductor
+For complex tasks, use the compound engineering plugin workflows. These follow a **brainstorm → plan → work → review** pipeline.
 
-## Versioning and Releases
+### When to use each
 
-- **v1 is tagged and stable**: `1.0.0` tag on `main`, maintenance branch at `release/1.x`
-- **v2 in development**: Active on `aisdk-2.0-modernization` branch
-- Tag format: bare semver `X.Y.Z` (no `v` prefix -- SPM requires this)
-- Beta tags: `2.0.0-beta.N` on `aisdk-2.0-modernization` for consumer testing
-- GitHub Releases are auto-created when tags are pushed (`.github/workflows/release.yml`)
-- CI runs on PRs to `main`, `aisdk-2.0-modernization`, and `release/**` (`.github/workflows/ci.yml`)
+**`/workflows:brainstorm`** — Start here for new features or significant decisions. Explores the problem space, surfaces trade-offs, generates options. Free-form and divergent.
+- Output lands in `docs/brainstorms/`
+- Use when: starting something new, facing a design decision, multiple valid approaches exist
 
-### Hotfix flow (v1)
+**`/workflows:plan`** — After brainstorm, transform into a structured implementation plan. Detailed, actionable, with acceptance criteria.
+- Output lands in `docs/plans/`
+- Use when: you know what to build but need to sequence the work
 
-1. Branch from `release/1.x`, apply fix, PR back to `release/1.x`
-2. After merge, tag: `git tag -a 1.0.X -m "Release 1.0.X - [description]" && git push origin 1.0.X`
+**`/workflows:work`** — Execute the plan. Handles git workflow, task tracking, quality checks, commits.
+- Use when: plan is approved and ready to implement
 
-### Beta tagging (v2)
+**`/workflows:review`** — Multi-agent code review with deep analysis. Run before merge.
+- Use when: implementation is complete, PR is ready
 
-1. On `aisdk-2.0-modernization`: `git tag -a 2.0.0-beta.N -m "Beta N" && git push origin 2.0.0-beta.N`
-2. Consumers test with `.exact("2.0.0-beta.N")` in Package.swift
+**`/workflows:compound`** — After solving a hard problem, document it for the team's knowledge.
+- Use when: you learned something non-obvious that future sessions should know
+
+### Decision heuristic
+
+If the task touches 3+ files or involves an architectural choice → start with brainstorm or plan.
+If it's a focused bug fix or small change → just do it.
+If you solved something hard → compound it.
 
 ## Workflow Orchestration
 
@@ -103,8 +123,42 @@
 2. **Verify Plan**: Check in before starting implementation.
 3. **Track Progress**: Mark items complete as you go.
 4. **Explain Changes**: High-level summary at each step.
-5. **Document Results**: Add review section to `tasks/todo.md`.
-6. **Capture Lessons**: Update `tasks/lessons.md` after corrections.
+5. **Capture Lessons**: Update `tasks/lessons.md` after corrections.
+
+## Architecture Quick Reference
+
+### Module map
+| Module | Status | Purpose |
+|--------|--------|---------|
+| `AISDK` | Active | Core — LLM protocol, Agent, providers, reliability, sessions, MCP, generative UI |
+| `AISDKChat` | Commented out | Pre-built chat UI components (SwiftUI) |
+| `AISDKVoice` | Commented out | Speech recognition, TTS, voice UI |
+| `AISDKVision` | Commented out | LiveKit video streaming, camera management |
+
+### Key directories
+```
+Sources/AISDK/          — Core SDK source
+Tests/AISDKTests/       — Test suite
+Examples/               — Demo apps (BasicChatDemo, ToolDemo, OpenRouterDemo, AISDKCLI, etc.)
+docs/                   — Architecture, API reference, tutorials, migration guide
+docs/api-reference/     — Public API docs
+docs/tutorials/         — Getting started through sessions
+```
+
+### Providers
+| Provider | Class | v2 Wrapper |
+|----------|-------|------------|
+| OpenAI | `OpenAIProvider` | `AILanguageModelAdapter` |
+| Anthropic | `AnthropicProvider` | `AILanguageModelAdapter` |
+| Gemini | `GeminiProvider` | `AILanguageModelAdapter` |
+| OpenRouter | `OpenRouterClient` | `ProviderLanguageModelAdapter` (native v2) |
+| LiteLLM | `LiteLLMClient` | `ProviderLanguageModelAdapter` (native v2) |
+
+## Security
+
+- Never commit `.env` files or API keys.
+- Use `Tests/env.example` as template for local `.env`.
+- Integration tests auto-skip in CI when keys are absent (`XCTSkip`).
 
 ## Core Principles
 
