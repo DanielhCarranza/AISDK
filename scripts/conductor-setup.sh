@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # Conductor workspace setup for AISDK.
 # Runs each time a workspace is created.
 

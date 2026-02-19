@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # Conductor run script for AISDK.
 # Triggered by the "Run" button in Conductor.
 
