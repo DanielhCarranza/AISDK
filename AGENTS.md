@@ -37,7 +37,7 @@
 - Follow [Semantic Versioning](https://semver.org/) (semver.org).
 - Tag format: `X.Y.Z` or `X.Y.Z-prerelease` (no `v` prefix -- SPM requires bare semver).
 - CHANGELOG follows [Keep a Changelog](https://keepachangelog.com/) format.
-- `release/1.x` branch: v1 maintenance only. `aisdk-2.0-modernization`: active v2 development.
+- `main` branch: active v2 development. `release/1.x` branch: v1 maintenance only.
 
 ## CI/CD
 - CI runs `swift build` + `swift test` (macOS) and `xcodebuild build` (iOS Simulator) on PRs.
