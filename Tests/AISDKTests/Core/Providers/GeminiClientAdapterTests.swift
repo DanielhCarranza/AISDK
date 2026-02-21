@@ -131,6 +131,42 @@ final class GeminiClientAdapterTests: XCTestCase {
         XCTAssertTrue(capabilities!.contains(.streaming))
     }
 
+    func testCapabilitiesForGemini31Pro() async {
+        let client = GeminiClientAdapter(apiKey: "test-api-key")
+        let capabilities = await client.capabilities(for: "gemini-3.1-pro-preview")
+
+        XCTAssertNotNil(capabilities)
+        XCTAssertTrue(capabilities!.contains(.text))
+        XCTAssertTrue(capabilities!.contains(.vision))
+        XCTAssertTrue(capabilities!.contains(.tools))
+        XCTAssertTrue(capabilities!.contains(.streaming))
+        XCTAssertTrue(capabilities!.contains(.functionCalling))
+        XCTAssertTrue(capabilities!.contains(.reasoning))
+        XCTAssertTrue(capabilities!.contains(.longContext))
+    }
+
+    func testCapabilitiesForGemini3Flash() async {
+        let client = GeminiClientAdapter(apiKey: "test-api-key")
+        let capabilities = await client.capabilities(for: "gemini-3-flash")
+
+        XCTAssertNotNil(capabilities)
+        XCTAssertTrue(capabilities!.contains(.text))
+        XCTAssertTrue(capabilities!.contains(.vision))
+        XCTAssertTrue(capabilities!.contains(.tools))
+        XCTAssertTrue(capabilities!.contains(.streaming))
+        XCTAssertTrue(capabilities!.contains(.functionCalling))
+        XCTAssertTrue(capabilities!.contains(.reasoning))
+    }
+
+    func testCapabilitiesForGemini3Pro() async {
+        let client = GeminiClientAdapter(apiKey: "test-api-key")
+        let capabilities = await client.capabilities(for: "gemini-3-pro-preview")
+
+        XCTAssertNotNil(capabilities)
+        XCTAssertTrue(capabilities!.contains(.reasoning))
+        XCTAssertTrue(capabilities!.contains(.longContext))
+    }
+
     func testCapabilitiesForUnknownModel() async {
         let client = GeminiClientAdapter(apiKey: "test-api-key")
         let capabilities = await client.capabilities(for: "unknown-model-xyz")
@@ -186,15 +222,20 @@ final class GeminiClientAdapterTests: XCTestCase {
 
     // MARK: - Reasoning Mapping Tests
 
-    func testUnifiedReasoningEffortMapsToThinkingLevel() async throws {
+    func testUnifiedReasoningEffortMapsToThinkingBudgetFor25() async throws {
+        // Gemini 2.5 models use thinkingBudget (not thinkingLevel)
         let captured = await captureGeminiRequestBody(
             modelId: "gemini-2.5-flash",
             reasoning: AIReasoningConfig.effort(.medium),
             providerOptions: nil
         )
 
-        let thinkingConfig = captured["thinkingConfig"] as? [String: Any]
-        XCTAssertEqual(thinkingConfig?["thinking_level"] as? String, "medium")
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig, "thinkingConfig should be nested inside generationConfig")
+        // 2.5 models map effort to budget, not level
+        XCTAssertEqual(thinkingConfig?["thinking_budget"] as? Int, 8192)
+        XCTAssertNil(thinkingConfig?["thinking_level"], "2.5 models should not use thinking_level")
     }
 
     func testUnifiedReasoningBudgetMapsToThinkingBudget() async throws {
@@ -204,7 +245,9 @@ final class GeminiClientAdapterTests: XCTestCase {
             providerOptions: nil
         )
 
-        let thinkingConfig = captured["thinkingConfig"] as? [String: Any]
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig, "thinkingConfig should be nested inside generationConfig")
         XCTAssertEqual(thinkingConfig?["thinking_budget"] as? Int, 2048)
     }
 
@@ -220,7 +263,9 @@ final class GeminiClientAdapterTests: XCTestCase {
             providerOptions: options
         )
 
-        let thinkingConfig = captured["thinkingConfig"] as? [String: Any]
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig, "thinkingConfig should be nested inside generationConfig")
         XCTAssertEqual(thinkingConfig?["thinking_level"] as? String, "high")
         XCTAssertEqual(thinkingConfig?["thinking_budget"] as? Int, 1024)
     }
@@ -232,7 +277,95 @@ final class GeminiClientAdapterTests: XCTestCase {
             providerOptions: nil
         )
 
-        XCTAssertNil(captured["thinkingConfig"])
+        // thinkingConfig should NOT appear at top level
+        XCTAssertNil(captured["thinkingConfig"], "thinkingConfig must not be at top level")
+        // And should not appear inside generationConfig either (model doesn't support reasoning)
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        XCTAssertNil(genConfig?["thinkingConfig"], "Non-reasoning model should not have thinkingConfig")
+    }
+}
+
+// MARK: - GeminiThinkingConfigNestingTests
+
+final class GeminiThinkingConfigNestingTests: XCTestCase {
+    func testThinkingConfigNestedInsideGenerationConfig() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig(budgetTokens: 4096),
+            providerOptions: nil
+        )
+
+        // thinkingConfig MUST be inside generationConfig
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        XCTAssertNotNil(genConfig, "generationConfig should exist")
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig, "thinkingConfig should be nested inside generationConfig")
+    }
+
+    func testThinkingConfigNotAtTopLevel() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig(budgetTokens: 4096),
+            providerOptions: nil
+        )
+
+        // thinkingConfig must NOT be at the top level (this was the bug)
+        XCTAssertNil(captured["thinkingConfig"], "thinkingConfig must not be a top-level field")
+    }
+
+    func testGemini31ReasoningEffortMapsToThinkingLevel() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-3.1-pro-preview",
+            reasoning: AIReasoningConfig.effort(.high),
+            providerOptions: nil
+        )
+
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig, "Gemini 3.1 should support reasoning config")
+        XCTAssertEqual(thinkingConfig?["thinking_level"] as? String, "high")
+    }
+
+    func testGemini3FlashReasoningSupport() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-3-flash",
+            reasoning: AIReasoningConfig.effort(.low),
+            providerOptions: nil
+        )
+
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig, "Gemini 3 Flash should support reasoning config")
+        XCTAssertEqual(thinkingConfig?["thinking_level"] as? String, "low")
+    }
+
+    func testGenerationConfigCreatedWhenOnlyThinkingConfigPresent() async throws {
+        // When no temperature/maxTokens/etc are set, generationConfig should
+        // still be created to hold thinkingConfig
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig.effort(.medium),
+            providerOptions: nil
+        )
+
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        XCTAssertNotNil(genConfig, "generationConfig should be created even when only thinkingConfig is needed")
+        XCTAssertNotNil(genConfig?["thinkingConfig"], "thinkingConfig should be present inside generationConfig")
+    }
+
+    func testIncludeThoughtsViaProviderOptions() async throws {
+        let captured = await captureGeminiRequestBody(
+            modelId: "gemini-2.5-flash",
+            reasoning: AIReasoningConfig.effort(.medium),
+            providerOptions: ["includeThoughts": .bool(true)]
+        )
+
+        let genConfig = captured["generationConfig"] as? [String: Any]
+        let thinkingConfig = genConfig?["thinkingConfig"] as? [String: Any]
+        XCTAssertNotNil(thinkingConfig)
+        XCTAssertEqual(thinkingConfig?["include_thoughts"] as? Bool, true)
+        // 2.5 models use budget not level
+        XCTAssertEqual(thinkingConfig?["thinking_budget"] as? Int, 8192)
     }
 }
 
@@ -998,6 +1131,71 @@ final class GeminiFileReferenceTests: XCTestCase {
         } else {
             XCTFail("Expected parts content")
         }
+    }
+}
+
+// MARK: - GeminiLiveIntegrationTests
+
+final class GeminiLiveIntegrationTests: XCTestCase {
+    func testGeminiReasoningStreamEmitsThoughtDeltas() async throws {
+        guard let apiKey = ProcessInfo.processInfo.environment["GOOGLE_API_KEY"],
+              !apiKey.isEmpty,
+              ProcessInfo.processInfo.environment["RUN_LIVE_TESTS"] == "1"
+        else {
+            throw XCTSkip("GOOGLE_API_KEY or RUN_LIVE_TESTS not set")
+        }
+
+        let client = GeminiClientAdapter(apiKey: apiKey)
+        let request = ProviderRequest(
+            modelId: "gemini-2.5-flash",
+            messages: [AIMessage(role: .user, content: .text("What is 15 * 37? Think step by step."))],
+            stream: true,
+            reasoning: AIReasoningConfig.effort(.medium),
+            providerOptions: ["includeThoughts": .bool(true)]
+        )
+
+        var hasReasoningDelta = false
+        var hasTextDelta = false
+        var textContent = ""
+
+        for try await event in client.stream(request: request) {
+            switch event {
+            case .reasoningDelta:
+                hasReasoningDelta = true
+            case .textDelta(let text):
+                hasTextDelta = true
+                textContent += text
+            default:
+                break
+            }
+        }
+
+        XCTAssertTrue(hasReasoningDelta, "Streaming with reasoning should emit reasoningDelta events")
+        XCTAssertTrue(hasTextDelta, "Streaming should emit textDelta events")
+        XCTAssertTrue(textContent.contains("555"), "Response should contain the correct answer (555)")
+    }
+
+    func testGeminiNonStreamingReasoningIncludesMetadata() async throws {
+        guard let apiKey = ProcessInfo.processInfo.environment["GOOGLE_API_KEY"],
+              !apiKey.isEmpty,
+              ProcessInfo.processInfo.environment["RUN_LIVE_TESTS"] == "1"
+        else {
+            throw XCTSkip("GOOGLE_API_KEY or RUN_LIVE_TESTS not set")
+        }
+
+        let client = GeminiClientAdapter(apiKey: apiKey)
+        let request = ProviderRequest(
+            modelId: "gemini-2.5-flash",
+            messages: [AIMessage(role: .user, content: .text("What is 15 * 37?"))],
+            reasoning: AIReasoningConfig.effort(.medium),
+            providerOptions: ["includeThoughts": .bool(true)]
+        )
+
+        let response = try await client.execute(request: request)
+
+        XCTAssertFalse(response.content.isEmpty, "Response should have text content")
+        // Reasoning metadata should be present when includeThoughts is true
+        XCTAssertNotNil(response.metadata?["reasoning"], "Response should include reasoning metadata")
     }
 }
 
