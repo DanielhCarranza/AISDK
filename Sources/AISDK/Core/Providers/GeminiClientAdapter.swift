@@ -55,6 +55,10 @@ public actor GeminiClientAdapter: ProviderClient {
 
     // Known Gemini models
     private static let knownModels = [
+        "gemini-3.1-pro-preview",
+        "gemini-3-pro-preview",
+        "gemini-3.1-flash-preview",
+        "gemini-3-flash",
         "gemini-2.5-pro-preview-05-06",
         "gemini-2.5-flash-preview-05-20",
         "gemini-2.5-flash",
@@ -186,6 +190,10 @@ public actor GeminiClientAdapter: ProviderClient {
     public func capabilities(for modelId: String) async -> LLMCapabilities? {
         // Return known capabilities for Gemini models
         switch modelId {
+        case let id where id.contains("3.1-pro") || id.contains("3-pro"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .reasoning, .longContext]
+        case let id where id.contains("3.1-flash") || id.contains("3-flash"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .reasoning]
         case let id where id.contains("2.5-pro"):
             return [.text, .vision, .tools, .streaming, .functionCalling, .reasoning, .longContext]
         case let id where id.contains("2.5-flash"):
@@ -205,7 +213,9 @@ public actor GeminiClientAdapter: ProviderClient {
     // MARK: - Private Methods
 
     private static func supportsReasoning(for modelId: String) -> Bool {
-        modelId.contains("2.5-pro") || modelId.contains("2.5-flash")
+        modelId.contains("2.5-pro") || modelId.contains("2.5-flash") ||
+        modelId.contains("3-pro") || modelId.contains("3-flash") ||
+        modelId.contains("3.1-pro") || modelId.contains("3.1-flash")
     }
 
     private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) async throws -> URLRequest {
@@ -494,11 +504,18 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         // Add thinking configuration if present in provider options or unified reasoning config
-        body.thinkingConfig = try buildThinkingConfig(
+        let thinkingConfig = try buildThinkingConfig(
             from: request.providerOptions,
             reasoning: request.reasoning,
-            supportsReasoning: Self.supportsReasoning(for: request.modelId)
+            supportsReasoning: Self.supportsReasoning(for: request.modelId),
+            modelId: request.modelId
         )
+        if let thinkingConfig {
+            if body.generationConfig == nil {
+                body.generationConfig = GCAGenerationConfig()
+            }
+            body.generationConfig?.thinkingConfig = thinkingConfig
+        }
 
         return body
     }
@@ -510,11 +527,15 @@ public actor GeminiClientAdapter: ProviderClient {
     private func buildThinkingConfig(
         from options: [String: ProviderJSONValue]?,
         reasoning: AIReasoningConfig?,
-        supportsReasoning: Bool
+        supportsReasoning: Bool,
+        modelId: String
     ) throws -> GCAThinkingConfig? {
         guard supportsReasoning else {
             return nil
         }
+
+        // Gemini 3.x uses thinkingLevel, Gemini 2.5 uses thinkingBudget
+        let usesThinkingLevel = Self.usesThinkingLevel(for: modelId)
 
         var config = GCAThinkingConfig()
         var hasConfig = false
@@ -530,7 +551,7 @@ public actor GeminiClientAdapter: ProviderClient {
             hasConfig = true
         }
 
-        // Parse thinkingLevel (string enum)
+        // Parse thinkingLevel (string enum) — Gemini 3.x only
         if let value = options?["thinkingLevel"] {
             guard case .string(let level) = value else {
                 throw ProviderError.invalidRequest("thinkingLevel must be a string")
@@ -548,7 +569,7 @@ public actor GeminiClientAdapter: ProviderClient {
             hasThinkingLevel = true
         }
 
-        // Parse thinkingBudget (integer)
+        // Parse thinkingBudget (integer) — Gemini 2.5 only
         if let value = options?["thinkingBudget"] {
             let budgetInt: Int
             switch value {
@@ -572,11 +593,19 @@ public actor GeminiClientAdapter: ProviderClient {
             hasThinkingBudget = true
         }
 
+        // Map unified AIReasoningConfig to model-appropriate thinking parameter
         let hasUnified = reasoning?.effort != nil || reasoning?.budgetTokens != nil
         if supportsReasoning, hasUnified {
-            if !hasThinkingLevel, let effort = reasoning?.effort {
-                config.thinkingLevel = effort.rawValue
-                hasConfig = true
+            if let effort = reasoning?.effort {
+                if usesThinkingLevel && !hasThinkingLevel {
+                    // Gemini 3.x: map effort to thinkingLevel
+                    config.thinkingLevel = effort.rawValue
+                    hasConfig = true
+                } else if !usesThinkingLevel && !hasThinkingBudget {
+                    // Gemini 2.5: map effort to thinkingBudget
+                    config.thinkingBudget = Self.effortToBudget(effort)
+                    hasConfig = true
+                }
             }
             if !hasThinkingBudget, let budget = reasoning?.budgetTokens {
                 config.thinkingBudget = budget
@@ -585,6 +614,21 @@ public actor GeminiClientAdapter: ProviderClient {
         }
 
         return hasConfig ? config : nil
+    }
+
+    /// Gemini 3.x models use thinkingLevel, Gemini 2.5 models use thinkingBudget
+    private static func usesThinkingLevel(for modelId: String) -> Bool {
+        modelId.contains("3-pro") || modelId.contains("3-flash") ||
+        modelId.contains("3.1-pro") || modelId.contains("3.1-flash")
+    }
+
+    /// Maps AIReasoningEffort to a token budget for Gemini 2.5 models
+    private static func effortToBudget(_ effort: AIReasoningConfig.AIReasoningEffort) -> Int {
+        switch effort {
+        case .low: return 1024
+        case .medium: return 8192
+        case .high: return 24576
+        }
     }
 
     /// Recursively strips JSON Schema fields unsupported by Gemini's function calling API.
@@ -1101,7 +1145,6 @@ private struct GCARequestBody: Encodable {
     var generationConfig: GCAGenerationConfig?
     var tools: [GCAToolEntry]?
     var toolConfig: GCAToolConfig?
-    var thinkingConfig: GCAThinkingConfig?
 
     enum CodingKeys: String, CodingKey {
         case contents
@@ -1109,7 +1152,6 @@ private struct GCARequestBody: Encodable {
         case generationConfig
         case tools
         case toolConfig
-        case thinkingConfig
     }
 }
 
@@ -1316,6 +1358,7 @@ private struct GCAGenerationConfig: Codable {
     var stopSequences: [String]?
     var responseMimeType: String?
     var responseSchema: ProviderJSONValue?
+    var thinkingConfig: GCAThinkingConfig?
 }
 
 /// A Gemini tool entry. Either function declarations or a built-in tool.

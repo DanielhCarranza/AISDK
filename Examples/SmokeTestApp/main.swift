@@ -488,6 +488,129 @@ func testGenerativeUI() async {
     }
 }
 
+// MARK: - Test 6: Gemini Reasoning (thinkingConfig)
+
+func testGeminiReasoning() async {
+    print("\n--- Gemini Reasoning Tests ---")
+
+    guard let apiKey = envKey("GOOGLE_API_KEY") else {
+        print("  [SKIP] Gemini reasoning - GOOGLE_API_KEY not set")
+        return
+    }
+
+    let client = GeminiClientAdapter(apiKey: apiKey)
+
+    // Test 6a: Non-streaming reasoning with includeThoughts
+    let timer1 = Date()
+    do {
+        let response = try await withRetry("Gemini reasoning non-streaming") {
+            try await client.execute(request: ProviderRequest(
+                modelId: "gemini-2.5-flash",
+                messages: [.user("What is 15 * 37? Think step by step.")],
+                maxTokens: 500,
+                reasoning: AIReasoningConfig.effort(.medium),
+                timeout: 30,
+                providerOptions: ["includeThoughts": .bool(true)]
+            ))
+        }
+
+        let hasContent = !response.content.isEmpty
+        let hasReasoning = response.metadata?["reasoning"] != nil
+
+        record("Reasoning", "Gemini", "non-streaming with thinkingConfig",
+               passed: hasContent,
+               duration: Date().timeIntervalSince(timer1),
+               message: hasContent
+                   ? "Content: \(response.content.prefix(60))... reasoning=\(hasReasoning)"
+                   : "Empty response")
+    } catch {
+        record("Reasoning", "Gemini", "non-streaming with thinkingConfig",
+               passed: false,
+               duration: Date().timeIntervalSince(timer1),
+               message: "\(error)")
+    }
+
+    // Test 6b: Streaming reasoning emits reasoningDelta events
+    let timer2 = Date()
+    do {
+        try await withRetry("Gemini reasoning streaming") {
+            let request = ProviderRequest(
+                modelId: "gemini-2.5-flash",
+                messages: [.user("What is 15 * 37? Think step by step.")],
+                maxTokens: 500,
+                stream: true,
+                reasoning: AIReasoningConfig.effort(.medium),
+                timeout: 30,
+                providerOptions: ["includeThoughts": .bool(true)]
+            )
+
+            var reasoningDeltas = 0
+            var textDeltas = 0
+            var gotFinish = false
+
+            for try await event in client.stream(request: request) {
+                switch event {
+                case .reasoningDelta:
+                    reasoningDeltas += 1
+                case .textDelta:
+                    textDeltas += 1
+                case .finish:
+                    gotFinish = true
+                default:
+                    break
+                }
+            }
+
+            guard gotFinish else {
+                throw SmokeTestError.assertion("No .finish event received")
+            }
+            guard textDeltas >= 1 else {
+                throw SmokeTestError.assertion("Expected textDelta events, got \(textDeltas)")
+            }
+
+            log("Gemini reasoning: \(reasoningDeltas) reasoning deltas, \(textDeltas) text deltas")
+        }
+
+        record("Reasoning", "Gemini", "streaming with reasoningDelta",
+               passed: true,
+               duration: Date().timeIntervalSince(timer2))
+    } catch {
+        record("Reasoning", "Gemini", "streaming with reasoningDelta",
+               passed: false,
+               duration: Date().timeIntervalSince(timer2),
+               message: "\(error)")
+    }
+
+    // Test 6c: Verify thinkingConfig does NOT cause 400 error (the original bug)
+    let timer3 = Date()
+    do {
+        let response = try await withRetry("Gemini thinkingConfig no 400") {
+            try await client.execute(request: ProviderRequest(
+                modelId: "gemini-2.5-flash",
+                messages: [.user("Say hello")],
+                maxTokens: 20,
+                reasoning: AIReasoningConfig.effort(.low),
+                timeout: 15
+            ))
+        }
+
+        let passed = !response.content.isEmpty
+        record("Reasoning", "Gemini", "thinkingConfig no 400 error",
+               passed: passed,
+               duration: Date().timeIntervalSince(timer3),
+               message: passed ? "No INVALID_ARGUMENT error" : "Empty response")
+    } catch {
+        let errorStr = "\(error)"
+        let is400Bug = errorStr.contains("thinkingConfig") || errorStr.contains("INVALID_ARGUMENT")
+        record("Reasoning", "Gemini", "thinkingConfig no 400 error",
+               passed: false,
+               duration: Date().timeIntervalSince(timer3),
+               message: is400Bug
+                   ? "BUG STILL PRESENT: \(errorStr.prefix(100))"
+                   : "\(errorStr.prefix(100))")
+    }
+}
+
 // MARK: - Error Type
 
 enum SmokeTestError: Error, CustomStringConvertible {
@@ -565,12 +688,13 @@ Task {
         print("\n  Available providers: \(available.joined(separator: ", "))\n")
     }
 
-    // Run all 5 test categories
+    // Run all 6 test categories
     await testProviderConnection()
     await testStreaming()
     await testToolCalling()
     await testSession()
     await testGenerativeUI()
+    await testGeminiReasoning()
 
     printSummary()
 
