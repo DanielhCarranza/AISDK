@@ -439,18 +439,52 @@ public enum ResponseContentItem: Codable {
     }
 }
 
-/// File input content
+/// File input content — supports file ID, base64 data, or URL
 public struct ResponseInputFile: Codable {
     public let type: String = "input_file"
-    public let fileId: String
+    public let fileId: String?
+    public let fileData: String?
+    public let fileUrl: String?
+    public let filename: String?
 
+    /// Initialize with a file ID (backward compatible)
     public init(fileId: String) {
         self.fileId = fileId
+        self.fileData = nil
+        self.fileUrl = nil
+        self.filename = nil
+    }
+
+    /// Initialize with a file URL
+    public init(fileUrl: String, filename: String? = nil) {
+        self.fileId = nil
+        self.fileData = nil
+        self.fileUrl = fileUrl
+        self.filename = filename
+    }
+
+    /// Initialize with base64 file data
+    public init(fileData: String, filename: String? = nil) {
+        self.fileId = nil
+        self.fileData = fileData
+        self.fileUrl = nil
+        self.filename = filename
+    }
+
+    /// Full initializer
+    public init(fileId: String? = nil, fileData: String? = nil, fileUrl: String? = nil, filename: String? = nil) {
+        self.fileId = fileId
+        self.fileData = fileData
+        self.fileUrl = fileUrl
+        self.filename = filename
     }
 
     enum CodingKeys: String, CodingKey {
         case type
         case fileId = "file_id"
+        case fileData = "file_data"
+        case fileUrl = "file_url"
+        case filename
     }
 }
 

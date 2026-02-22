@@ -127,10 +127,10 @@ final class ComputerUseMappingTests: XCTestCase {
             return false
         }
         XCTAssertNotNil(cuTool)
-        if case .computerUsePreview(let w, let h, let env) = cuTool {
-            XCTAssertEqual(w, 1024)
-            XCTAssertEqual(h, 768)
-            XCTAssertEqual(env, "browser")
+        if case .computerUsePreview(let cuConfig) = cuTool {
+            XCTAssertEqual(cuConfig.displayWidth, 1024)
+            XCTAssertEqual(cuConfig.displayHeight, 768)
+            XCTAssertEqual(cuConfig.environment, "browser")
         }
     }
 
@@ -155,10 +155,10 @@ final class ComputerUseMappingTests: XCTestCase {
             if case .computerUsePreview = tool { return true }
             return false
         }
-        if case .computerUsePreview(let w, let h, let env) = cuTool {
-            XCTAssertEqual(w, 1920)
-            XCTAssertEqual(h, 1080)
-            XCTAssertEqual(env, "mac")
+        if case .computerUsePreview(let cuConfig) = cuTool {
+            XCTAssertEqual(cuConfig.displayWidth, 1920)
+            XCTAssertEqual(cuConfig.displayHeight, 1080)
+            XCTAssertEqual(cuConfig.environment, "mac")
         } else {
             XCTFail("Expected computerUsePreview tool")
         }

@@ -578,12 +578,12 @@ public class OpenAIProvider: LegacyLLM, @unchecked Sendable {
             model: model,
             input: .string(text),
             instructions: instructions,
-            tools: [.webSearchPreview]
+            tools: [.webSearchPreview()]
         )
-        
+
         return try await createResponse(request: request)
     }
-    
+
     /// Convenience method for creating a response with code interpreter
     public func createResponseWithCodeInterpreter(
         model: String,
@@ -594,7 +594,7 @@ public class OpenAIProvider: LegacyLLM, @unchecked Sendable {
             model: model,
             input: .string(text),
             instructions: instructions,
-            tools: [.codeInterpreter]
+            tools: [.codeInterpreter()]
         )
         
         return try await createResponse(request: request)

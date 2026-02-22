@@ -150,7 +150,7 @@ public enum ResponsesAPIFixtures {
             topP: 1.0,
             maxOutputTokens: nil,
             toolChoice: nil,
-            tools: [.webSearchPreview],
+            tools: [.webSearchPreview()],
             parallelToolCalls: true,
             reasoning: nil,
             truncation: nil,
@@ -202,7 +202,7 @@ public enum ResponsesAPIFixtures {
             topP: 1.0,
             maxOutputTokens: nil,
             toolChoice: nil,
-            tools: [.codeInterpreter],
+            tools: [.codeInterpreter()],
             parallelToolCalls: true,
             reasoning: nil,
             truncation: nil,
@@ -337,6 +337,288 @@ public enum ResponsesAPIFixtures {
             serviceTier: nil
         )
     }
+
+    // MARK: - Refusal & Reasoning Factory Methods
+
+    /// Create a response with refusal content (content policy)
+    public static func makeRefusalResponse(
+        id: String = "resp_refusal",
+        refusalText: String = "I cannot assist with that request."
+    ) -> ResponseObject {
+        ResponseObject(
+            id: id,
+            object: "response",
+            createdAt: 1704067200,
+            model: "gpt-4o-mini",
+            status: .completed,
+            output: [
+                .message(ResponseOutputMessage(
+                    id: "msg_\(id)",
+                    role: "assistant",
+                    content: [.refusal(ResponseOutputRefusal(refusal: refusalText))]
+                ))
+            ],
+            usage: ResponseUsage(inputTokens: 10, outputTokens: 5, totalTokens: 15, inputTokensDetails: nil, outputTokensDetails: nil),
+            previousResponseId: nil, metadata: nil, incompleteDetails: nil, error: nil,
+            instructions: nil, temperature: nil, topP: nil, maxOutputTokens: nil,
+            toolChoice: nil, tools: nil, parallelToolCalls: nil,
+            reasoning: nil, truncation: nil, text: nil, user: nil, store: nil, serviceTier: nil
+        )
+    }
+
+    /// Create a response with reasoning output (o-series models)
+    public static func makeReasoningResponse(
+        id: String = "resp_reasoning",
+        summaryText: String = "The model considered multiple approaches.",
+        text: String = "Here is my answer."
+    ) -> ResponseObject {
+        ResponseObject(
+            id: id,
+            object: "response",
+            createdAt: 1704067200,
+            model: "o3-mini",
+            status: .completed,
+            output: [
+                .reasoning(ResponseOutputReasoningItem(
+                    id: "reason_1",
+                    summary: [ReasoningSummaryContent(text: summaryText, type: "summary_text")],
+                    encryptedContent: "encrypted_reasoning_payload",
+                    status: "completed"
+                )),
+                .message(ResponseOutputMessage(
+                    id: "msg_\(id)",
+                    role: "assistant",
+                    content: [.outputText(ResponseOutputText(text: text))]
+                ))
+            ],
+            usage: ResponseUsage(inputTokens: 20, outputTokens: 40, totalTokens: 60, inputTokensDetails: nil, outputTokensDetails: nil),
+            previousResponseId: nil, metadata: nil, incompleteDetails: nil, error: nil,
+            instructions: nil, temperature: nil, topP: nil, maxOutputTokens: nil,
+            toolChoice: nil, tools: nil, parallelToolCalls: nil,
+            reasoning: ResponseReasoning(effort: "high", summary: "auto"),
+            truncation: nil, text: nil, user: nil, store: nil, serviceTier: nil
+        )
+    }
+
+    /// Create a response with MCP call output
+    public static func makeMCPCallResponse(
+        id: String = "resp_mcp",
+        toolName: String = "get_data",
+        arguments: String = "{\"query\":\"test\"}",
+        serverLabel: String = "my-server",
+        output: String = "{\"result\":\"success\"}"
+    ) -> ResponseObject {
+        ResponseObject(
+            id: id,
+            object: "response",
+            createdAt: 1704067200,
+            model: "gpt-4o",
+            status: .completed,
+            output: [
+                .mcpCall(ResponseOutputMCPCall(
+                    id: "mcp_1",
+                    name: toolName,
+                    arguments: arguments,
+                    serverLabel: serverLabel,
+                    output: output,
+                    error: nil,
+                    status: "completed",
+                    approvalRequestId: nil
+                ))
+            ],
+            usage: ResponseUsage(inputTokens: 15, outputTokens: 20, totalTokens: 35, inputTokensDetails: nil, outputTokensDetails: nil),
+            previousResponseId: nil, metadata: nil, incompleteDetails: nil, error: nil,
+            instructions: nil, temperature: nil, topP: nil, maxOutputTokens: nil,
+            toolChoice: nil, tools: nil, parallelToolCalls: nil,
+            reasoning: nil, truncation: nil, text: nil, user: nil, store: nil, serviceTier: nil
+        )
+    }
+
+    // MARK: - JSON Fixtures for New Types
+
+    /// Refusal response JSON
+    public static let refusalResponseJSON = """
+    {
+        "id": "resp_refusal",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "gpt-4o-mini",
+        "output": [
+            {
+                "type": "message",
+                "id": "msg_refusal",
+                "role": "assistant",
+                "content": [
+                    {"type": "refusal", "refusal": "I cannot help with that."}
+                ]
+            }
+        ],
+        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    }
+    """
+
+    /// Reasoning output JSON (o-series models)
+    public static let reasoningResponseJSON = """
+    {
+        "id": "resp_reasoning",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "o3-mini",
+        "output": [
+            {
+                "type": "reasoning",
+                "id": "reason_1",
+                "summary": [{"type": "summary_text", "text": "The model reasoned about the problem."}],
+                "encrypted_content": "encrypted_payload",
+                "status": "completed"
+            },
+            {
+                "type": "message",
+                "id": "msg_reasoning",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "The answer is 42."}]
+            }
+        ],
+        "usage": {"input_tokens": 20, "output_tokens": 40, "total_tokens": 60}
+    }
+    """
+
+    /// MCP call output JSON
+    public static let mcpCallResponseJSON = """
+    {
+        "id": "resp_mcp",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "gpt-4o",
+        "output": [
+            {
+                "type": "mcp_call",
+                "id": "mcp_1",
+                "name": "get_data",
+                "arguments": "{\\"query\\":\\"test\\"}",
+                "server_label": "my-server",
+                "output": "{\\"result\\":\\"success\\"}",
+                "status": "completed"
+            }
+        ],
+        "usage": {"input_tokens": 15, "output_tokens": 20, "total_tokens": 35}
+    }
+    """
+
+    /// MCP list tools output JSON
+    public static let mcpListToolsResponseJSON = """
+    {
+        "id": "resp_mcp_list",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "gpt-4o",
+        "output": [
+            {
+                "type": "mcp_list_tools",
+                "id": "mcp_list_1",
+                "server_label": "my-server",
+                "tools": [
+                    {"name": "get_data", "description": "Fetches data from store"},
+                    {"name": "put_data", "description": "Writes data to store"}
+                ]
+            }
+        ],
+        "usage": {"input_tokens": 10, "output_tokens": 15, "total_tokens": 25}
+    }
+    """
+
+    /// URL citation annotation JSON
+    public static let urlCitationAnnotationJSON = """
+    {
+        "id": "resp_cite",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "gpt-4o",
+        "output": [
+            {
+                "type": "message",
+                "id": "msg_cite",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "According to sources...",
+                        "annotations": [
+                            {
+                                "type": "url_citation",
+                                "url": "https://example.com/article",
+                                "title": "Example Article",
+                                "start_index": 0,
+                                "end_index": 22
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
+    }
+    """
+
+    /// Web search with action detail JSON
+    public static let webSearchWithActionJSON = """
+    {
+        "id": "resp_ws_action",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "gpt-4o",
+        "output": [
+            {
+                "type": "web_search_call",
+                "id": "ws_action_1",
+                "query": "Swift concurrency",
+                "result": "Results about Swift concurrency...",
+                "status": "completed",
+                "action": {
+                    "type": "search",
+                    "query": "Swift concurrency best practices",
+                    "sources": [
+                        {"type": "url", "url": "https://developer.apple.com/swift"},
+                        {"type": "url", "url": "https://swift.org/concurrency"}
+                    ]
+                }
+            }
+        ],
+        "usage": {"input_tokens": 10, "output_tokens": 30, "total_tokens": 40}
+    }
+    """
+
+    /// Code interpreter with structured outputs JSON
+    public static let codeInterpreterWithOutputsJSON = """
+    {
+        "id": "resp_ci_outputs",
+        "object": "response",
+        "created_at": 1704067200,
+        "status": "completed",
+        "model": "gpt-4o",
+        "output": [
+            {
+                "type": "code_interpreter_call",
+                "id": "ci_outputs_1",
+                "code": "import matplotlib\\nprint('done')",
+                "result": "done",
+                "status": "completed",
+                "container_id": "ctr_abc123",
+                "outputs": [
+                    {"type": "logs", "logs": "done"},
+                    {"type": "image", "url": "https://example.com/chart.png"}
+                ]
+            }
+        ],
+        "usage": {"input_tokens": 15, "output_tokens": 25, "total_tokens": 40}
+    }
+    """
 
     // MARK: - Compaction Fixtures
 

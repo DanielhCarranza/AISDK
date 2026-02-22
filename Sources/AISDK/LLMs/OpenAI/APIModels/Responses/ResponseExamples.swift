@@ -62,9 +62,9 @@ public struct ResponseExamples {
             model: "gpt-4o",
             input: .string("Current AI trends in 2025"),
             instructions: "Provide recent, factual information with sources",
-            tools: [.webSearchPreview]
+            tools: [.webSearchPreview()]
         )
-        
+
         let response2 = try await provider.createResponse(request: request)
         print("Trends: \(response2.outputText ?? "No trends found")")
     }
@@ -97,7 +97,7 @@ public struct ResponseExamples {
             model: "gpt-4o",
             input: .string("Research the latest AI models and create a comparison chart"),
             instructions: "Use web search for current info, then create a visual comparison",
-            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()],
+            tools: [.webSearchPreview(), .codeInterpreter(), .imageGeneration()],
             temperature: 0.3
         )
         
@@ -137,7 +137,7 @@ public struct ResponseExamples {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("What's happening in tech today?"),
-            tools: [.webSearchPreview],
+            tools: [.webSearchPreview()],
             stream: true
         )
         
@@ -161,7 +161,7 @@ public struct ResponseExamples {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Analyze this large dataset and provide insights"),
-            tools: [.codeInterpreter],
+            tools: [.codeInterpreter()],
             background: true
         )
         

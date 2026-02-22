@@ -69,7 +69,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Search for news"),
-            tools: [.webSearchPreview]
+            tools: [.webSearchPreview()]
         )
 
         let response = try await mockProvider.createResponse(request: request)
@@ -82,7 +82,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Search my files"),
-            tools: [.fileSearch(vectorStoreIds: ["vs_123"])]
+            tools: [.fileSearch(ResponseFileSearchTool(vectorStoreIds: ["vs_123"]))]
         )
 
         _ = try await mockProvider.createResponse(request: request)
@@ -94,7 +94,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Run some code"),
-            tools: [.codeInterpreter]
+            tools: [.codeInterpreter()]
         )
 
         _ = try await mockProvider.createResponse(request: request)
@@ -106,7 +106,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Help me with research"),
-            tools: [.webSearchPreview, .codeInterpreter]
+            tools: [.webSearchPreview(), .codeInterpreter()]
         )
 
         _ = try await mockProvider.createResponse(request: request)
@@ -321,7 +321,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Search for AI news"),
-            tools: [.webSearchPreview]
+            tools: [.webSearchPreview()]
         )
 
         let response = try await mockProvider.createResponse(request: request)
@@ -343,7 +343,7 @@ final class OpenAIProviderTextRequestTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Run print('Hello')"),
-            tools: [.codeInterpreter]
+            tools: [.codeInterpreter()]
         )
 
         let response = try await mockProvider.createResponse(request: request)

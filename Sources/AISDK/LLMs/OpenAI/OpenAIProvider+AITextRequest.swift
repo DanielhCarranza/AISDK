@@ -120,16 +120,16 @@ extension OpenAIProvider {
 
         // Add built-in tools from provider options
         if let webConfig = openAIOptions?.webSearch, webConfig.enabled {
-            insertBuiltInTools(kind: "webSearch", tools: [.webSearchPreview], preferOrder: false)
+            insertBuiltInTools(kind: "webSearch", tools: [.webSearchPreview()], preferOrder: false)
         }
 
         if let fileConfig = openAIOptions?.fileSearch, fileConfig.enabled {
-            let fileTools = [ResponseTool.fileSearch(vectorStoreIds: fileConfig.vectorStoreIds)]
+            let fileTools = [ResponseTool.fileSearch(ResponseFileSearchTool(vectorStoreIds: fileConfig.vectorStoreIds))]
             insertBuiltInTools(kind: "fileSearch", tools: fileTools, preferOrder: false)
         }
 
         if let codeConfig = openAIOptions?.codeInterpreter, codeConfig.enabled {
-            insertBuiltInTools(kind: "codeExecution", tools: [.codeInterpreter], preferOrder: false)
+            insertBuiltInTools(kind: "codeExecution", tools: [.codeInterpreter()], preferOrder: false)
         }
 
         // Add built-in tools from core request, deduping by kind (core takes precedence)
@@ -137,34 +137,34 @@ extension OpenAIProvider {
             for tool in builtInTools {
                 switch tool {
                 case .webSearch, .webSearchDefault:
-                    insertBuiltInTools(kind: tool.kind, tools: [.webSearchPreview], preferOrder: true)
+                    insertBuiltInTools(kind: tool.kind, tools: [.webSearchPreview()], preferOrder: true)
                 case .codeExecution, .codeExecutionDefault:
-                    insertBuiltInTools(kind: tool.kind, tools: [.codeInterpreter], preferOrder: true)
+                    insertBuiltInTools(kind: tool.kind, tools: [.codeInterpreter()], preferOrder: true)
                 case .fileSearch(let config):
                     guard !config.vectorStoreIds.isEmpty else {
                         throw ProviderError.invalidRequest("fileSearch requires at least one vectorStoreId for OpenAI.")
                     }
-                    let fileTools = [ResponseTool.fileSearch(vectorStoreIds: config.vectorStoreIds)]
+                    let fileTools = [ResponseTool.fileSearch(ResponseFileSearchTool(vectorStoreIds: config.vectorStoreIds))]
                     insertBuiltInTools(kind: tool.kind, tools: fileTools, preferOrder: true)
                 case .imageGeneration(let config):
                     insertBuiltInTools(
                         kind: tool.kind,
-                        tools: [.imageGeneration(partialImages: config.partialImages)],
+                        tools: [.imageGeneration(ResponseImageGenerationTool(partialImages: config.partialImages))],
                         preferOrder: true
                     )
                 case .imageGenerationDefault:
-                    insertBuiltInTools(kind: tool.kind, tools: [.imageGeneration(partialImages: nil)], preferOrder: true)
+                    insertBuiltInTools(kind: tool.kind, tools: [.imageGeneration()], preferOrder: true)
                 case .computerUse(let config):
                     insertBuiltInTools(kind: tool.kind, tools: [
-                        .computerUsePreview(
+                        .computerUsePreview(ResponseComputerUseTool(
                             displayWidth: config.displayWidth,
                             displayHeight: config.displayHeight,
                             environment: config.environment?.rawValue
-                        )
+                        ))
                     ], preferOrder: true)
                 case .computerUseDefault:
                     insertBuiltInTools(kind: tool.kind, tools: [
-                        .computerUsePreview(displayWidth: 1024, displayHeight: 768, environment: "browser")
+                        .computerUsePreview(ResponseComputerUseTool(displayWidth: 1024, displayHeight: 768, environment: "browser"))
                     ], preferOrder: true)
                 case .urlContext:
                     throw ProviderError.invalidRequest("urlContext is not supported by OpenAI.")
@@ -446,6 +446,12 @@ extension OpenAIProvider {
                     case .outputImage:
                         // Image outputs could be handled if needed
                         break
+                    case .refusal:
+                        // Content policy refusals are not extractable text
+                        break
+                    case .unknown:
+                        // Unrecognized content types are silently skipped
+                        break
                     }
                 }
             case .functionCall(let call):
@@ -482,6 +488,12 @@ extension OpenAIProvider {
                 ))
             case .functionCallOutput, .webSearchCall, .imageGenerationCall, .codeInterpreterCall, .mcpApprovalRequest:
                 // These are handled via streaming events or are outputs
+                break
+            case .reasoning:
+                // Reasoning items are metadata, not extractable text
+                break
+            case .mcpCall, .mcpListTools:
+                // MCP execution results are metadata
                 break
             case .unknown:
                 // Unrecognized output types are silently skipped

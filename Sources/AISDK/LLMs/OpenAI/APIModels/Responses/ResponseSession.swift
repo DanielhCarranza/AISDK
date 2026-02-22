@@ -229,15 +229,15 @@ public enum ResponseBuiltInTool: ToolConvertible {
     public func toResponseTool() -> ResponseTool {
         switch self {
         case .webSearchPreview:
-            return .webSearchPreview
+            return .webSearchPreview()
         case .codeInterpreter:
-            return .codeInterpreter
+            return .codeInterpreter()
         case .imageGeneration(let partialImages):
-            return .imageGeneration(partialImages: partialImages)
+            return .imageGeneration(ResponseImageGenerationTool(partialImages: partialImages))
         case .fileSearch(let vectorStoreId):
-            return .fileSearch(vectorStoreIds: [vectorStoreId])
+            return .fileSearch(ResponseFileSearchTool(vectorStoreIds: [vectorStoreId]))
         case .mcp(let serverLabel, let serverUrl, let requireApproval, let headers):
-            return .mcp(serverLabel: serverLabel, serverUrl: serverUrl, requireApproval: requireApproval, headers: headers)
+            return .mcp(ResponseMCPTool(serverLabel: serverLabel, serverUrl: serverUrl, requireApproval: requireApproval, headers: headers))
         }
     }
 } 

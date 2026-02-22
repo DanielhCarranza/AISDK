@@ -58,10 +58,10 @@ final class OpenAIResponsesModelsTests: XCTestCase {
             ]),
             instructions: "Be helpful",
             tools: [
-                .webSearchPreview,
-                .fileSearch(vectorStoreIds: ["vs_123"]),
-                .imageGeneration(partialImages: 2),
-                .codeInterpreter,
+                .webSearchPreview(),
+                .fileSearch(ResponseFileSearchTool(vectorStoreIds: ["vs_123"])),
+                .imageGeneration(ResponseImageGenerationTool(partialImages: 2)),
+                .codeInterpreter(),
                 .function(function)
             ],
             toolChoice: .auto,
@@ -176,11 +176,11 @@ final class OpenAIResponsesModelsTests: XCTestCase {
         )
 
         let tools: [ResponseTool] = [
-            .webSearchPreview,
-            .fileSearch(vectorStoreIds: ["vs_123"]),
-            .imageGeneration(partialImages: 1),
-            .codeInterpreter,
-            .mcp(serverLabel: "server", serverUrl: "https://mcp.example.com"),
+            .webSearchPreview(),
+            .fileSearch(ResponseFileSearchTool(vectorStoreIds: ["vs_123"])),
+            .imageGeneration(ResponseImageGenerationTool(partialImages: 1)),
+            .codeInterpreter(),
+            .mcp(ResponseMCPTool(serverLabel: "server", serverUrl: "https://mcp.example.com")),
             .function(function)
         ]
 

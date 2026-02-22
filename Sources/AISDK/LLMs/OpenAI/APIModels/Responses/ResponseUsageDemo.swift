@@ -75,7 +75,7 @@ public struct ResponseUsageDemo {
             model: "gpt-4o",
             input: .string("Analyze the current state of renewable energy"),
             instructions: "Provide a comprehensive analysis with recent data",
-            tools: [.webSearchPreview, .codeInterpreter],
+            tools: [.webSearchPreview(), .codeInterpreter()],
             temperature: 0.3,
             maxOutputTokens: 1000
         )
@@ -92,7 +92,7 @@ public struct ResponseUsageDemo {
             model: "gpt-4o",
             input: .string("Create a data visualization about climate change"),
             instructions: "First research current climate data, then create a compelling visualization",
-            tools: [.webSearchPreview, .codeInterpreter, .imageGeneration()]
+            tools: [.webSearchPreview(), .codeInterpreter(), .imageGeneration()]
         )
         
         let response = try await provider.createResponse(request: request)
@@ -132,7 +132,7 @@ public struct ResponseUsageDemo {
         let request = ResponseRequest(
             model: "gpt-4o",
             input: .string("Perform a comprehensive analysis of this large dataset"),
-            tools: [.codeInterpreter],
+            tools: [.codeInterpreter()],
             background: true
         )
         
@@ -200,7 +200,7 @@ public struct ResponseUsageDemo {
                 4. Provide actionable insights
                 """),
             instructions: "Be thorough and provide specific recommendations",
-            tools: [.webSearchPreview, .codeInterpreter],
+            tools: [.webSearchPreview(), .codeInterpreter()],
             temperature: 0.2 // Lower temperature for analytical tasks
         )
         
@@ -216,7 +216,7 @@ public struct ResponseUsageDemo {
             model: "gpt-4o",
             input: .string("Create an interactive lesson about quantum computing for beginners"),
             instructions: "Make it engaging with examples and visual aids",
-            tools: [.webSearchPreview, .imageGeneration()],  // Get latest information and create diagrams
+            tools: [.webSearchPreview(), .imageGeneration()],  // Get latest information and create diagrams
             temperature: 0.7  // Higher temperature for creative content
         )
         
@@ -238,7 +238,7 @@ public struct ResponseUsageDemo {
                 - Market implications
                 - Future outlook
                 """,
-            tools: [.webSearchPreview],
+            tools: [.webSearchPreview()],
             maxOutputTokens: 2000
         )
         

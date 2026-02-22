@@ -494,7 +494,7 @@ final class OpenAIResponsesAPITests: XCTestCase {
         let webSearchRequest = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Hello"),
-            tools: [.webSearchPreview]
+            tools: [.webSearchPreview()]
         )
         
         let encoder = JSONEncoder()

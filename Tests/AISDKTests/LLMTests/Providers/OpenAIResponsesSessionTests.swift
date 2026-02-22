@@ -162,9 +162,9 @@ final class OpenAIResponsesSessionTests: XCTestCase {
         let convertedMCPTool = mcpTool.toResponseTool()
         
         switch convertedMCPTool {
-        case .mcp(let label, let url, _, _):
-            XCTAssertEqual(label, "test")
-            XCTAssertEqual(url, "https://test.com")
+        case .mcp(let mcpConfig):
+            XCTAssertEqual(mcpConfig.serverLabel, "test")
+            XCTAssertEqual(mcpConfig.serverUrl, "https://test.com")
         default:
             XCTFail("Failed to convert ResponseBuiltInTool.mcp")
         }
@@ -211,12 +211,12 @@ final class OpenAIResponsesSessionTests: XCTestCase {
                         .outputText(ResponseOutputText(
                             text: "Test response text",
                             annotations: [
-                                ResponseAnnotation(
-                                    type: "citation",
-                                    text: "Source 1",
+                                .urlCitation(URLCitationAnnotation(
+                                    url: "https://example.com",
+                                    title: "Source 1",
                                     startIndex: 0,
                                     endIndex: 10
-                                )
+                                ))
                             ]
                         ))
                     ]
@@ -275,7 +275,11 @@ final class OpenAIResponsesSessionTests: XCTestCase {
         
         // Test annotations extraction
         XCTAssertEqual(response.annotations.count, 1)
-        XCTAssertEqual(response.annotations.first?.text, "Source 1")
+        if case .urlCitation(let citation) = response.annotations.first {
+            XCTAssertEqual(citation.title, "Source 1")
+        } else {
+            XCTFail("Expected urlCitation annotation")
+        }
         
         // Test reasoning extraction
         XCTAssertNotNil(response.reasoning)
