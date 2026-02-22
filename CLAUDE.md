@@ -104,6 +104,7 @@ If you solved something hard → compound it.
 - Diff behavior between main and your changes when relevant.
 - Ask yourself: "Would a staff engineer approve this?"
 - Run tests, check logs, demonstrate correctness.
+- **Document the feature**: After tests pass, update docs (`docs/api-reference/`, tutorials, CLAUDE.md providers table) before marking done. A feature without docs is not done. If a feature was changed, update existing docs to stay current.
 
 ### 5. Demand Elegance (Balanced)
 - For non-trivial changes: pause and ask "is there a more elegant way?"
@@ -146,13 +147,17 @@ docs/tutorials/         — Getting started through sessions
 ```
 
 ### Providers
-| Provider | Class | v2 Wrapper |
-|----------|-------|------------|
-| OpenAI | `OpenAIProvider` | `AILanguageModelAdapter` |
-| Anthropic | `AnthropicProvider` | `AILanguageModelAdapter` |
-| Gemini | `GeminiProvider` | `AILanguageModelAdapter` |
-| OpenRouter | `OpenRouterClient` | `ProviderLanguageModelAdapter` (native v2) |
-| LiteLLM | `LiteLLMClient` | `ProviderLanguageModelAdapter` (native v2) |
+| Provider | Class | v2 Wrapper | API Endpoint |
+|----------|-------|------------|--------------|
+| OpenAI (Responses) | `OpenAIResponsesClientAdapter` | `ProviderLanguageModelAdapter` (native v2) | `POST /v1/responses` |
+| OpenAI (Chat Completions) | `OpenAIClientAdapter` | `ProviderLanguageModelAdapter` (native v2) | `POST /v1/chat/completions` |
+| OpenAI (Legacy) | `OpenAIProvider` | `AILanguageModelAdapter` | Both endpoints |
+| Anthropic | `AnthropicProvider` | `AILanguageModelAdapter` | Messages API |
+| Gemini | `GeminiProvider` | `AILanguageModelAdapter` | Gemini API |
+| OpenRouter | `OpenRouterClient` | `ProviderLanguageModelAdapter` (native v2) | OpenAI-compatible |
+| LiteLLM | `LiteLLMClient` | `ProviderLanguageModelAdapter` (native v2) | OpenAI-compatible |
+
+**Factory methods:** `ProviderLanguageModelAdapter.openAIResponses(apiKey:modelId:)` (recommended) and `.openAIChatCompletions(apiKey:modelId:)` for quick setup.
 
 ## Security
 

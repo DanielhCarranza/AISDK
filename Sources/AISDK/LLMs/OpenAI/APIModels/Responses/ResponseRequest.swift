@@ -529,13 +529,12 @@ public struct ResponseJSONSchema: Codable {
         try container.encodeIfPresent(name, forKey: .name)
         try container.encodeIfPresent(description, forKey: .description)
         try container.encodeIfPresent(strict, forKey: .strict)
-        
+
         if let schema = schema {
-            // Note: This is a simplified implementation
-            // You may need to handle complex schema encoding differently
+            // Encode as a raw JSON object (not a string) using AnyCodable round-trip
             let jsonData = try JSONSerialization.data(withJSONObject: schema)
-            let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-            try container.encode(jsonString, forKey: .schema)
+            let rawJSON = try JSONDecoder().decode(AnyCodable.self, from: jsonData)
+            try container.encode(rawJSON, forKey: .schema)
         }
     }
     

@@ -69,6 +69,11 @@ let package = Package(
             name: "AISDKCLI",
             targets: ["AISDKCLI"]
         ),
+        // OpenAI Responses API Demo - tests Responses API adapter
+        .executable(
+            name: "ResponsesAPIDemo",
+            targets: ["ResponsesAPIDemo"]
+        ),
         // Smoke Test App - Layer 1 production validation
         .executable(
             name: "SmokeTestApp",
@@ -210,6 +215,11 @@ let package = Package(
             name: "AISDKCLI",
             dependencies: ["AISDK"],
             path: "Examples/AISDKCLI"
+        ),
+        .executableTarget(
+            name: "ResponsesAPIDemo",
+            dependencies: ["AISDK"],
+            path: "Examples/ResponsesAPIDemo"
         ),
         .executableTarget(
             name: "SmokeTestApp",

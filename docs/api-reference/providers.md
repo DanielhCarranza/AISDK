@@ -92,6 +92,134 @@ if await client.isAvailable {
 
 ---
 
+## OpenAIResponsesClientAdapter
+
+OpenAI provider that routes through the **Responses API** (`POST /v1/responses`) instead of Chat Completions. This is OpenAI's recommended API for new projects.
+
+```swift
+public actor OpenAIResponsesClientAdapter: ProviderClient {
+    public nonisolated let providerId: String  // "openai-responses"
+    public nonisolated let displayName: String // "OpenAI (Responses API)"
+    public nonisolated let baseURL: URL
+
+    public init(
+        apiKey: String,
+        baseURL: URL? = nil,
+        store: Bool = false,           // Privacy-first default
+        organization: String? = nil,
+        retryPolicy: RetryPolicy = .default
+    )
+}
+```
+
+### Features
+
+- **Built-in tools**: Web search, file search, code interpreter, image generation, computer use
+- **Server-side conversation chaining** via `previousResponseId`
+- **Improved cache utilization** (~80% vs ~40% for Chat Completions)
+- **Structured output** via `text.format.json_schema`
+- **Reasoning models** (o1, o3, o4-mini) with configurable effort
+- **Privacy-first**: Defaults to `store: false`, forces `store: false` for PHI sensitivity
+
+### Usage
+
+```swift
+// Recommended: Factory method
+let model = ProviderLanguageModelAdapter.openAIResponses(
+    apiKey: "sk-...",
+    modelId: "gpt-4o"
+)
+
+// Use with Agent
+let agent = Agent(model: model, builtInTools: [.webSearchDefault])
+let result = try await agent.run(input: "Search for the latest Swift version")
+
+// Basic text generation
+let request = AITextRequest(
+    messages: [AIMessage(role: .user, content: .text("Hello"))],
+    maxTokens: 100
+)
+let result = try await model.generateText(request: request)
+
+// Streaming
+for try await event in model.streamText(request: request) {
+    switch event {
+    case .textDelta(let text):
+        print(text, terminator: "")
+    case .finish(let reason, let usage):
+        print("\nDone: \(reason)")
+    default:
+        break
+    }
+}
+
+// Web search (Responses API exclusive)
+let webRequest = AITextRequest(
+    messages: [AIMessage(role: .user, content: .text("Latest news on AI"))],
+    maxTokens: 500,
+    builtInTools: [.webSearchDefault]
+)
+let webResult = try await model.generateText(request: webRequest)
+```
+
+### Responses API vs Chat Completions
+
+| Feature | Responses API | Chat Completions |
+|---------|--------------|-----------------|
+| Endpoint | `POST /v1/responses` | `POST /v1/chat/completions` |
+| Built-in tools | Web search, file search, code interpreter, computer use, image gen | None (custom function calling only) |
+| Conversation state | `previous_response_id` (server-side) | Full message history in request |
+| Cache utilization | ~80% | ~40% |
+| Structured output | `text.format.json_schema` | `response_format.json_schema` |
+| Background mode | Yes | No |
+| Multiple completions (`n`) | No | Yes |
+
+### When to Use Which
+
+- **Use `openAIResponses()`** for new projects, built-in tools, agentic workflows, reasoning models
+- **Use `openAIChatCompletions()`** for Chat Completions compatibility (OpenRouter, LiteLLM, ZDR with code interpreter)
+
+```swift
+// Responses API (recommended)
+let responsesModel = ProviderLanguageModelAdapter.openAIResponses(
+    apiKey: "sk-...",
+    modelId: "gpt-4o"
+)
+
+// Chat Completions (compatibility)
+let chatModel = ProviderLanguageModelAdapter.openAIChatCompletions(
+    apiKey: "sk-...",
+    modelId: "gpt-4o"
+)
+```
+
+### Privacy & Data Retention
+
+- Defaults to `store: false` (responses not stored server-side)
+- Forces `store: false` when sensitivity is set to PHI
+- Set `store: true` via provider options if you need server-side storage
+- Zero Data Retention (ZDR) is compatible but has exceptions for code interpreter and background mode
+
+---
+
+## OpenAIClientAdapter
+
+OpenAI provider using the **Chat Completions API** (`POST /v1/chat/completions`). Use this for backward compatibility or when routing through OpenAI-compatible proxies (OpenRouter, LiteLLM).
+
+```swift
+public actor OpenAIClientAdapter: ProviderClient {
+    public nonisolated let providerId: String  // "openai"
+    public nonisolated let displayName: String // "OpenAI"
+    public nonisolated let baseURL: URL
+
+    public init(apiKey: String, baseURL: URL? = nil)
+}
+```
+
+Built-in tools (web search, file search, etc.) are **not supported** through this adapter. Use `OpenAIResponsesClientAdapter` instead for built-in tool support.
+
+---
+
 ## ProviderRequest
 
 Request structure for provider-level API calls.
@@ -343,13 +471,15 @@ let aiResult = AITextResult(
 
 ## Provider Comparison
 
-| Feature | OpenRouter | LiteLLM |
-|---------|------------|---------|
-| Models | 200+ | 100+ |
-| Streaming | Yes | Yes |
-| Tool Calling | Yes | Yes |
-| Vision | Yes (model-dependent) | Yes |
-| Pricing | Pay-per-use | Self-hosted |
+| Feature | OpenAI Responses | OpenAI Chat Completions | OpenRouter | LiteLLM |
+|---------|-----------------|------------------------|------------|---------|
+| Models | OpenAI only | OpenAI only | 200+ | 100+ |
+| Streaming | Yes | Yes | Yes | Yes |
+| Tool Calling | Yes | Yes | Yes | Yes |
+| Built-in Tools | Yes | No | No | No |
+| Vision | Yes | Yes | Yes (model-dependent) | Yes |
+| Web Search | Yes (native) | No | No | No |
+| Pricing | Pay-per-use | Pay-per-use | Pay-per-use | Self-hosted |
 
 ## See Also
 
