@@ -198,6 +198,14 @@ extension OpenAIProvider {
         })
         let truncation: String? = hasComputerUse ? "auto" : nil
 
+        // Convert response format to Responses API text config
+        let textConfig: ResponseTextConfig?
+        if let responseFormat = request.responseFormat {
+            textConfig = convertResponseFormat(responseFormat)
+        } else {
+            textConfig = nil
+        }
+
         // Build the request
         return ResponseRequest(
             model: request.model ?? model.name,
@@ -219,7 +227,7 @@ extension OpenAIProvider {
             serviceTier: openAIOptions?.serviceTier?.rawValue,
             user: nil,
             truncation: truncation,
-            text: nil
+            text: textConfig
         )
     }
 
@@ -392,6 +400,32 @@ extension OpenAIProvider {
     private func convertToolChoice(_ choice: ToolChoice?) -> ToolChoice? {
         // ToolChoice is already compatible, just pass through
         return choice
+    }
+
+    /// Convert ResponseFormat to Responses API text configuration
+    private func convertResponseFormat(_ format: ResponseFormat) -> ResponseTextConfig {
+        switch format {
+        case .text:
+            return ResponseTextConfig(format: ResponseTextFormat(type: "text"))
+        case .jsonObject:
+            return ResponseTextConfig(format: ResponseTextFormat(type: "json_object"))
+        case .jsonSchema(let name, _, let schemaBuilder, let strict):
+            let schema = schemaBuilder.build()
+            // Encode JSONSchema to [String: Any] for ResponseJSONSchema
+            var schemaDict: [String: Any]?
+            if let data = try? JSONEncoder().encode(schema),
+               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                schemaDict = dict
+            }
+            let jsonSchema = ResponseJSONSchema(
+                name: name,
+                schema: schemaDict,
+                strict: strict
+            )
+            return ResponseTextConfig(
+                format: ResponseTextFormat(type: "json_schema", jsonSchema: jsonSchema)
+            )
+        }
     }
 
     // MARK: - Response Conversion

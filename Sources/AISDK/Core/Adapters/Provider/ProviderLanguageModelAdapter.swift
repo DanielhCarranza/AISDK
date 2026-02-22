@@ -96,6 +96,54 @@ public final class ProviderLanguageModelAdapter: LLM, @unchecked Sendable {
     }
 }
 
+// MARK: - Factory Methods
+
+extension ProviderLanguageModelAdapter {
+    /// Create an adapter using OpenAI's Responses API (recommended for new projects).
+    ///
+    /// Supports built-in tools (web search, file search, code interpreter, image generation,
+    /// computer use), server-side conversation chaining, and improved cache utilization.
+    ///
+    /// - Parameters:
+    ///   - apiKey: OpenAI API key
+    ///   - modelId: Model identifier (default: "gpt-4o")
+    ///   - store: Whether to store responses server-side (default: `false` for privacy)
+    /// - Returns: A configured `ProviderLanguageModelAdapter`
+    public static func openAIResponses(
+        apiKey: String,
+        modelId: String = "gpt-4o",
+        store: Bool = false
+    ) -> ProviderLanguageModelAdapter {
+        let client = OpenAIResponsesClientAdapter(apiKey: apiKey, store: store)
+        return ProviderLanguageModelAdapter(
+            client: client,
+            modelId: modelId,
+            capabilities: [.text, .vision, .tools, .functionCalling, .streaming, .jsonMode, .webSearch, .reasoning]
+        )
+    }
+
+    /// Create an adapter using OpenAI's Chat Completions API.
+    ///
+    /// Use this for ZDR compatibility, OpenRouter/LiteLLM endpoints, or when
+    /// the Responses API's features are not needed.
+    ///
+    /// - Parameters:
+    ///   - apiKey: OpenAI API key
+    ///   - modelId: Model identifier (default: "gpt-4o")
+    /// - Returns: A configured `ProviderLanguageModelAdapter`
+    public static func openAIChatCompletions(
+        apiKey: String,
+        modelId: String = "gpt-4o"
+    ) -> ProviderLanguageModelAdapter {
+        let client = OpenAIClientAdapter(apiKey: apiKey)
+        return ProviderLanguageModelAdapter(
+            client: client,
+            modelId: modelId,
+            capabilities: [.text, .vision, .tools, .functionCalling, .streaming, .jsonMode]
+        )
+    }
+}
+
 private extension AsyncThrowingStream where Element == ProviderStreamEvent, Failure == Error {
     func map(_ transform: @escaping (ProviderStreamEvent) -> AIStreamEvent) -> AsyncThrowingStream<AIStreamEvent, Error> {
         AsyncThrowingStream<AIStreamEvent, Error> { continuation in
