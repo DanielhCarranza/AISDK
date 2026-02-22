@@ -730,7 +730,7 @@ public class ResponseAgent {
                 )
                 executions.append(execution)
                 
-            case .mcpApprovalRequest(let mcpRequest):
+            case .mcpApprovalRequest(_):
                 let execution = ResponseToolExecutionResult(
                     toolName: "mcp_approval_request",
                     arguments: "MCP approval requested",

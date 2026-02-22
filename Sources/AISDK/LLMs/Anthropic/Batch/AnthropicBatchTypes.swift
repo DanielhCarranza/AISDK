@@ -162,7 +162,7 @@ public struct BatchError: Codable, Sendable, Equatable {
 }
 
 /// Content of a batch result
-public struct BatchResultContent: Decodable, Sendable {
+public struct BatchResultContent: Decodable, @unchecked Sendable {
     public let type: BatchResultType
     public let message: AnthropicMessageResponseBody?
     public let error: BatchError?

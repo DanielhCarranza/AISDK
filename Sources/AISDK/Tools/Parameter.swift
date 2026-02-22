@@ -65,7 +65,7 @@ public final class Parameter<Value: Codable>: @unchecked Sendable {
     }
 
     public convenience init(wrappedValue: Value, description: String, validation: AIParameterValidation, required: Bool) {
-        self.init(wrappedValue: wrappedValue, description: description, validation: validation, required: required)
+        self.init(wrappedValue: wrappedValue, description: description, validation: Optional(validation), required: Optional(required))
     }
 
     public convenience init(wrappedValue: Value, description: String, validation: [String: Any]?, required: Bool) {

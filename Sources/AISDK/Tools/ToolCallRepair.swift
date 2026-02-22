@@ -264,7 +264,7 @@ public struct ToolCallRepair: Sendable {
                 return .failed(reason: "Invalid maxAttempts: \(maxAttempts) (must be > 0)")
             }
 
-            var currentCall = toolCall
+            let currentCall = toolCall
             var lastErrorDescription = errorDescription(error)
 
             for attempt in 1...maxAttempts {

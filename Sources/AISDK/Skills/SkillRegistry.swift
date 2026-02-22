@@ -141,7 +141,7 @@ public actor SkillRegistry {
                             // Skip invalid skills
                             if !validationResult.isValid {
                                 for error in validationResult.errors {
-                                    print("[AISDK] Skill '\(descriptor.name)' validation error: \(error.localizedDescription ?? String(describing: error))")
+                                    print("[AISDK] Skill '\(descriptor.name)' validation error: \(error.localizedDescription)")
                                 }
                                 continue
                             }

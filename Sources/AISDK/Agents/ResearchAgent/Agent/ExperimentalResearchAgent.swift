@@ -251,7 +251,6 @@ public class ExperimentalResearchAgent {
             var responseContent = ""
             var currentToolCall: (id: String?, name: String?, arguments: String)?
             var toolExecuted = false
-            var lastToolName: String?
             
             do {
                 for try await chunk in try await llm.sendChatCompletionStream(request: request) {
@@ -300,7 +299,6 @@ public class ExperimentalResearchAgent {
                            !toolCall.2.isEmpty {
                             
                             toolExecuted = true
-                            lastToolName = toolCall.1
                             
                             do {
                                 setState(.executingTool(toolCall.1 ?? "unknown"))

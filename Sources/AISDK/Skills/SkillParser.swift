@@ -229,7 +229,7 @@ public struct SkillParser: Sendable {
     /// - Throws: `SkillError` for invalid YAML
     private static func parseYAML(_ yaml: String) throws -> [String: Any] {
         var result: [String: Any] = [:]
-        var lines = yaml.components(separatedBy: .newlines)
+        let lines = yaml.components(separatedBy: .newlines)
 
         var i = 0
         while i < lines.count {

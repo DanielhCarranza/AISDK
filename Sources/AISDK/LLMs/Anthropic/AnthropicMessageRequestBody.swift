@@ -376,7 +376,7 @@ public enum AnthropicResponseFormat: Encodable {
             return nil
         case .jsonObject:
             return "You must respond with valid JSON only. Do not include any explanatory text outside the JSON structure."
-        case .jsonSchema(let name, let description, let schemaBuilder, _):
+        case .jsonSchema(_, let description, let schemaBuilder, _):
             let schema = schemaBuilder.build()
             let schemaDescription = description ?? "structured data"
             

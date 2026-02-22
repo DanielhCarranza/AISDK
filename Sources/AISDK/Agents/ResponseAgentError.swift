@@ -271,7 +271,7 @@ extension ResponseAgentError {
             switch toolError {
             case .invalidParameters(let message):
                 return .toolValidationFailed("unknown", message)
-            case .executionFailed(let message):
+            case .executionFailed(_):
                 return .toolExecutionFailed("unknown", error)
             default:
                 return .responseAPIError(toolError.localizedDescription)

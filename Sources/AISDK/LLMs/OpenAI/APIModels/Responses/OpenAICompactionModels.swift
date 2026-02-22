@@ -11,7 +11,7 @@ import Foundation
 // MARK: - Compact Request
 
 /// Request for compacting a conversation's context window
-public struct CompactRequest: Encodable, Sendable {
+public struct CompactRequest: Encodable, @unchecked Sendable {
     /// The model to use for compaction (should match conversation model)
     public let model: String
 

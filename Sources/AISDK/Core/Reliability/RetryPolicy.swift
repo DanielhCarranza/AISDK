@@ -328,7 +328,6 @@ public struct RetryExecutor: Sendable {
         _ operation: @Sendable () async throws -> T,
         onRetry: (@Sendable (Error, Int, Duration) async -> Void)? = nil
     ) async throws -> T {
-        var lastError: Error?
         var attempt = 0
 
         while true {
@@ -340,8 +339,6 @@ public struct RetryExecutor: Sendable {
                     return try await operation()
                 }
             } catch {
-                lastError = error
-
                 // Check if we should retry
                 guard policy.shouldRetry(error: error, attempt: attempt) else {
                     throw error

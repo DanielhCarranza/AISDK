@@ -267,7 +267,7 @@ public final class GenerativeUIViewModel {
             }
 
             guard let self = self else { return }
-            await self.processBatchedUpdates()
+            self.processBatchedUpdates()
         }
     }
 

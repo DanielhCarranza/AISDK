@@ -241,8 +241,9 @@ public final class ChatViewModel {
             do {
                 try await operation(store, sessionId)
             } catch {
-                await MainActor.run {
-                    self?.persistenceWarning = "Failed to save: \(error.localizedDescription)"
+                let warning = "Failed to save: \(error.localizedDescription)"
+                await MainActor.run { [weak self] in
+                    self?.persistenceWarning = warning
                 }
             }
         }

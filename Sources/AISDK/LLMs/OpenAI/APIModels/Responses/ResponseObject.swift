@@ -82,7 +82,7 @@ public enum ResponseStatus: String, Codable {
 }
 
 /// Usage statistics for the response
-public struct ResponseUsage: Codable {
+public struct ResponseUsage: Codable, Sendable {
     public let inputTokens: Int
     public let outputTokens: Int
     public let totalTokens: Int
@@ -99,7 +99,7 @@ public struct ResponseUsage: Codable {
 }
 
 /// Input tokens details
-public struct ResponseInputTokensDetails: Codable {
+public struct ResponseInputTokensDetails: Codable, Sendable {
     public let cachedTokens: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -108,7 +108,7 @@ public struct ResponseInputTokensDetails: Codable {
 }
 
 /// Output tokens details
-public struct ResponseOutputTokensDetails: Codable {
+public struct ResponseOutputTokensDetails: Codable, Sendable {
     public let reasoningTokens: Int?
     
     enum CodingKeys: String, CodingKey {

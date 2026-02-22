@@ -411,7 +411,6 @@ public actor Agent {
 
         var stepIndex = 0
         var totalUsage = AIUsage.zero
-        var lastText = ""
 
         // Build combined tool schemas (native + MCP)
         let combinedToolSchemas = buildCombinedToolSchemas()
@@ -516,7 +515,6 @@ public actor Agent {
             }
 
             totalUsage = totalUsage + stepUsage
-            lastText = stepText
 
             // Add assistant message to history
             let assistantMessage: AIMessage

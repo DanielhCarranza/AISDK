@@ -93,14 +93,17 @@ public final class AIAgentAdapter: @unchecked Sendable {
     }
 
     private func notifyStateChange(_ state: AIAgentState) async {
-        let currentCallbacks: [AIAgentCallbacks]
-        callbackLock.lock()
-        currentCallbacks = callbacks
-        callbackLock.unlock()
+        let currentCallbacks: [AIAgentCallbacks] = withLock { callbacks }
 
         for callback in currentCallbacks {
             await callback.onStateChange(state: state)
         }
+    }
+
+    private func withLock<T>(_ body: () -> T) -> T {
+        callbackLock.lock()
+        defer { callbackLock.unlock() }
+        return body()
     }
 }
 

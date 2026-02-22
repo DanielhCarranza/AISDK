@@ -123,7 +123,7 @@ public actor SQLiteSessionStore: SessionStore {
         sql += " LIMIT ?"
         params.append(String(totalCount))
 
-        var allSessions = try executeQuery(sql: sql, params: params)
+        let allSessions = try executeQuery(sql: sql, params: params)
 
         // Apply cursor
         var startIndex = 0
@@ -379,10 +379,10 @@ public actor SQLiteSessionStore: SessionStore {
         ]
 
         // For complex fields, encode them separately and compose
-        let messagesData = try encoder.encode(messages)
-        let checkpointsData = try encoder.encode(checkpoints)
+        _ = try encoder.encode(messages)
+        _ = try encoder.encode(checkpoints)
 
-        var dict = json.compactMapValues { $0 }
+        _ = json.compactMapValues { $0 }
         // We'll use a different approach - encode/decode via the existing Codable
         let sessionData = try encoder.encode(
             CodableSessionProxy(

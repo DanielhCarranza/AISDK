@@ -8,7 +8,7 @@
 import Foundation
 import Alamofire
 
-public class OpenAIProvider: LegacyLLM {
+public class OpenAIProvider: LegacyLLM, @unchecked Sendable {
     private struct OpenAIAPIErrorEnvelope: Decodable {
         struct OpenAIAPIError: Decodable {
             let message: String?
