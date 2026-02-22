@@ -381,6 +381,7 @@ public enum ResponsesAPIFixtures {
             output: [
                 .reasoning(ResponseOutputReasoningItem(
                     id: "reason_1",
+                    content: [ReasoningTextContent(text: "Let me think through this step by step...")],
                     summary: [ReasoningSummaryContent(text: summaryText, type: "summary_text")],
                     encryptedContent: "encrypted_reasoning_payload",
                     status: "completed"
@@ -470,6 +471,7 @@ public enum ResponsesAPIFixtures {
             {
                 "type": "reasoning",
                 "id": "reason_1",
+                "content": [{"type": "reasoning_text", "text": "Let me think step by step..."}],
                 "summary": [{"type": "summary_text", "text": "The model reasoned about the problem."}],
                 "encrypted_content": "encrypted_payload",
                 "status": "completed"

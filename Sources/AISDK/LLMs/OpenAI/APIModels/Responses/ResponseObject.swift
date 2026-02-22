@@ -545,21 +545,35 @@ public struct ResponseOutputComputerCall: Codable {
 public struct ResponseOutputReasoningItem: Codable {
     public let id: String
     public let type: String
+    /// The actual reasoning text content (when reasoning is visible)
+    public let content: [ReasoningTextContent]?
     public let summary: [ReasoningSummaryContent]?
     public let encryptedContent: String?
     public let status: String?
 
-    public init(id: String, summary: [ReasoningSummaryContent]? = nil, encryptedContent: String? = nil, status: String? = nil) {
+    public init(id: String, content: [ReasoningTextContent]? = nil, summary: [ReasoningSummaryContent]? = nil, encryptedContent: String? = nil, status: String? = nil) {
         self.id = id
         self.type = "reasoning"
+        self.content = content
         self.summary = summary
         self.encryptedContent = encryptedContent
         self.status = status
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, type, summary, status
+        case id, type, content, summary, status
         case encryptedContent = "encrypted_content"
+    }
+}
+
+/// Reasoning text content within a reasoning output
+public struct ReasoningTextContent: Codable {
+    public let text: String
+    public let type: String
+
+    public init(text: String, type: String = "reasoning_text") {
+        self.text = text
+        self.type = type
     }
 }
 

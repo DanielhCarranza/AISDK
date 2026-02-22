@@ -297,6 +297,8 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
         let stream = provider.streamTextRequest(aiRequest)
 
         var startEmitted = false
+        // Track active function call for incremental argument streaming
+        var activeFunctionCallId: String?
 
         for try await chunk in stream {
             // Emit start on first chunk
@@ -310,17 +312,58 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
                 continuation.yield(.textDelta(text))
             }
 
-            // Process output items for tool calls (complete tool calls in chunks)
+            // Function call argument deltas (incremental streaming)
+            if let argDelta = chunk.delta?.functionCallArgumentsDelta, !argDelta.isEmpty {
+                if let callId = activeFunctionCallId {
+                    continuation.yield(.toolCallDelta(id: callId, argumentsDelta: argDelta))
+                }
+            }
+
+            // Reasoning summary deltas
+            if let reasoning = chunk.delta?.reasoning, let summary = reasoning.summary, !summary.isEmpty {
+                continuation.yield(.reasoningDelta(summary))
+            }
+
+            // Process output items for tool calls, citations, and function call tracking
             if let outputs = chunk.delta?.output {
                 for item in outputs {
                     switch item {
                     case .functionCall(let call):
                         let id = call.callId
-                        continuation.yield(.toolCallStart(id: id, name: call.name))
-                        if !call.arguments.isEmpty {
-                            continuation.yield(.toolCallDelta(id: id, argumentsDelta: call.arguments))
+                        if call.arguments.isEmpty && call.status != "completed" {
+                            // Function call just started (from output_item.added) — track it
+                            activeFunctionCallId = id
+                            continuation.yield(.toolCallStart(id: id, name: call.name))
+                        } else if activeFunctionCallId == id {
+                            // Function call completed (from output_item.done) after incremental deltas
+                            continuation.yield(.toolCallFinish(id: id, name: call.name, arguments: call.arguments))
+                            activeFunctionCallId = nil
+                        } else {
+                            // Complete function call arrived at once
+                            continuation.yield(.toolCallStart(id: id, name: call.name))
+                            if !call.arguments.isEmpty {
+                                continuation.yield(.toolCallDelta(id: id, argumentsDelta: call.arguments))
+                            }
+                            continuation.yield(.toolCallFinish(id: id, name: call.name, arguments: call.arguments))
                         }
-                        continuation.yield(.toolCallFinish(id: id, name: call.name, arguments: call.arguments))
+
+                    case .message(let msg):
+                        // Extract URL citation annotations and emit as .source events
+                        for content in msg.content {
+                            if case .outputText(let textContent) = content,
+                               let annotations = textContent.annotations {
+                                for annotation in annotations {
+                                    if case .urlCitation(let citation) = annotation {
+                                        continuation.yield(.source(AISource(
+                                            id: citation.url,
+                                            url: citation.url,
+                                            title: citation.title
+                                        )))
+                                    }
+                                }
+                            }
+                        }
+
                     default:
                         break
                     }

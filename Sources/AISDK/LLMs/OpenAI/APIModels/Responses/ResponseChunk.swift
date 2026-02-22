@@ -103,20 +103,71 @@ public struct ResponseChunk: Codable {
         
         // Create delta from event
         let delta: ResponseDelta? = {
-            if event.type == "response.output_text.delta", let deltaText = event.delta {
-                return ResponseDelta(
-                    output: nil,
-                    outputText: deltaText,
-                    reasoning: nil,
-                    text: deltaText
-                )
-            } else if event.type == "response.output_text.done", let text = event.text {
-                return ResponseDelta(
-                    output: nil,
-                    outputText: text,
-                    reasoning: nil,
-                    text: text
-                )
+            switch event.type {
+            case "response.output_text.delta":
+                if let deltaText = event.delta {
+                    return ResponseDelta(
+                        output: nil,
+                        outputText: deltaText,
+                        reasoning: nil,
+                        text: deltaText
+                    )
+                }
+            case "response.output_text.done":
+                if let text = event.text {
+                    return ResponseDelta(
+                        output: nil,
+                        outputText: text,
+                        reasoning: nil,
+                        text: text
+                    )
+                }
+            case "response.output_item.added":
+                // New output item started — for function calls, this signals the start
+                if let item = event.item {
+                    return ResponseDelta(
+                        output: [item],
+                        outputText: nil,
+                        reasoning: nil,
+                        text: nil
+                    )
+                }
+            case "response.function_call_arguments.delta":
+                // Function call argument deltas carry partial JSON in `delta`
+                if let argDelta = event.delta {
+                    return ResponseDelta(
+                        functionCallArgumentsDelta: argDelta
+                    )
+                }
+            case "response.function_call_arguments.done":
+                // Complete function call arguments
+                if let args = event.delta {
+                    return ResponseDelta(
+                        functionCallArgumentsDelta: args
+                    )
+                }
+            case "response.output_item.done":
+                // Completed output item — carries the full item for function calls, messages, etc.
+                if let item = event.item {
+                    return ResponseDelta(
+                        output: [item],
+                        outputText: nil,
+                        reasoning: nil,
+                        text: nil
+                    )
+                }
+            case "response.reasoning_summary_text.delta":
+                // Reasoning summary text deltas
+                if let deltaText = event.delta {
+                    return ResponseDelta(
+                        output: nil,
+                        outputText: nil,
+                        reasoning: ResponseReasoning(effort: nil, summary: deltaText),
+                        text: nil
+                    )
+                }
+            default:
+                break
             }
             return nil
         }()
@@ -151,10 +202,21 @@ public struct ResponseDelta: Codable {
     public let outputText: String?
     public let reasoning: ResponseReasoning?
     public let text: String?
-    
+    /// Partial function call arguments during streaming
+    public let functionCallArgumentsDelta: String?
+
+    public init(output: [ResponseOutputItem]? = nil, outputText: String? = nil, reasoning: ResponseReasoning? = nil, text: String? = nil, functionCallArgumentsDelta: String? = nil) {
+        self.output = output
+        self.outputText = outputText
+        self.reasoning = reasoning
+        self.text = text
+        self.functionCallArgumentsDelta = functionCallArgumentsDelta
+    }
+
     enum CodingKeys: String, CodingKey {
         case output, reasoning, text
         case outputText = "output_text"
+        case functionCallArgumentsDelta = "function_call_arguments_delta"
     }
 }
 

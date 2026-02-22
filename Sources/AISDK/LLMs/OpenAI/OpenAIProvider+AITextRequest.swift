@@ -504,7 +504,9 @@ extension OpenAIProvider {
         // Map usage (Responses API uses input/output tokens, AIUsage uses prompt/completion)
         let usage = AIUsage(
             promptTokens: response.usage?.inputTokens ?? 0,
-            completionTokens: response.usage?.outputTokens ?? 0
+            completionTokens: response.usage?.outputTokens ?? 0,
+            reasoningTokens: response.usage?.outputTokensDetails?.reasoningTokens,
+            cachedTokens: response.usage?.inputTokensDetails?.cachedTokens
         )
 
         return AITextResult(
@@ -529,7 +531,7 @@ extension OpenAIProvider {
         case .cancelled:
             return .cancelled
         case .incomplete:
-            return .contentFilter  // Incomplete typically means content was truncated
+            return .length  // Incomplete means max_output_tokens was hit (token truncation)
         case .inProgress, .queued:
             return .unknown
         }

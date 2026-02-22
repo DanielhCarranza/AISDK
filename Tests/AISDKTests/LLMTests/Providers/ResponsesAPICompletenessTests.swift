@@ -414,6 +414,9 @@ final class ResponsesAPICompletenessTests: XCTestCase {
                 {
                     "type": "reasoning",
                     "id": "rs_1",
+                    "content": [
+                        {"type": "reasoning_text", "text": "Let me think about this..."}
+                    ],
                     "summary": [
                         {"type": "summary_text", "text": "The model considered multiple approaches..."}
                     ],
@@ -440,12 +443,34 @@ final class ResponsesAPICompletenessTests: XCTestCase {
         XCTAssertEqual(response.output.count, 2)
         if case .reasoning(let reasoning) = response.output[0] {
             XCTAssertEqual(reasoning.id, "rs_1")
+            XCTAssertEqual(reasoning.content?.first?.text, "Let me think about this...")
+            XCTAssertEqual(reasoning.content?.first?.type, "reasoning_text")
             XCTAssertEqual(reasoning.summary?.first?.text, "The model considered multiple approaches...")
             XCTAssertEqual(reasoning.encryptedContent, "enc_abc123")
         } else {
             XCTFail("Expected reasoning output item")
         }
         XCTAssertEqual(response.outputText, "The answer is 42.")
+    }
+
+    func testDecodeReasoningWithoutContent() throws {
+        // Reasoning items may not always have content (e.g., when reasoning is not visible)
+        let json = """
+        {
+            "type": "reasoning",
+            "id": "rs_2",
+            "summary": [{"type": "summary_text", "text": "Brief summary"}],
+            "encrypted_content": "enc_xyz"
+        }
+        """.data(using: .utf8)!
+
+        let item = try decoder.decode(ResponseOutputItem.self, from: json)
+        if case .reasoning(let reasoning) = item {
+            XCTAssertNil(reasoning.content)
+            XCTAssertEqual(reasoning.summary?.first?.text, "Brief summary")
+        } else {
+            XCTFail("Expected reasoning output item")
+        }
     }
 
     // MARK: - MCP Call Output Item

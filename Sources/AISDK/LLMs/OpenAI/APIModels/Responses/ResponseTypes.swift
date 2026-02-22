@@ -179,8 +179,8 @@ public struct SimpleResponseChunk {
         // Determine if complete based on status
         self.isComplete = chunk.status?.isFinal == true
         
-        // Tool call info would be extracted from output items if present
-        self.toolCall = nil // Could be enhanced based on actual chunk structure
+        // Extract tool call info from output items if present
+        self.toolCall = chunk.delta?.output?.compactMap { ToolCallInfo.extractFrom($0) }.first
         
         // Extract reasoning
         self.reasoning = chunk.delta?.reasoning?.summary

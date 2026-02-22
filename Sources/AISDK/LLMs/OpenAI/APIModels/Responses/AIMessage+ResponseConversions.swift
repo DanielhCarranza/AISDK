@@ -76,12 +76,13 @@ extension AIImageContent {
     /// Convert to ResponseInputImage
     func toResponseInputImage() -> ResponseInputImage {
         if let url = url {
-            // Use URL if available (Response API only supports URLs, not direct data)
+            // Use URL if available
             return ResponseInputImage(imageUrl: url.absoluteString)
-        } else if data != nil {
-            // Response API doesn't support direct image data, need to handle differently
-            // For now, return a placeholder - in real implementation, would need to upload to file service first
-            return ResponseInputImage(imageUrl: nil, fileId: "[Image data needs to be uploaded to file service first]")
+        } else if let imageData = data {
+            // Convert image data to base64 data URL — the Responses API accepts data URLs for input_image.image_url
+            let base64String = imageData.base64EncodedString()
+            let dataUrl = "data:\(mimeType);base64,\(base64String)"
+            return ResponseInputImage(imageUrl: dataUrl)
         } else {
             fatalError("AIImageContent must have either data or URL")
         }
