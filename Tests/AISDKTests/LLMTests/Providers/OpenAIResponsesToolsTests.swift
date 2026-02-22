@@ -58,7 +58,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             let request = ResponseRequest(
                 model: "gpt-4o",
                 input: .string("What's the current weather in San Francisco?"),
-                tools: [.webSearchPreview]
+                tools: [.webSearchPreview()]
             )
             
             let response = try await mockProvider.createResponse(request: request)
@@ -76,7 +76,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             model: "gpt-4o-mini",
             input: .string("Latest AI news"),
             instructions: "Provide recent, factual information",
-            tools: [.webSearchPreview]
+            tools: [.webSearchPreview()]
         )
         
         if let provider = provider {
@@ -131,7 +131,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             let request = ResponseRequest(
                 model: "gpt-4o",
                 input: .string("Calculate 15 factorial"),
-                tools: [.codeInterpreter]
+                tools: [.codeInterpreter()]
             )
             
             let response = try await mockProvider.createResponse(request: request)
@@ -167,7 +167,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             let request = ResponseRequest(
                 model: "gpt-4o",
                 input: .string("Create a simple bar chart"),
-                tools: [.codeInterpreter]
+                tools: [.codeInterpreter()]
             )
             
             let response = try await mockProvider.createResponse(request: request)
@@ -219,7 +219,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Create a landscape painting"),
-            tools: [.imageGeneration(partialImages: 2)],
+            tools: [.imageGeneration(ResponseImageGenerationTool(partialImages: 2))],
             stream: true
         )
 
@@ -250,7 +250,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Find information about project requirements"),
-            tools: [.fileSearch(vectorStoreIds: [vectorStoreId])]
+            tools: [.fileSearch(ResponseFileSearchTool(vectorStoreIds: [vectorStoreId]))]
         )
         
         if let provider = provider {
@@ -317,7 +317,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Research AI trends and create a visualization"),
-            tools: [.webSearchPreview, .function(weatherFunction)],
+            tools: [.webSearchPreview(), .function(weatherFunction)],
             toolChoice: .auto
         )
 
@@ -342,7 +342,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             model: "gpt-4o-mini",
             input: .string("Comprehensive analysis task"),
             instructions: "Use all available tools to provide a complete analysis",
-            tools: [.webSearchPreview, .function(weatherFunction)],
+            tools: [.webSearchPreview(), .function(weatherFunction)],
             toolChoice: .auto
         )
 
@@ -366,7 +366,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Help me with this task"),
-            tools: [.webSearchPreview],
+            tools: [.webSearchPreview()],
             toolChoice: .auto
         )
         
@@ -389,7 +389,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
         let request = ResponseRequest(
             model: "gpt-4o-mini",
             input: .string("Just answer without using tools"),
-            tools: [.webSearchPreview],
+            tools: [.webSearchPreview()],
             toolChoice: ToolChoice.none  // Must be explicit to avoid Swift Optional.none confusion
         )
         
@@ -420,7 +420,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             let request = ResponseRequest(
                 model: "gpt-4o",
                 input: .string("Use tools to help"),
-                tools: [.webSearchPreview]
+                tools: [.webSearchPreview()]
             )
             
             do {
@@ -442,7 +442,7 @@ final class OpenAIResponsesToolsTests: XCTestCase {
             let request = ResponseRequest(
                 model: "gpt-4o",
                 input: .string("Test query"),
-                tools: [.webSearchPreview]
+                tools: [.webSearchPreview()]
             )
             
             let response = try await mockProvider.createResponse(request: request)

@@ -545,11 +545,11 @@ public class ResponseAgent {
         // Convert tools to ResponseTool format
         let responseTools: [ResponseTool] = builtInTools.map { $0.toResponseTool() } +
                                    tools.map { .function($0.jsonSchema().function!) } +
-                                   mcpServers.map { .mcp(serverLabel: $0.serverLabel, serverUrl: $0.serverUrl, requireApproval: $0.requireApproval.rawValue) }
-        
+                                   mcpServers.map { .mcp(ResponseMCPTool(serverLabel: $0.serverLabel, serverUrl: $0.serverUrl, requireApproval: $0.requireApproval.rawValue)) }
+
         // Build input from conversation messages
         let input: ResponseInput = .items(messages.map { $0.toResponseInputItem() })
-        
+
         return ResponseRequest(
             model: model,
             input: input,
@@ -637,11 +637,11 @@ public class ResponseAgent {
         // Convert tools to ResponseTool format
         let responseTools: [ResponseTool] = builtInTools.map { $0.toResponseTool() } +
                                    tools.map { .function($0.jsonSchema().function!) } +
-                                   mcpServers.map { .mcp(serverLabel: $0.serverLabel, serverUrl: $0.serverUrl, requireApproval: $0.requireApproval.rawValue) }
-        
+                                   mcpServers.map { .mcp(ResponseMCPTool(serverLabel: $0.serverLabel, serverUrl: $0.serverUrl, requireApproval: $0.requireApproval.rawValue)) }
+
         // Build input from conversation messages
         let input: ResponseInput = .items(messages.map { $0.toResponseInputItem() })
-        
+
         // Include reasoning if enabled
         let include = configuration.enableReasoning ? ["reasoning"] : nil
         

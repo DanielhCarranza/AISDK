@@ -266,7 +266,7 @@ final class BuiltInToolMappingTests: XCTestCase {
 
         let responseRequest = try provider.convertToResponseRequest(request)
         let vectorStoreIds = responseRequest.tools?.flatMap { tool -> [String] in
-            if case .fileSearch(let ids) = tool { return ids }
+            if case .fileSearch(let fileTool) = tool { return fileTool.vectorStoreIds }
             return []
         }
         XCTAssertEqual(vectorStoreIds, ["vs_1", "vs_2"])
@@ -286,11 +286,11 @@ final class BuiltInToolMappingTests: XCTestCase {
             return
         }
         XCTAssertEqual(tools.count, 1)
-        guard case .imageGeneration(let partialImages) = tools[0] else {
+        guard case .imageGeneration(let imageGenTool) = tools[0] else {
             XCTFail("Expected imageGeneration tool")
             return
         }
-        XCTAssertEqual(partialImages, 2)
+        XCTAssertEqual(imageGenTool.partialImages, 2)
     }
 
     func testOpenAIResponsesRejectsUrlContext() throws {
@@ -324,7 +324,7 @@ final class BuiltInToolMappingTests: XCTestCase {
 
         let responseRequest = try provider.convertToResponseRequest(request)
         let fileSearchIds = responseRequest.tools?.flatMap { tool -> [String] in
-            if case .fileSearch(let ids) = tool { return ids }
+            if case .fileSearch(let fileTool) = tool { return fileTool.vectorStoreIds }
             return []
         }
         XCTAssertEqual(fileSearchIds, ["vs_override"])

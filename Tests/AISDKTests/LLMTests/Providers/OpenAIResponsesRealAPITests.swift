@@ -640,7 +640,7 @@ final class OpenAIResponsesRealAPITests: XCTestCase {
             model: "gpt-4o-mini",
             input: .items(inputItems),
             instructions: "First identify what's in the image, then search for interesting information about it",
-            tools: [.webSearchPreview],
+            tools: [.webSearchPreview()],
             maxOutputTokens: 400
         )
 

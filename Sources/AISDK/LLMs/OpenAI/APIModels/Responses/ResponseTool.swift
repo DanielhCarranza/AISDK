@@ -9,18 +9,18 @@ import Foundation
 
 /// Built-in tools available in the Responses API
 public enum ResponseTool: Codable {
-    case webSearchPreview
-    case fileSearch(vectorStoreIds: [String])
-    case imageGeneration(partialImages: Int? = nil)
-    case codeInterpreter
-    case mcp(serverLabel: String, serverUrl: String, requireApproval: String? = nil, headers: [String: String]? = nil)
-    case computerUsePreview(displayWidth: Int, displayHeight: Int, environment: String?)
+    case webSearchPreview(ResponseWebSearchTool = ResponseWebSearchTool())
+    case fileSearch(ResponseFileSearchTool)
+    case imageGeneration(ResponseImageGenerationTool = ResponseImageGenerationTool())
+    case codeInterpreter(ResponseCodeInterpreterTool = ResponseCodeInterpreterTool())
+    case mcp(ResponseMCPTool)
+    case computerUsePreview(ResponseComputerUseTool)
     case function(ToolFunction)
-    
+
     enum CodingKeys: String, CodingKey {
         case type
     }
-    
+
     enum ToolType: String, Codable {
         case webSearchPreview = "web_search_preview"
         case fileSearch = "file_search"
@@ -30,71 +30,49 @@ public enum ResponseTool: Codable {
         case computerUsePreview = "computer_use_preview"
         case function = "function"
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ToolType.self, forKey: .type)
-        
+
         switch type {
         case .webSearchPreview:
-            self = .webSearchPreview
+            let tool = try ResponseWebSearchTool(from: decoder)
+            self = .webSearchPreview(tool)
         case .fileSearch:
-            let fileSearchTool = try ResponseFileSearchTool(from: decoder)
-            self = .fileSearch(vectorStoreIds: fileSearchTool.vectorStoreIds)
+            let tool = try ResponseFileSearchTool(from: decoder)
+            self = .fileSearch(tool)
         case .imageGeneration:
-            let imageGenTool = try ResponseImageGenerationTool(from: decoder)
-            self = .imageGeneration(partialImages: imageGenTool.partialImages)
+            let tool = try ResponseImageGenerationTool(from: decoder)
+            self = .imageGeneration(tool)
         case .codeInterpreter:
-            self = .codeInterpreter
+            let tool = try ResponseCodeInterpreterTool(from: decoder)
+            self = .codeInterpreter(tool)
         case .mcp:
-            let mcpTool = try ResponseMCPTool(from: decoder)
-            self = .mcp(
-                serverLabel: mcpTool.serverLabel,
-                serverUrl: mcpTool.serverUrl,
-                requireApproval: mcpTool.requireApproval,
-                headers: mcpTool.headers
-            )
+            let tool = try ResponseMCPTool(from: decoder)
+            self = .mcp(tool)
         case .computerUsePreview:
-            let cuTool = try ResponseComputerUseTool(from: decoder)
-            self = .computerUsePreview(
-                displayWidth: cuTool.displayWidth,
-                displayHeight: cuTool.displayHeight,
-                environment: cuTool.environment
-            )
+            let tool = try ResponseComputerUseTool(from: decoder)
+            self = .computerUsePreview(tool)
         case .function:
             let functionTool = try ResponseFunctionTool(from: decoder)
             self = .function(functionTool.function)
         }
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         switch self {
-        case .webSearchPreview:
-            let tool = ResponseWebSearchTool()
+        case .webSearchPreview(let tool):
             try tool.encode(to: encoder)
-        case .fileSearch(let vectorStoreIds):
-            let tool = ResponseFileSearchTool(vectorStoreIds: vectorStoreIds)
+        case .fileSearch(let tool):
             try tool.encode(to: encoder)
-        case .imageGeneration(let partialImages):
-            let tool = ResponseImageGenerationTool(partialImages: partialImages)
+        case .imageGeneration(let tool):
             try tool.encode(to: encoder)
-        case .codeInterpreter:
-            let tool = ResponseCodeInterpreterTool()
+        case .codeInterpreter(let tool):
             try tool.encode(to: encoder)
-        case .mcp(let serverLabel, let serverUrl, let requireApproval, let headers):
-            let tool = ResponseMCPTool(
-                serverLabel: serverLabel,
-                serverUrl: serverUrl,
-                requireApproval: requireApproval,
-                headers: headers
-            )
+        case .mcp(let tool):
             try tool.encode(to: encoder)
-        case .computerUsePreview(let displayWidth, let displayHeight, let environment):
-            let tool = ResponseComputerUseTool(
-                displayWidth: displayWidth,
-                displayHeight: displayHeight,
-                environment: environment
-            )
+        case .computerUsePreview(let tool):
             try tool.encode(to: encoder)
         case .function(let function):
             let tool = ResponseFunctionTool(function: function)
@@ -105,57 +83,202 @@ public enum ResponseTool: Codable {
 
 // MARK: - Individual Tool Structures
 
-/// Web search preview tool
+/// Web search preview tool with optional configuration
 public struct ResponseWebSearchTool: Codable {
     public let type: String = "web_search_preview"
-    
-    public init() {}
+    public let searchContextSize: String?
+    public let userLocation: WebSearchUserLocation?
+    public let filters: WebSearchFilters?
+
+    public init(
+        searchContextSize: String? = nil,
+        userLocation: WebSearchUserLocation? = nil,
+        filters: WebSearchFilters? = nil
+    ) {
+        self.searchContextSize = searchContextSize
+        self.userLocation = userLocation
+        self.filters = filters
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case searchContextSize = "search_context_size"
+        case userLocation = "user_location"
+        case filters
+    }
 }
 
-/// File search tool
+/// Approximate user location for web search
+public struct WebSearchUserLocation: Codable {
+    public let type: String
+    public let city: String?
+    public let country: String?
+    public let region: String?
+    public let timezone: String?
+
+    public init(city: String? = nil, country: String? = nil, region: String? = nil, timezone: String? = nil) {
+        self.type = "approximate"
+        self.city = city
+        self.country = country
+        self.region = region
+        self.timezone = timezone
+    }
+}
+
+/// Domain filters for web search
+public struct WebSearchFilters: Codable {
+    public let allowedDomains: [String]?
+
+    public init(allowedDomains: [String]? = nil) {
+        self.allowedDomains = allowedDomains
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case allowedDomains = "allowed_domains"
+    }
+}
+
+/// File search tool with ranking options
 public struct ResponseFileSearchTool: Codable {
     public let type: String = "file_search"
     public let vectorStoreIds: [String]
-    
-    public init(vectorStoreIds: [String]) {
+    public let maxNumResults: Int?
+    public let rankingOptions: ResponseFileSearchRankingOptions?
+
+    public init(
+        vectorStoreIds: [String],
+        maxNumResults: Int? = nil,
+        rankingOptions: ResponseFileSearchRankingOptions? = nil
+    ) {
         self.vectorStoreIds = vectorStoreIds
+        self.maxNumResults = maxNumResults
+        self.rankingOptions = rankingOptions
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case type
         case vectorStoreIds = "vector_store_ids"
+        case maxNumResults = "max_num_results"
+        case rankingOptions = "ranking_options"
     }
 }
 
-/// Image generation tool
+/// Ranking options for file search (Response API tool config)
+public struct ResponseFileSearchRankingOptions: Codable {
+    public let ranker: String?
+    public let scoreThreshold: Double?
+
+    public init(ranker: String? = nil, scoreThreshold: Double? = nil) {
+        self.ranker = ranker
+        self.scoreThreshold = scoreThreshold
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ranker
+        case scoreThreshold = "score_threshold"
+    }
+}
+
+/// Image generation tool with full configuration
 public struct ResponseImageGenerationTool: Codable {
     public let type: String = "image_generation"
     public let partialImages: Int?
-    
-    public init(partialImages: Int? = nil) {
+    public let background: String?
+    public let inputFidelity: String?
+    public let model: String?
+    public let moderation: String?
+    public let outputCompression: Int?
+    public let outputFormat: String?
+    public let quality: String?
+    public let size: String?
+
+    public init(
+        partialImages: Int? = nil,
+        background: String? = nil,
+        inputFidelity: String? = nil,
+        model: String? = nil,
+        moderation: String? = nil,
+        outputCompression: Int? = nil,
+        outputFormat: String? = nil,
+        quality: String? = nil,
+        size: String? = nil
+    ) {
         self.partialImages = partialImages
+        self.background = background
+        self.inputFidelity = inputFidelity
+        self.model = model
+        self.moderation = moderation
+        self.outputCompression = outputCompression
+        self.outputFormat = outputFormat
+        self.quality = quality
+        self.size = size
     }
-    
+
     enum CodingKeys: String, CodingKey {
-        case type
+        case type, background, model, moderation, quality, size
         case partialImages = "partial_images"
+        case inputFidelity = "input_fidelity"
+        case outputCompression = "output_compression"
+        case outputFormat = "output_format"
     }
 }
 
-/// Code interpreter tool
+/// Code interpreter tool with container config
 public struct ResponseCodeInterpreterTool: Codable {
     public let type: String = "code_interpreter"
-    public let container: CodeInterpreterContainer
+    public let container: CodeInterpreterContainerConfig
 
-    public init(container: CodeInterpreterContainer = CodeInterpreterContainer()) {
+    public init(container: CodeInterpreterContainerConfig = .auto()) {
         self.container = container
     }
+}
 
-    public struct CodeInterpreterContainer: Codable {
-        public let type: String
+/// Code interpreter container configuration
+public enum CodeInterpreterContainerConfig: Codable {
+    /// Auto-provision a new container with optional file IDs
+    case auto(fileIds: [String]? = nil)
+    /// Use an existing container by ID
+    case id(String)
 
-        public init(type: String = "auto") {
-            self.type = type
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let stringValue = try? container.decode(String.self) {
+            // A plain string is an existing container ID (unless it's "auto" from old format)
+            if stringValue == "auto" {
+                self = .auto()
+            } else {
+                self = .id(stringValue)
+            }
+        } else {
+            // Object form: {"type": "auto", "file_ids": [...]}
+            let obj = try AutoContainer(from: decoder)
+            self = .auto(fileIds: obj.fileIds)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .id(let containerId):
+            var container = encoder.singleValueContainer()
+            try container.encode(containerId)
+        case .auto(let fileIds):
+            let obj = AutoContainer(fileIds: fileIds)
+            try obj.encode(to: encoder)
+        }
+    }
+
+    private struct AutoContainer: Codable {
+        let type: String
+        let fileIds: [String]?
+
+        init(fileIds: [String]? = nil) {
+            self.type = "auto"
+            self.fileIds = fileIds
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case fileIds = "file_ids"
         }
     }
 }
@@ -164,28 +287,39 @@ public struct ResponseCodeInterpreterTool: Codable {
 public struct ResponseMCPTool: Codable {
     public let type: String = "mcp"
     public let serverLabel: String
-    public let serverUrl: String
+    public let serverUrl: String?
     public let requireApproval: String?
     public let headers: [String: String]?
-    
+    public let allowedTools: [String]?
+    public let connectorId: String?
+    public let serverDescription: String?
+
     public init(
         serverLabel: String,
-        serverUrl: String,
+        serverUrl: String? = nil,
         requireApproval: String? = nil,
-        headers: [String: String]? = nil
+        headers: [String: String]? = nil,
+        allowedTools: [String]? = nil,
+        connectorId: String? = nil,
+        serverDescription: String? = nil
     ) {
         self.serverLabel = serverLabel
         self.serverUrl = serverUrl
         self.requireApproval = requireApproval
         self.headers = headers
+        self.allowedTools = allowedTools
+        self.connectorId = connectorId
+        self.serverDescription = serverDescription
     }
-    
+
     enum CodingKeys: String, CodingKey {
-        case type
+        case type, headers
         case serverLabel = "server_label"
         case serverUrl = "server_url"
         case requireApproval = "require_approval"
-        case headers
+        case allowedTools = "allowed_tools"
+        case connectorId = "connector_id"
+        case serverDescription = "server_description"
     }
 }
 

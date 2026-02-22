@@ -84,6 +84,12 @@ public struct Response {
                             // Handle file ID case - could be converted to URL or handled differently
                             contentParts.append(.text("[Generated image file: \(fileId)]"))
                         }
+                    case .refusal:
+                        // Refusals are metadata, not extractable content
+                        break
+                    case .unknown:
+                        // Unrecognized content types are silently skipped
+                        break
                     }
                 }
             case .functionCall, .functionCallOutput, .webSearchCall, .imageGenerationCall, .codeInterpreterCall:
@@ -94,6 +100,12 @@ public struct Response {
                 break
             case .computerCall:
                 // Computer calls are handled via agent routing, not content
+                break
+            case .reasoning:
+                // Reasoning items are metadata, not content
+                break
+            case .mcpCall, .mcpListTools:
+                // MCP execution results are metadata, not content
                 break
             case .unknown:
                 // Unrecognized output types are silently skipped
@@ -167,8 +179,8 @@ public struct SimpleResponseChunk {
         // Determine if complete based on status
         self.isComplete = chunk.status?.isFinal == true
         
-        // Tool call info would be extracted from output items if present
-        self.toolCall = nil // Could be enhanced based on actual chunk structure
+        // Extract tool call info from output items if present
+        self.toolCall = chunk.delta?.output?.compactMap { ToolCallInfo.extractFrom($0) }.first
         
         // Extract reasoning
         self.reasoning = chunk.delta?.reasoning?.summary
