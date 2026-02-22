@@ -137,6 +137,53 @@ final class OpenAIResponsesProviderUnitTests: XCTestCase {
 
         let responseRequest = try provider.convertToResponseRequest(request)
         XCTAssertEqual(responseRequest.reasoning?.effort, AIReasoningConfig.AIReasoningEffort.medium.rawValue)
+        XCTAssertEqual(responseRequest.reasoning?.summary, "auto", "Path B should auto-default summary to 'auto'")
+    }
+
+    func testConvertToResponseRequest_UnifiedReasoningWithExplicitSummary() throws {
+        let request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "o3",
+            reasoning: AIReasoningConfig(effort: .high, summary: .concise)
+        )
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertEqual(responseRequest.reasoning?.effort, "high")
+        XCTAssertEqual(responseRequest.reasoning?.summary, "concise")
+    }
+
+    func testConvertToResponseRequest_UnifiedReasoningWithBudgetPreservesSummaryDefault() throws {
+        let request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "o3",
+            reasoning: AIReasoningConfig(effort: .medium, budgetTokens: 4096)
+        )
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertEqual(responseRequest.reasoning?.effort, "medium")
+        XCTAssertEqual(responseRequest.reasoning?.summary, "auto", "Budget should be ignored but summary should auto-default")
+    }
+
+    func testConvertToResponseRequest_UnifiedReasoningDetailedSummary() throws {
+        let request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "o3",
+            reasoning: AIReasoningConfig.effort(.medium, summary: .detailed)
+        )
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertEqual(responseRequest.reasoning?.effort, "medium")
+        XCTAssertEqual(responseRequest.reasoning?.summary, "detailed")
+    }
+
+    func testConvertToResponseRequest_NoReasoningConfigYieldsNil() throws {
+        let request = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("Hello"))],
+            model: "gpt-4o"
+        )
+
+        let responseRequest = try provider.convertToResponseRequest(request)
+        XCTAssertNil(responseRequest.reasoning)
     }
 
     func testConvertToResponseRequest_ProviderOptionsOverrideUnifiedReasoning() throws {
