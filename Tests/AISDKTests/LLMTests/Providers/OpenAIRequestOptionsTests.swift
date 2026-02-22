@@ -77,6 +77,7 @@ final class OpenAIRequestOptionsTests: XCTestCase {
 
         XCTAssertNotNil(options.reasoning)
         XCTAssertEqual(options.reasoning?.effort, .medium)
+        XCTAssertEqual(options.reasoning?.summary, .auto, "Default summary should be .auto")
     }
 
     func testWithReasoning_HighEffort() {

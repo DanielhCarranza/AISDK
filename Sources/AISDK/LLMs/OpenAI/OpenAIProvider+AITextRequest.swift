@@ -185,8 +185,11 @@ extension OpenAIProvider {
                 effort: reasoningConfig.effort?.rawValue,
                 summary: reasoningConfig.summary?.rawValue
             )
-        } else if let effort = request.reasoning?.effort {
-            reasoning = ResponseReasoning(effort: effort.rawValue, summary: nil)
+        } else if let reasoningConfig = request.reasoning, reasoningConfig.effort != nil {
+            reasoning = ResponseReasoning(
+                effort: reasoningConfig.effort?.rawValue,
+                summary: reasoningConfig.summary?.rawValue ?? "auto"
+            )
         } else {
             reasoning = nil
         }

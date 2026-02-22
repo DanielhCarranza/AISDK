@@ -138,6 +138,60 @@ final class ResponsesAPILiveValidationTests: XCTestCase {
 
     // MARK: - Incomplete Finish Reason
 
+    // MARK: - Reasoning Summary via AITextRequest (Path B)
+
+    func testReasoningSummaryStreaming_PathB() async throws {
+        // Uses AITextRequest → convertToResponseRequest (Path B) → createResponseStream
+        // Verifies: AIReasoningConfig.effort(.medium) → summary auto-defaults to "auto" → SSE reasoning deltas
+        let aiRequest = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("What is 15 * 37?"))],
+            model: "o4-mini",
+            reasoning: AIReasoningConfig.effort(.medium)
+        )
+
+        // Convert through Path B so we validate the auto-default summary logic
+        let responseRequest = try provider.convertToResponseRequest(aiRequest, streaming: true)
+        XCTAssertEqual(responseRequest.reasoning?.summary, "auto", "Path B should auto-default summary")
+
+        var reasoningText = ""
+        let stream = provider.createResponseStream(request: responseRequest)
+        for try await chunk in stream {
+            if let reasoning = chunk.delta?.reasoning, let summary = reasoning.summary {
+                reasoningText += summary
+            }
+        }
+
+        XCTAssertFalse(reasoningText.isEmpty, "Expected reasoning summary deltas via Path B with effort(.medium)")
+    }
+
+    func testReasoningSummaryNonStreaming_PathB() async throws {
+        // Non-streaming: AIReasoningConfig → ResponseReasoning(summary: "auto") → reasoning summary in output
+        let aiRequest = AITextRequest(
+            messages: [AIMessage(role: .user, content: .text("What is 15 * 37?"))],
+            model: "o4-mini",
+            reasoning: AIReasoningConfig.effort(.medium)
+        )
+
+        // Convert through Path B and call createResponse directly to inspect raw output
+        let responseRequest = try provider.convertToResponseRequest(aiRequest)
+        XCTAssertEqual(responseRequest.reasoning?.summary, "auto", "Path B should auto-default summary")
+
+        let response = try await provider.createResponse(request: responseRequest)
+        XCTAssertTrue(response.status == .completed)
+        XCTAssertNotNil(response.outputText)
+
+        var foundReasoning = false
+        for item in response.output {
+            if case .reasoning(let reasoning) = item {
+                foundReasoning = true
+                XCTAssertNotNil(reasoning.summary, "Reasoning should have summary when summary='auto' via Path B")
+            }
+        }
+        XCTAssertTrue(foundReasoning, "Expected reasoning output item from o4-mini via Path B")
+    }
+
+    // MARK: - Incomplete Finish Reason
+
     func testIncompleteFinishReasonMapsToLength() async throws {
         let request = ResponseRequest(
             model: "gpt-4o-mini",

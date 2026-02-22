@@ -333,7 +333,7 @@ public extension OpenAIRequestOptions {
     /// Create options with reasoning configuration for o1/o3 models
     static func withReasoning(
         effort: ReasoningConfig.ReasoningEffort = .medium,
-        summary: ReasoningConfig.ReasoningSummary? = nil
+        summary: ReasoningConfig.ReasoningSummary? = .auto
     ) -> OpenAIRequestOptions {
         var options = OpenAIRequestOptions()
         options.reasoning = ReasoningConfig(effort: effort, summary: summary)
