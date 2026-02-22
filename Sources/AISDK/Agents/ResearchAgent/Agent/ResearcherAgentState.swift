@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 /// Represents the current state of the research process
-public enum ResearcherLegacyAgentState: Equatable, Codable {
+public enum ResearcherLegacyAgentState: Equatable, Codable, Sendable {
     case idle
     case start(topic: String, startTime: Date)
     case processing(topic: String, startTime: Date, sourceCount: Int)

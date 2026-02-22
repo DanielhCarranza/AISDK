@@ -27,7 +27,6 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write

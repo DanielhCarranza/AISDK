@@ -134,7 +134,7 @@ public struct ResearchMetadata: ToolMetadata {
 }
 
 /// Represents a research source with citation information
-public struct ResearchSource: Codable, Identifiable {
+public struct ResearchSource: Codable, Identifiable, Sendable {
     public var id: String { url.absoluteString }
     
     /// The title of the source

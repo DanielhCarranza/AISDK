@@ -6,7 +6,7 @@
 
 import Foundation
 
-public enum AnthropicMessageStreamingChunk: Sendable {
+public enum AnthropicMessageStreamingChunk: @unchecked Sendable {
     /// The `String` argument is the chat completion response text "delta", meaning the new bit
     /// of text that just became available. It is not the full message.
     case text(String)

@@ -17,7 +17,7 @@ import Foundation
 /// - Supports explicit null values (important for JSON Patch "replace with null")
 /// - Preserves nested structure (doesn't unwrap to raw `Any`)
 /// - Conforms to ExpressibleBy literals for ergonomic test writing
-public struct SpecValue: Sendable, Equatable, Codable {
+public struct SpecValue: @unchecked Sendable, Equatable, Codable {
     /// The underlying value
     public let value: Any?
 

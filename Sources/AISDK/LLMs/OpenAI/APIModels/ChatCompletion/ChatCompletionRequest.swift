@@ -134,7 +134,7 @@ public struct ChatCompletionRequest: Encodable {
 }
 
 /// Tools can be function definitions or other tool types.
-public struct ToolSchema: Codable {
+public struct ToolSchema: Codable, Sendable {
     /// Could be "function", etc.
     public let type: String
     
@@ -142,7 +142,7 @@ public struct ToolSchema: Codable {
     public let function: ToolFunction?
 }
 
-public struct ToolFunction: Codable {
+public struct ToolFunction: Codable, Sendable {
     public let name: String
     public let description: String?
     public let parameters: Parameters
@@ -157,7 +157,7 @@ public struct ToolFunction: Codable {
 }
 
 
-public struct Parameters: Codable {
+public struct Parameters: Codable, Sendable {
     public let type: String
     public let properties: [String: PropertyDefinition]
     public let required: [String]?
@@ -171,7 +171,7 @@ public struct Parameters: Codable {
     }
 }
 
-public struct PropertyDefinition: Codable {
+public struct PropertyDefinition: Codable, Sendable {
     public let type: String
     public let description: String?
     
@@ -261,7 +261,7 @@ public struct PropertyDefinition: Codable {
 }
 
 // Indirect wrapper to break recursive type
-public final class IndirectPropertyDefinition: Codable {
+public final class IndirectPropertyDefinition: Codable, Sendable {
     public let value: PropertyDefinition
     
     public init(_ value: PropertyDefinition) {

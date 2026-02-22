@@ -25,7 +25,7 @@ public enum LLMProvider: String, CaseIterable, Sendable {
 }
 
 // MARK: - Universal Model Capabilities
-public struct LLMCapabilities: OptionSet, Hashable {
+public struct LLMCapabilities: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     
     public init(rawValue: Int) {
@@ -85,7 +85,7 @@ public struct LLMCapabilities: OptionSet, Hashable {
 }
 
 // MARK: - Model Performance Tiers
-public enum LLMPerformanceTier: String, CaseIterable, Comparable {
+public enum LLMPerformanceTier: String, CaseIterable, Comparable, Sendable {
     case nano = "nano"
     case mini = "mini"
     case small = "small"
@@ -119,7 +119,7 @@ public enum LLMPerformanceTier: String, CaseIterable, Comparable {
 }
 
 // MARK: - Model Latency Categories
-public enum LLMLatency: String, CaseIterable {
+public enum LLMLatency: String, CaseIterable, Sendable {
     case ultraFast = "ultra_fast"
     case veryFast = "very_fast"
     case fast = "fast"
