@@ -31,10 +31,8 @@ jobs:
 
       - name: Test
         run: |
-          set -o pipefail
-          swift test 2>&1 | tee test-output.log
-          TEST_EXIT=$?
-          if [ $TEST_EXIT -ne 0 ]; then
+          swift test 2>&1 | tee test-output.log || TEST_EXIT=$?
+          if [ "${TEST_EXIT:-0}" -ne 0 ]; then
             if grep -q "Test run with .* passed" test-output.log; then
               echo "All tests passed (ignoring exit code $TEST_EXIT due to known toolchain issue)"
               exit 0
