@@ -283,7 +283,8 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
             usage: usage,
             finishReason: finishReason,
             latencyMs: latencyMs,
-            metadata: metadata.isEmpty ? nil : metadata
+            metadata: metadata.isEmpty ? nil : metadata,
+            sources: result.sources
         )
     }
 
