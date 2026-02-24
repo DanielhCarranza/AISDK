@@ -719,9 +719,10 @@ public actor AnthropicClientAdapter: ProviderClient {
     }
 
     private func buildProviderResponse(from response: ACAMessageResponse, latencyMs: Int) -> ProviderResponse {
-        // Extract text content
+        // Extract text content and sources
         var textContent = ""
         var toolCalls: [ProviderToolCall] = []
+        var sources: [AISource] = []
 
         for block in response.content {
             switch block {
@@ -747,14 +748,15 @@ public actor AnthropicClientAdapter: ProviderClient {
                 // Server-side tool calls don't require client execution
                 break
             case .webSearchResult(let resultBlock):
+                // Extract structured sources — do NOT append to textContent
                 for result in resultBlock.content {
-                    let parts = [result.title, result.url].compactMap { value in
-                        if let value, !value.isEmpty { return value }
-                        return nil
-                    }
-                    guard !parts.isEmpty else { continue }
-                    if !textContent.isEmpty { textContent += "\n" }
-                    textContent += parts.joined(separator: " - ")
+                    guard let url = result.url else { continue }
+                    sources.append(AISource(
+                        id: url,
+                        url: url,
+                        title: result.title,
+                        sourceType: .web
+                    ))
                 }
             case .toolResult, .image:
                 // These shouldn't appear in responses
@@ -778,7 +780,8 @@ public actor AnthropicClientAdapter: ProviderClient {
             toolCalls: toolCalls,
             usage: usage,
             finishReason: finishReason,
-            latencyMs: latencyMs
+            latencyMs: latencyMs,
+            sources: sources
         )
     }
 
@@ -820,6 +823,11 @@ public actor AnthropicClientAdapter: ProviderClient {
         var lastFinishReason: ProviderFinishReason?
         var decodeErrorCount = 0
         let maxDecodeErrors = 5
+        // Track web search state for lifecycle events
+        var currentWebSearchQuery: String?
+        var serverToolUseIndices: [Int: String] = [:]  // index -> tool name
+        var serverToolUseJsonByIndex: [Int: String] = [:]  // accumulated JSON for server tool use
+        var accumulatedText = ""
 
         for try await line in bytes.lines {
             // Skip empty lines and comments
@@ -869,18 +877,31 @@ public actor AnthropicClientAdapter: ProviderClient {
                         case .text:
                             // Text block starting, nothing special needed
                             break
-                        case .serverToolUse:
-                            // Server-side tool use doesn't require client action
-                            break
+                        case .serverToolUse(let serverTool):
+                            if let index = event.index {
+                                serverToolUseIndices[index] = serverTool.name
+                                serverToolUseJsonByIndex[index] = ""
+                            }
                         case .webSearchResult(let resultBlock):
+                            // Emit individual source events
                             for (resultIndex, result) in resultBlock.content.enumerated() {
                                 let sourceId = result.url ?? "source_\(resultIndex)"
                                 continuation.yield(.source(AISource(
                                     id: sourceId,
                                     url: result.url,
-                                    title: result.title
+                                    title: result.title,
+                                    sourceType: .web
                                 )))
                             }
+                            // Emit webSearchCompleted with all sources
+                            let webSources = resultBlock.content.compactMap { result -> AIWebSearchSource? in
+                                guard let url = result.url else { return nil }
+                                return AIWebSearchSource(url: url, title: result.title)
+                            }
+                            continuation.yield(.webSearchCompleted(AIWebSearchResult(
+                                query: currentWebSearchQuery,
+                                sources: webSources
+                            )))
                         }
                     }
 
@@ -888,8 +909,13 @@ public actor AnthropicClientAdapter: ProviderClient {
                     if let delta = event.delta {
                         switch delta {
                         case .textDelta(let textDelta):
+                            accumulatedText += textDelta.text
                             continuation.yield(.textDelta(textDelta.text))
                         case .inputJsonDelta(let jsonDelta):
+                            // Check if this is a server_tool_use block (web search query accumulation)
+                            if let index = event.index, serverToolUseIndices[index] != nil {
+                                serverToolUseJsonByIndex[index, default: ""] += jsonDelta.partialJson
+                            }
                             // Tool call argument delta - look up by index
                             if let index = event.index, var toolCall = toolCallsByIndex[index] {
                                 toolCall.arguments += jsonDelta.partialJson
@@ -901,18 +927,83 @@ public actor AnthropicClientAdapter: ProviderClient {
                         case .messageDelta:
                             // Message delta shouldn't appear in content_block_delta, but handle gracefully
                             break
+                        case .citationsDelta(let citation):
+                            switch citation {
+                            case .webSearchResultLocation(let loc):
+                                continuation.yield(.source(AISource(
+                                    id: loc.url,
+                                    url: loc.url,
+                                    title: loc.title,
+                                    snippet: loc.citedText.isEmpty ? nil : loc.citedText,
+                                    sourceType: .web
+                                )))
+                            case .charLocation(let loc):
+                                let offsets = accumulatedText.scalarOffsetsToUTF16(
+                                    scalarStart: loc.startCharIndex,
+                                    scalarEnd: loc.endCharIndex
+                                )
+                                continuation.yield(.source(AISource(
+                                    id: "doc-\(loc.documentIndex)",
+                                    url: nil,
+                                    title: loc.documentTitle,
+                                    snippet: loc.citedText.isEmpty ? nil : loc.citedText,
+                                    startIndex: offsets?.start,
+                                    endIndex: offsets?.end,
+                                    sourceType: .document
+                                )))
+                            case .pageLocation(let loc):
+                                continuation.yield(.source(AISource(
+                                    id: "doc-\(loc.documentIndex)-p\(loc.startPageNumber)",
+                                    url: nil,
+                                    title: loc.documentTitle,
+                                    snippet: loc.citedText.isEmpty ? nil : loc.citedText,
+                                    sourceType: .document
+                                )))
+                            case .contentBlockLocation(let loc):
+                                continuation.yield(.source(AISource(
+                                    id: "doc-\(loc.documentIndex)-b\(loc.startBlockIndex)",
+                                    url: nil,
+                                    title: loc.documentTitle,
+                                    snippet: loc.citedText.isEmpty ? nil : loc.citedText,
+                                    sourceType: .document
+                                )))
+                            case .searchResultLocation(let loc):
+                                continuation.yield(.source(AISource(
+                                    id: "search-\(loc.searchResultIndex)",
+                                    url: loc.source,
+                                    title: loc.title,
+                                    snippet: loc.citedText.isEmpty ? nil : loc.citedText,
+                                    sourceType: .searchResult
+                                )))
+                            }
                         }
                     }
 
                 case "content_block_stop":
-                    // End of a content block - emit tool call finish only if this index was a tool_use block
-                    if let index = event.index, let toolCall = toolCallsByIndex[index] {
-                        if toolCall.startEmitted {
-                            continuation.yield(.toolCallFinish(
-                                id: toolCall.id,
-                                name: toolCall.name,
-                                arguments: toolCall.arguments
-                            ))
+                    if let index = event.index {
+                        // Check if this was a server_tool_use block (web search query)
+                        if let toolName = serverToolUseIndices[index], toolName == "web_search" {
+                            // Parse accumulated JSON to extract query
+                            if let json = serverToolUseJsonByIndex[index],
+                               let data = json.data(using: .utf8),
+                               let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                               let query = parsed["query"] as? String {
+                                currentWebSearchQuery = query
+                                continuation.yield(.webSearchStarted(query: query))
+                            }
+                            serverToolUseIndices.removeValue(forKey: index)
+                            serverToolUseJsonByIndex.removeValue(forKey: index)
+                        }
+
+                        // End of a content block - emit tool call finish only if this index was a tool_use block
+                        if let toolCall = toolCallsByIndex[index] {
+                            if toolCall.startEmitted {
+                                continuation.yield(.toolCallFinish(
+                                    id: toolCall.id,
+                                    name: toolCall.name,
+                                    arguments: toolCall.arguments
+                                ))
+                            }
                         }
                     }
 
@@ -1283,10 +1374,12 @@ private struct ACAWebSearchResult: Decodable {
     let title: String?
     let url: String?
     let pageAge: String?
+    let encryptedContent: String?
 
     enum CodingKeys: String, CodingKey {
         case type, title, url
         case pageAge = "page_age"
+        case encryptedContent = "encrypted_content"
     }
 }
 
@@ -1369,6 +1462,7 @@ private enum ACAStreamDelta: Decodable {
     case inputJsonDelta(ACAInputJsonDelta)
     case thinkingDelta(ACAThinkingDelta)
     case messageDelta(ACAMessageDelta)
+    case citationsDelta(ACACitation)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -1387,10 +1481,142 @@ private enum ACAStreamDelta: Decodable {
             self = .thinkingDelta(try ACAThinkingDelta(from: decoder))
         case "message_delta":
             self = .messageDelta(try ACAMessageDelta(from: decoder))
+        case "citations_delta":
+            let wrapper = try ACACitationDeltaWrapper(from: decoder)
+            self = .citationsDelta(wrapper.citation)
         default:
             // Default to empty text delta for unknown types
             self = .textDelta(ACATextDelta(type: type, text: ""))
         }
+    }
+}
+
+// MARK: - Citation Types
+
+private struct ACACitationDeltaWrapper: Decodable {
+    let type: String
+    let citation: ACACitation
+}
+
+/// Union of all Anthropic citation location types
+private enum ACACitation: Decodable {
+    case webSearchResultLocation(ACAWebSearchResultLocationCitation)
+    case charLocation(ACACharLocationCitation)
+    case pageLocation(ACAPageLocationCitation)
+    case contentBlockLocation(ACAContentBlockLocationCitation)
+    case searchResultLocation(ACASearchResultLocationCitation)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "web_search_result_location":
+            self = .webSearchResultLocation(try ACAWebSearchResultLocationCitation(from: decoder))
+        case "char_location":
+            self = .charLocation(try ACACharLocationCitation(from: decoder))
+        case "page_location":
+            self = .pageLocation(try ACAPageLocationCitation(from: decoder))
+        case "content_block_location":
+            self = .contentBlockLocation(try ACAContentBlockLocationCitation(from: decoder))
+        case "search_result_location":
+            self = .searchResultLocation(try ACASearchResultLocationCitation(from: decoder))
+        default:
+            // Unknown citation type — fallback to a minimal web search result
+            self = .webSearchResultLocation(ACAWebSearchResultLocationCitation(
+                type: type, citedText: "", url: "", title: nil, encryptedIndex: nil
+            ))
+        }
+    }
+}
+
+private struct ACAWebSearchResultLocationCitation: Decodable {
+    let type: String
+    let citedText: String
+    let url: String
+    let title: String?
+    let encryptedIndex: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type, url, title
+        case citedText = "cited_text"
+        case encryptedIndex = "encrypted_index"
+    }
+}
+
+private struct ACACharLocationCitation: Decodable {
+    let type: String
+    let citedText: String
+    let documentIndex: Int
+    let documentTitle: String?
+    let startCharIndex: Int
+    let endCharIndex: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case citedText = "cited_text"
+        case documentIndex = "document_index"
+        case documentTitle = "document_title"
+        case startCharIndex = "start_char_index"
+        case endCharIndex = "end_char_index"
+    }
+}
+
+private struct ACAPageLocationCitation: Decodable {
+    let type: String
+    let citedText: String
+    let documentIndex: Int
+    let documentTitle: String?
+    let startPageNumber: Int
+    let endPageNumber: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case citedText = "cited_text"
+        case documentIndex = "document_index"
+        case documentTitle = "document_title"
+        case startPageNumber = "start_page_number"
+        case endPageNumber = "end_page_number"
+    }
+}
+
+private struct ACAContentBlockLocationCitation: Decodable {
+    let type: String
+    let citedText: String
+    let documentIndex: Int
+    let documentTitle: String?
+    let startBlockIndex: Int
+    let endBlockIndex: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case citedText = "cited_text"
+        case documentIndex = "document_index"
+        case documentTitle = "document_title"
+        case startBlockIndex = "start_block_index"
+        case endBlockIndex = "end_block_index"
+    }
+}
+
+private struct ACASearchResultLocationCitation: Decodable {
+    let type: String
+    let citedText: String
+    let searchResultIndex: Int
+    let title: String?
+    let source: String?
+    let startBlockIndex: Int
+    let endBlockIndex: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type, title, source
+        case citedText = "cited_text"
+        case searchResultIndex = "search_result_index"
+        case startBlockIndex = "start_block_index"
+        case endBlockIndex = "end_block_index"
     }
 }
 
