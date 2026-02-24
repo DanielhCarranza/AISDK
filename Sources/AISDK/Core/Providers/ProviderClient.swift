@@ -351,6 +351,9 @@ public struct ProviderResponse: Sendable {
     /// Additional provider-specific metadata
     public let metadata: [String: String]?
 
+    /// Sources/citations from the response
+    public let sources: [AISource]
+
     public init(
         id: String,
         model: String,
@@ -360,7 +363,8 @@ public struct ProviderResponse: Sendable {
         usage: ProviderUsage? = nil,
         finishReason: ProviderFinishReason,
         latencyMs: Int? = nil,
-        metadata: [String: String]? = nil
+        metadata: [String: String]? = nil,
+        sources: [AISource] = []
     ) {
         self.id = id
         self.model = model
@@ -371,6 +375,7 @@ public struct ProviderResponse: Sendable {
         self.finishReason = finishReason
         self.latencyMs = latencyMs
         self.metadata = metadata
+        self.sources = sources
     }
 }
 
@@ -528,6 +533,12 @@ public enum ProviderStreamEvent: Sendable {
     /// Source/citation information
     case source(AISource)
 
+    /// Web search initiated with query
+    case webSearchStarted(query: String)
+
+    /// Web search completed with results
+    case webSearchCompleted(AIWebSearchResult)
+
     /// Usage information
     case usage(ProviderUsage)
 
@@ -615,7 +626,8 @@ public extension ProviderResponse {
             finishReason: finishReason.toAIFinishReason(),
             requestId: id,
             model: model,
-            provider: provider
+            provider: provider,
+            sources: sources
         )
     }
 }
@@ -672,6 +684,10 @@ public extension ProviderStreamEvent {
             return .reasoningDelta(text)
         case .source(let source):
             return .source(source)
+        case .webSearchStarted(let query):
+            return .webSearchStarted(query: query)
+        case .webSearchCompleted(let result):
+            return .webSearchCompleted(result)
         case .usage(let usage):
             return .usage(usage.toAIUsage())
         case .finish(let reason, let usage):

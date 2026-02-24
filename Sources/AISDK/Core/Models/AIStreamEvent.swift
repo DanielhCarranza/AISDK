@@ -98,6 +98,14 @@ public enum AIStreamEvent: Sendable {
     /// A computer use action requested by the model (typed version of tool call)
     case computerUseAction(ComputerUseToolCall)
 
+    // MARK: - Web Search Events
+
+    /// Web search initiated — includes the query the model is searching for
+    case webSearchStarted(query: String)
+
+    /// Web search completed — includes query and all consulted source URLs
+    case webSearchCompleted(AIWebSearchResult)
+
     /// An error occurred during streaming
     case error(Error)
 }
@@ -105,18 +113,75 @@ public enum AIStreamEvent: Sendable {
 // MARK: - Supporting Types
 // Note: AIUsage and AIFinishReason are defined in AIUsage.swift
 
-/// Source/citation information
-public struct AISource: Sendable, Codable {
+/// Source/citation information with optional position data for inline citation rendering
+public struct AISource: Sendable, Codable, Hashable {
     public let id: String
     public let url: String?
     public let title: String?
     public let snippet: String?
+    /// UTF-16 code unit offset where the citation starts in the response text
+    public let startIndex: Int?
+    /// UTF-16 code unit offset where the citation ends in the response text
+    public let endIndex: Int?
+    /// The type of source (web, file, document, etc.)
+    public let sourceType: AISourceType?
 
-    public init(id: String, url: String? = nil, title: String? = nil, snippet: String? = nil) {
+    public init(
+        id: String,
+        url: String? = nil,
+        title: String? = nil,
+        snippet: String? = nil,
+        startIndex: Int? = nil,
+        endIndex: Int? = nil,
+        sourceType: AISourceType? = nil
+    ) {
         self.id = id
         self.url = url
         self.title = title
         self.snippet = snippet
+        self.startIndex = startIndex
+        self.endIndex = endIndex
+        self.sourceType = sourceType
+    }
+}
+
+/// Type of citation source
+public enum AISourceType: String, Sendable, Codable {
+    /// URL citation from web search
+    case web
+    /// File citation (e.g., OpenAI file_search)
+    case file
+    /// Container file citation (e.g., OpenAI code interpreter)
+    case containerFile
+    /// Document citation (e.g., Anthropic char/page/block location)
+    case document
+    /// Search result citation (e.g., Anthropic search_result_location)
+    case searchResult
+}
+
+/// Result of a web search performed by the model
+public struct AIWebSearchResult: Sendable, Codable {
+    /// The search query the model used
+    public let query: String?
+    /// All URLs the model consulted (superset of cited sources)
+    public let sources: [AIWebSearchSource]
+
+    public init(query: String? = nil, sources: [AIWebSearchSource] = []) {
+        self.query = query
+        self.sources = sources
+    }
+}
+
+/// A URL consulted during web search
+public struct AIWebSearchSource: Sendable, Codable {
+    public let url: String
+    public let title: String?
+    public let type: String
+
+    public init(url: String, title: String? = nil, type: String = "url") {
+        self.url = url
+        self.title = title
+        self.type = type
     }
 }
 

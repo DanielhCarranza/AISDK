@@ -35,6 +35,9 @@ public struct AITextResult: Sendable, Equatable {
     /// Pass this as `conversationId` in subsequent requests to continue the conversation
     public let responseId: String?
 
+    /// Sources/citations from the response (populated when web search or citations are used)
+    public let sources: [AISource]
+
     public init(
         text: String,
         toolCalls: [ToolCallResult] = [],
@@ -43,7 +46,8 @@ public struct AITextResult: Sendable, Equatable {
         requestId: String? = nil,
         model: String? = nil,
         provider: String? = nil,
-        responseId: String? = nil
+        responseId: String? = nil,
+        sources: [AISource] = []
     ) {
         self.text = text
         self.toolCalls = toolCalls
@@ -53,6 +57,7 @@ public struct AITextResult: Sendable, Equatable {
         self.model = model
         self.provider = provider
         self.responseId = responseId
+        self.sources = sources
     }
 }
 
