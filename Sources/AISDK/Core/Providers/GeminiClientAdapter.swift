@@ -891,6 +891,54 @@ public actor GeminiClientAdapter: ProviderClient {
             }
         }
 
+        // Extract structured sources from grounding metadata
+        var sources: [AISource] = []
+        if let groundingMetadata = candidate.groundingMetadata {
+            let groundingChunks = groundingMetadata.groundingChunks ?? []
+
+            if let supports = groundingMetadata.groundingSupports {
+                // Positional sources with snippet data
+                for support in supports {
+                    guard let indices = support.groundingChunkIndices else { continue }
+                    let snippet = support.segment?.text
+                    let utf16Start: Int?
+                    let utf16End: Int?
+                    if let seg = support.segment,
+                       let s = seg.startIndex, let e = seg.endIndex,
+                       !textContent.isEmpty,
+                       let offsets = textContent.utf8OffsetsToUTF16(utf8Start: s, utf8End: e) {
+                        utf16Start = offsets.start
+                        utf16End = offsets.end
+                    } else {
+                        utf16Start = nil
+                        utf16End = nil
+                    }
+
+                    for chunkIndex in indices {
+                        guard chunkIndex < groundingChunks.count,
+                              let web = groundingChunks[chunkIndex].web else { continue }
+                        let sourceId = web.uri ?? "source_\(chunkIndex)"
+                        sources.append(AISource(
+                            id: sourceId,
+                            url: web.uri,
+                            title: web.title,
+                            snippet: snippet,
+                            startIndex: utf16Start,
+                            endIndex: utf16End,
+                            sourceType: .web
+                        ))
+                    }
+                }
+            } else {
+                // Fallback: sources from groundingChunks without positional data
+                for (index, chunk) in groundingChunks.enumerated() {
+                    guard let web = chunk.web else { continue }
+                    let sourceId = web.uri ?? "source_\(index)"
+                    sources.append(AISource(id: sourceId, url: web.uri, title: web.title, sourceType: .web))
+                }
+            }
+        }
+
         let usage = response.usageMetadata.map { u in
             ProviderUsage(
                 promptTokens: u.promptTokenCount ?? 0,
@@ -917,7 +965,8 @@ public actor GeminiClientAdapter: ProviderClient {
             usage: usage,
             finishReason: finishReason,
             latencyMs: latencyMs,
-            metadata: metadata
+            metadata: metadata,
+            sources: sources
         )
     }
 
@@ -953,6 +1002,7 @@ public actor GeminiClientAdapter: ProviderClient {
         var lastCodeExecutionCallId: String?
         var decodeErrorCount = 0
         let maxDecodeErrors = 5
+        var accumulatedText = ""
 
         for try await line in bytes.lines {
             // Skip empty lines
@@ -1000,6 +1050,7 @@ public actor GeminiClientAdapter: ProviderClient {
                         } else {
                             // Regular content
                             if let text = part.text, !text.isEmpty {
+                                accumulatedText += text
                                 continuation.yield(.textDelta(text))
                             }
 
@@ -1065,12 +1116,70 @@ public actor GeminiClientAdapter: ProviderClient {
                         lastFinishReason = ProviderFinishReason(providerReason: finishReason)
                     }
 
-                    if let groundingMetadata = candidate.groundingMetadata,
-                       let groundingChunks = groundingMetadata.groundingChunks {
-                        for (index, chunk) in groundingChunks.enumerated() {
-                            guard let web = chunk.web else { continue }
-                            let sourceId = web.uri ?? "source_\(index)"
-                            continuation.yield(.source(AISource(id: sourceId, url: web.uri, title: web.title)))
+                    if let groundingMetadata = candidate.groundingMetadata {
+                        // Emit web search lifecycle events from queries
+                        if let queries = groundingMetadata.webSearchQueries {
+                            for query in queries {
+                                continuation.yield(.webSearchStarted(query: query))
+                            }
+                        }
+
+                        let groundingChunks = groundingMetadata.groundingChunks ?? []
+
+                        // Emit positional sources from groundingSupports
+                        if let supports = groundingMetadata.groundingSupports {
+                            for support in supports {
+                                guard let indices = support.groundingChunkIndices else { continue }
+                                let snippet = support.segment?.text
+                                // Convert UTF-8 byte offsets to UTF-16 if we have accumulated text
+                                let utf16Start: Int?
+                                let utf16End: Int?
+                                if let seg = support.segment,
+                                   let s = seg.startIndex, let e = seg.endIndex,
+                                   !accumulatedText.isEmpty,
+                                   let offsets = accumulatedText.utf8OffsetsToUTF16(utf8Start: s, utf8End: e) {
+                                    utf16Start = offsets.start
+                                    utf16End = offsets.end
+                                } else {
+                                    utf16Start = nil
+                                    utf16End = nil
+                                }
+
+                                for chunkIndex in indices {
+                                    guard chunkIndex < groundingChunks.count,
+                                          let web = groundingChunks[chunkIndex].web else { continue }
+                                    let sourceId = web.uri ?? "source_\(chunkIndex)"
+                                    continuation.yield(.source(AISource(
+                                        id: sourceId,
+                                        url: web.uri,
+                                        title: web.title,
+                                        snippet: snippet,
+                                        startIndex: utf16Start,
+                                        endIndex: utf16End,
+                                        sourceType: .web
+                                    )))
+                                }
+                            }
+                        } else {
+                            // Fallback: emit sources from groundingChunks without positional data
+                            for (index, chunk) in groundingChunks.enumerated() {
+                                guard let web = chunk.web else { continue }
+                                let sourceId = web.uri ?? "source_\(index)"
+                                continuation.yield(.source(AISource(id: sourceId, url: web.uri, title: web.title, sourceType: .web)))
+                            }
+                        }
+
+                        // Emit webSearchCompleted with all sources
+                        if !groundingChunks.isEmpty {
+                            let webSources = groundingChunks.compactMap { chunk -> AIWebSearchSource? in
+                                guard let web = chunk.web, let uri = web.uri else { return nil }
+                                return AIWebSearchSource(url: uri, title: web.title)
+                            }
+                            let query = groundingMetadata.webSearchQueries?.first
+                            continuation.yield(.webSearchCompleted(AIWebSearchResult(
+                                query: query,
+                                sources: webSources
+                            )))
                         }
                     }
                 }
@@ -1444,6 +1553,9 @@ private struct GCAPromptFeedback: Decodable {
 private struct GCAGroundingMetadata: Decodable {
     let webSearchQueries: [String]?
     let groundingChunks: [GCAGroundingChunk]?
+    let groundingSupports: [GCAGroundingSupport]?
+    let searchEntryPoint: GCASearchEntryPoint?
+    let retrievalMetadata: GCARetrievalMetadata?
 }
 
 private struct GCAGroundingChunk: Decodable {
@@ -1453,4 +1565,26 @@ private struct GCAGroundingChunk: Decodable {
 private struct GCAWebChunk: Decodable {
     let uri: String?
     let title: String?
+}
+
+private struct GCAGroundingSupport: Decodable {
+    let segment: GCASegment?
+    let groundingChunkIndices: [Int]?
+    let confidenceScores: [Double]?
+}
+
+private struct GCASegment: Decodable {
+    let startIndex: Int?
+    let endIndex: Int?
+    let text: String?
+    let partIndex: Int?
+}
+
+private struct GCASearchEntryPoint: Decodable {
+    let renderedContent: String?
+    let sdkBlob: String?
+}
+
+private struct GCARetrievalMetadata: Decodable {
+    let googleSearchDynamicRetrievalScore: Double?
 }

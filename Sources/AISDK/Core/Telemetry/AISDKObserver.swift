@@ -318,6 +318,10 @@ public final class LoggingAISDKObserver: AISDKObserver {
             return "objectDelta"
         case .source:
             return "source"
+        case .webSearchStarted:
+            return "webSearchStarted"
+        case .webSearchCompleted:
+            return "webSearchCompleted"
         case .file:
             return "file"
         case .usage(let usage):
@@ -372,6 +376,8 @@ extension AIStreamEvent {
         case .toolResult: return "toolResult"
         case .objectDelta: return "objectDelta"
         case .source: return "source"
+        case .webSearchStarted: return "webSearchStarted"
+        case .webSearchCompleted: return "webSearchCompleted"
         case .file: return "file"
         case .usage: return "usage"
         case .start: return "start"

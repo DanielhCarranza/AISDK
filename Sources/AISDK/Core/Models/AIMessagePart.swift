@@ -40,6 +40,9 @@ public enum AIMessagePart: Identifiable, Sendable {
     /// File content (e.g. generated images)
     case file(id: String, file: AIFileEvent)
 
+    /// Web search activity (searching → completed with sources)
+    case webSearch(id: String, query: String, sources: [AISource])
+
     public var id: String {
         switch self {
         case .text(let id, _): id
@@ -47,6 +50,7 @@ public enum AIMessagePart: Identifiable, Sendable {
         case .toolCall(let id, _): id
         case .source(let id, _): id
         case .file(let id, _): id
+        case .webSearch(let id, _, _): id
         }
     }
 }

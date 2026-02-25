@@ -209,6 +209,13 @@ extension OpenAIProvider {
             textConfig = nil
         }
 
+        // Auto-set include for web search sources when web search tools are present
+        let hasWebSearch = tools.contains(where: {
+            if case .webSearchPreview = $0 { return true }
+            return false
+        })
+        let include: [String]? = hasWebSearch ? ["web_search_call.results"] : nil
+
         // Build the request
         return ResponseRequest(
             model: request.model ?? model.name,
@@ -223,7 +230,7 @@ extension OpenAIProvider {
             stream: streaming,
             background: openAIOptions?.background,
             previousResponseId: request.conversationId,  // Explicit, no shared state
-            include: nil,
+            include: include,
             store: openAIOptions?.store,  // Privacy-first: nil by default
             reasoning: reasoning,
             parallelToolCalls: true,
@@ -438,6 +445,7 @@ extension OpenAIProvider {
         // Extract text from message outputs
         var text = ""
         var toolCalls: [ToolCallResult] = []
+        var sources: [AISource] = []
 
         for item in response.output {
             switch item {
@@ -446,6 +454,45 @@ extension OpenAIProvider {
                     switch content {
                     case .outputText(let outputText):
                         text += outputText.text
+                        // Extract citation sources from annotations
+                        if let annotations = outputText.annotations {
+                            for annotation in annotations {
+                                switch annotation {
+                                case .urlCitation(let citation):
+                                    let snippet = outputText.text.citedText(
+                                        startIndex: citation.startIndex,
+                                        endIndex: citation.endIndex
+                                    )
+                                    sources.append(AISource(
+                                        id: citation.url,
+                                        url: citation.url,
+                                        title: citation.title,
+                                        snippet: snippet,
+                                        startIndex: citation.startIndex,
+                                        endIndex: citation.endIndex,
+                                        sourceType: .web
+                                    ))
+                                case .fileCitation(let citation):
+                                    sources.append(AISource(
+                                        id: citation.fileId,
+                                        url: nil,
+                                        title: citation.filename,
+                                        sourceType: .file
+                                    ))
+                                case .containerFileCitation(let citation):
+                                    sources.append(AISource(
+                                        id: "\(citation.containerId)/\(citation.fileId)",
+                                        url: nil,
+                                        title: citation.filename,
+                                        startIndex: citation.startIndex,
+                                        endIndex: citation.endIndex,
+                                        sourceType: .containerFile
+                                    ))
+                                case .filePath, .unknown:
+                                    break
+                                }
+                            }
+                        }
                     case .outputImage:
                         // Image outputs could be handled if needed
                         break
@@ -520,7 +567,8 @@ extension OpenAIProvider {
             requestId: response.id,
             model: response.model,
             provider: "openai",
-            responseId: response.id  // Expose for conversation chaining
+            responseId: response.id,  // Expose for conversation chaining
+            sources: sources
         )
     }
 

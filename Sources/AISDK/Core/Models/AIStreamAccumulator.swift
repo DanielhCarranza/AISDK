@@ -118,8 +118,38 @@ public final class AIStreamAccumulator: @unchecked Sendable {
             }
 
         case .source(let source):
-            let id = "source-\(parts.count)"
-            parts.append(.source(id: id, source: source))
+            // Deduplicate by URL
+            let isDuplicate = parts.contains(where: {
+                if case .source(_, let existing) = $0 {
+                    return existing.url == source.url && existing.url != nil
+                }
+                return false
+            })
+            if !isDuplicate {
+                let id = "source-\(parts.count)"
+                parts.append(.source(id: id, source: source))
+            }
+
+        case .webSearchStarted(let query):
+            let id = "websearch-\(parts.count)"
+            parts.append(.webSearch(id: id, query: query, sources: []))
+
+        case .webSearchCompleted(let result):
+            // Update the last webSearch part with results
+            if let lastIndex = parts.lastIndex(where: {
+                if case .webSearch = $0 { return true }
+                return false
+            }) {
+                let existingId = parts[lastIndex].id
+                let sources = result.sources.map {
+                    AISource(id: $0.url, url: $0.url, title: $0.title, sourceType: .web)
+                }
+                parts[lastIndex] = .webSearch(
+                    id: existingId,
+                    query: result.query ?? "",
+                    sources: sources
+                )
+            }
 
         case .file(let file):
             let id = "file-\(parts.count)"

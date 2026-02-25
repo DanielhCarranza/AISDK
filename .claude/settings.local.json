@@ -4,7 +4,12 @@
       "Bash(swift build:*)",
       "Bash(swift test:*)",
       "Bash(swift run:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "WebFetch",
+      "WebSearch",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(curl -s \"https://api.github.com/repos/firebase/firebase-ios-sdk/contents/FirebaseAI/Sources\" | python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(d['name'], d.get\\('type',''\\)\\) for d in data]\" 2>/dev/null)"
     ]
   }
 }

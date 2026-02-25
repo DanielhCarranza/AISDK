@@ -601,6 +601,17 @@ class CLIController {
                         print(ANSIStyles.dim("\n[Finished: \(reason)]"))
                     }
 
+                case .webSearchStarted(let query):
+                    if runtimeConfig.verbose {
+                        print(ANSIStyles.dim("\n[Web search: \(query)]"))
+                    }
+
+                case .webSearchCompleted(let result):
+                    if runtimeConfig.verbose {
+                        let query = result.query ?? "unknown"
+                        print(ANSIStyles.dim("[Web search completed: \(query), \(result.sources.count) sources]"))
+                    }
+
                 case .source(let aiSource):
                     if let url = aiSource.url {
                         sources.append(WebSearchSource(

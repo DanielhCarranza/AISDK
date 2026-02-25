@@ -283,7 +283,8 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
             usage: usage,
             finishReason: finishReason,
             latencyMs: latencyMs,
-            metadata: metadata.isEmpty ? nil : metadata
+            metadata: metadata.isEmpty ? nil : metadata,
+            sources: result.sources
         )
     }
 
@@ -299,6 +300,8 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
         var startEmitted = false
         // Track active function call for incremental argument streaming
         var activeFunctionCallId: String?
+        // Accumulate text for snippet extraction from citation positions
+        var accumulatedText = ""
 
         for try await chunk in stream {
             // Emit start on first chunk
@@ -309,6 +312,7 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
 
             // Text content delta
             if let text = chunk.delta?.outputText, !text.isEmpty {
+                accumulatedText += text
                 continuation.yield(.textDelta(text))
             }
 
@@ -348,20 +352,64 @@ public actor OpenAIResponsesClientAdapter: ProviderClient {
                         }
 
                     case .message(let msg):
-                        // Extract URL citation annotations and emit as .source events
+                        // Extract all annotation types and emit as .source events
                         for content in msg.content {
                             if case .outputText(let textContent) = content,
                                let annotations = textContent.annotations {
                                 for annotation in annotations {
-                                    if case .urlCitation(let citation) = annotation {
+                                    switch annotation {
+                                    case .urlCitation(let citation):
+                                        let snippet = accumulatedText.citedText(
+                                            startIndex: citation.startIndex,
+                                            endIndex: citation.endIndex
+                                        )
                                         continuation.yield(.source(AISource(
                                             id: citation.url,
                                             url: citation.url,
-                                            title: citation.title
+                                            title: citation.title,
+                                            snippet: snippet,
+                                            startIndex: citation.startIndex,
+                                            endIndex: citation.endIndex,
+                                            sourceType: .web
                                         )))
+                                    case .fileCitation(let citation):
+                                        continuation.yield(.source(AISource(
+                                            id: citation.fileId,
+                                            url: nil,
+                                            title: citation.filename,
+                                            sourceType: .file
+                                        )))
+                                    case .containerFileCitation(let citation):
+                                        continuation.yield(.source(AISource(
+                                            id: "\(citation.containerId)/\(citation.fileId)",
+                                            url: nil,
+                                            title: citation.filename,
+                                            startIndex: citation.startIndex,
+                                            endIndex: citation.endIndex,
+                                            sourceType: .containerFile
+                                        )))
+                                    case .filePath, .unknown:
+                                        break
                                     }
                                 }
                             }
+                        }
+
+                    case .webSearchCall(let webSearch):
+                        // Emit search query when available
+                        if let query = webSearch.query ?? webSearch.action?.query {
+                            continuation.yield(.webSearchStarted(query: query))
+                        }
+                        // Emit completion with consulted sources when done
+                        if webSearch.status == "completed" {
+                            let sources = webSearch.action?.sources?.map { source in
+                                AIWebSearchSource(url: source.url, type: source.type)
+                            } ?? []
+                            let query = webSearch.query ?? webSearch.action?.query
+                            continuation.yield(.webSearchCompleted(AIWebSearchResult(
+                                query: query,
+                                sources: sources
+                            )))
                         }
 
                     default:
