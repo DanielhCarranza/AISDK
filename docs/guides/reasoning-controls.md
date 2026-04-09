@@ -69,7 +69,7 @@ for try await event in llm.streamText(messages: msgs, reasoning: .effort(.high))
 | Provider | Models | Notes |
 |----------|--------|-------|
 | OpenAI | `o1`, `o3`, `o4-mini` | Uses `reasoning_effort` param. Summary supported. |
-| Anthropic | `claude-opus-4-*` | Uses `thinking.budget_tokens`. Min budget = 1024. |
+| Anthropic | `claude-opus-4`, `claude-sonnet-4`, `claude-sonnet-3.7`, `claude-haiku-4.5` | Uses `thinking.budget_tokens`. Min budget = 1024. |
 | Gemini | `gemini-2.5-*`, `gemini-3-*`, `gemini-3.1-*` | 2.5 uses `thinkingBudget`, 3.x uses `thinkingLevel`. |
 
 Non-reasoning models silently ignore the config (no error thrown).
