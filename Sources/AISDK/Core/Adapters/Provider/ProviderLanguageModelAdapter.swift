@@ -142,6 +142,51 @@ extension ProviderLanguageModelAdapter {
             capabilities: [.text, .vision, .tools, .functionCalling, .streaming, .jsonMode]
         )
     }
+
+    /// Create an adapter for Anthropic's Messages API.
+    ///
+    /// - Parameters:
+    ///   - apiKey: Anthropic API key
+    ///   - modelId: Model identifier (default: "claude-sonnet-4-20250514")
+    /// - Returns: A configured `ProviderLanguageModelAdapter`
+    public static func anthropic(
+        apiKey: String,
+        modelId: String = "claude-sonnet-4-20250514"
+    ) -> ProviderLanguageModelAdapter {
+        let client = AnthropicClientAdapter(apiKey: apiKey)
+        var caps: LLMCapabilities = [.text, .vision, .tools, .functionCalling, .streaming, .jsonMode, .pdf]
+        if modelId.contains("opus") || modelId.contains("sonnet-4") || modelId.contains("sonnet-3.7")
+            || modelId.contains("sonnet-3-7") || modelId.contains("haiku-4.5") || modelId.contains("haiku-4-5") {
+            caps.insert(.reasoning)
+        }
+        return ProviderLanguageModelAdapter(
+            client: client,
+            modelId: modelId,
+            capabilities: caps
+        )
+    }
+
+    /// Create an adapter for Google's Gemini API.
+    ///
+    /// - Parameters:
+    ///   - apiKey: Gemini API key
+    ///   - modelId: Model identifier (default: "gemini-2.0-flash")
+    /// - Returns: A configured `ProviderLanguageModelAdapter`
+    public static func gemini(
+        apiKey: String,
+        modelId: String = "gemini-2.0-flash"
+    ) -> ProviderLanguageModelAdapter {
+        let client = GeminiClientAdapter(apiKey: apiKey)
+        var caps: LLMCapabilities = [.text, .vision, .audio, .video, .tools, .functionCalling, .streaming, .jsonMode]
+        if modelId.contains("2.5") || modelId.contains("3-") || modelId.contains("3.") {
+            caps.insert(.reasoning)
+        }
+        return ProviderLanguageModelAdapter(
+            client: client,
+            modelId: modelId,
+            capabilities: caps
+        )
+    }
 }
 
 private extension AsyncThrowingStream where Element == ProviderStreamEvent, Failure == Error {
