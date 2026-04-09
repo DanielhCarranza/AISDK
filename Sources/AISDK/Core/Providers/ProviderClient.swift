@@ -580,6 +580,9 @@ public enum ProviderError: Error, Sendable, Equatable, LocalizedError {
     /// Provider-specific error
     case providerSpecific(code: String, message: String)
 
+    /// Unsupported modality for the target provider
+    case unsupportedModality(modality: String, provider: String, supportedProviders: [String])
+
     /// Unknown error
     case unknown(String)
 
@@ -608,6 +611,9 @@ public enum ProviderError: Error, Sendable, Equatable, LocalizedError {
             return "Content filtered: \(message)"
         case .providerSpecific(let code, let message):
             return "Provider error [\(code)]: \(message)"
+        case .unsupportedModality(let modality, let provider, let supportedProviders):
+            let supported = supportedProviders.isEmpty ? "none" : supportedProviders.joined(separator: ", ")
+            return "Unsupported modality: '\(modality)' is not supported by \(provider). Providers that support \(modality): \(supported)."
         case .unknown(let message):
             return "Unknown error: \(message)"
         }

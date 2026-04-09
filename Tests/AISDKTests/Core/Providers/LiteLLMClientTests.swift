@@ -71,12 +71,20 @@ final class LiteLLMClientTests: XCTestCase {
         XCTAssertTrue(available == true || available == false)
     }
 
-    func testCapabilitiesReturnsNil() async {
+    func testCapabilitiesForKnownModels() async {
         let client = LiteLLMClient()
 
-        // Currently returns nil as capabilities parsing is not yet implemented
-        let caps = await client.capabilities(for: "gpt-4")
-        XCTAssertNil(caps)
+        // Gemini models should report video capability
+        let geminiCaps = await client.capabilities(for: "gemini-2.0-flash")
+        XCTAssertNotNil(geminiCaps)
+        XCTAssertTrue(geminiCaps!.contains(.video))
+        XCTAssertTrue(geminiCaps!.contains(.vision))
+
+        // GPT-4 models should not report video capability
+        let gptCaps = await client.capabilities(for: "gpt-4")
+        XCTAssertNotNil(gptCaps)
+        XCTAssertFalse(gptCaps!.contains(.video))
+        XCTAssertTrue(gptCaps!.contains(.text))
     }
 
     // MARK: - Stream Tests

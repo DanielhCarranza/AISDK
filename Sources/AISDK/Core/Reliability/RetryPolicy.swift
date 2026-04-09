@@ -242,7 +242,8 @@ public struct RetryPolicy: Sendable, Equatable {
             case .networkError:
                 return true
             case .authenticationFailed, .invalidRequest, .modelNotFound,
-                 .parseError, .contentFiltered, .providerSpecific, .unknown:
+                 .parseError, .contentFiltered, .providerSpecific, .unknown,
+                 .unsupportedModality:
                 return false
             }
         }
@@ -377,7 +378,8 @@ extension ProviderError: RetryableError {
         case .serverError(let statusCode, _):
             return (500...599).contains(statusCode)
         case .authenticationFailed, .invalidRequest, .modelNotFound,
-             .parseError, .contentFiltered, .providerSpecific, .unknown:
+             .parseError, .contentFiltered, .providerSpecific, .unknown,
+             .unsupportedModality:
             return false
         }
     }

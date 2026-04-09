@@ -233,13 +233,13 @@ public actor OpenAIClientAdapter: ProviderClient {
     }
 
     private func buildRequestBody(from request: ProviderRequest, streaming: Bool) throws -> OpenAIRequestBody {
-        let messages = request.messages.map { message -> OpenAIMessage in
+        let messages = try request.messages.map { message -> OpenAIMessage in
             let content: OpenAIContent
             switch message.content {
             case .text(let text):
                 content = .text(text)
             case .parts(let parts):
-                let openAIParts = parts.map { part -> OpenAIContentPart in
+                let openAIParts = try parts.map { part -> OpenAIContentPart in
                     switch part {
                     case .text(let text):
                         return .text(text)
@@ -248,10 +248,24 @@ public actor OpenAIClientAdapter: ProviderClient {
                         return .imageURL("data:\(mimeType);base64,\(base64)")
                     case .imageURL(let url):
                         return .imageURL(url)
-                    case .audio, .file, .video, .videoURL:
-                        // Video/audio not supported via OpenAI chat completions format
-                        // Use Gemini provider for video support
-                        return .text("[Unsupported content type]")
+                    case .video, .videoURL:
+                        throw ProviderError.unsupportedModality(
+                            modality: "video",
+                            provider: "OpenAI",
+                            supportedProviders: ["Gemini"]
+                        )
+                    case .audio:
+                        throw ProviderError.unsupportedModality(
+                            modality: "audio",
+                            provider: "OpenAI",
+                            supportedProviders: ["Gemini"]
+                        )
+                    case .file:
+                        throw ProviderError.unsupportedModality(
+                            modality: "file",
+                            provider: "OpenAI",
+                            supportedProviders: ["Anthropic (PDF only)", "Gemini"]
+                        )
                     }
                 }
                 content = .parts(openAIParts)

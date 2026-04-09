@@ -548,7 +548,7 @@ public class ResponseAgent {
                                    mcpServers.map { .mcp(ResponseMCPTool(serverLabel: $0.serverLabel, serverUrl: $0.serverUrl, requireApproval: $0.requireApproval.rawValue)) }
 
         // Build input from conversation messages
-        let input: ResponseInput = .items(messages.map { $0.toResponseInputItem() })
+        let input: ResponseInput = .items(try messages.map { try $0.toResponseInputItem() })
 
         return ResponseRequest(
             model: model,
@@ -640,7 +640,7 @@ public class ResponseAgent {
                                    mcpServers.map { .mcp(ResponseMCPTool(serverLabel: $0.serverLabel, serverUrl: $0.serverUrl, requireApproval: $0.requireApproval.rawValue)) }
 
         // Build input from conversation messages
-        let input: ResponseInput = .items(messages.map { $0.toResponseInputItem() })
+        let input: ResponseInput = .items(try messages.map { try $0.toResponseInputItem() })
 
         // Include reasoning if enabled
         let include = configuration.enableReasoning ? ["reasoning"] : nil

@@ -11,8 +11,8 @@ import Foundation
 
 extension AIInputMessage {
     /// Convert universal message to Anthropic LegacyMessage
-    func toAnthropicMessage() -> AnthropicInputMessage {
-        let anthropicContent = content.map { $0.toAnthropicContent() }
+    func toAnthropicMessage() throws -> AnthropicInputMessage {
+        let anthropicContent = try content.map { try $0.toAnthropicContent() }
         return AnthropicInputMessage(
             content: anthropicContent,
             role: role.toAnthropicRole()
@@ -34,11 +34,11 @@ extension AIMessageRole {
 
 extension AIContentPart {
     /// Convert universal content part to Anthropic content
-    func toAnthropicContent() -> AnthropicInputContent {
+    func toAnthropicContent() throws -> AnthropicInputContent {
         switch self {
         case .text(let text):
             return .text(text)
-            
+
         case .image(let imageContent):
             if let data = imageContent.data {
                 let mediaType = AnthropicImageMediaType.fromMimeType(imageContent.mimeType)
@@ -49,32 +49,43 @@ extension AIContentPart {
             } else {
                 fatalError("Image content must have either data or URL")
             }
-            
+
         case .audio(let audioContent):
-            // Anthropic doesn't support audio directly
+            // Anthropic doesn't support audio directly — fall back to transcript if available
             if let transcript = audioContent.transcript {
                 return .text("[Audio transcript: \(transcript)]")
             } else {
-                return .text("[Audio content - not supported in Anthropic API]")
+                throw ProviderError.unsupportedModality(
+                    modality: "audio",
+                    provider: "Anthropic",
+                    supportedProviders: ["Gemini"]
+                )
             }
-            
+
         case .file(let fileContent):
             if fileContent.type == .pdf, let data = fileContent.data {
                 return .pdf(data: data.base64EncodedString())
             } else {
-                // Other file types not supported, convert to text description
-                return .text("[File: \(fileContent.filename) - type not supported in Anthropic API]")
+                throw ProviderError.unsupportedModality(
+                    modality: "file (\(fileContent.mimeType))",
+                    provider: "Anthropic",
+                    supportedProviders: ["Anthropic (PDF only)", "Gemini"]
+                )
             }
-            
+
         case .video:
-            return .text("[Video content - not supported in Anthropic API]")
-            
+            throw ProviderError.unsupportedModality(
+                modality: "video",
+                provider: "Anthropic",
+                supportedProviders: ["Gemini"]
+            )
+
         case .json(let data):
             return .text(String(data: data, encoding: .utf8) ?? "[Invalid JSON]")
-            
+
         case .html(let html):
             return .text(html)
-            
+
         case .markdown(let markdown):
             return .text(markdown)
         }
@@ -142,13 +153,13 @@ extension AIProxyJSONValue {
 extension Array where Element == AIInputMessage {
     /// Convert array of universal messages to Anthropic Messages
     /// Note: System messages will be filtered out and should be passed separately
-    func toAnthropicMessages() -> [AnthropicInputMessage] {
-        return compactMap { message in
+    func toAnthropicMessages() throws -> [AnthropicInputMessage] {
+        return try compactMap { message in
             // Filter out system messages - they go to top-level system parameter
             if message.role == .system {
                 return nil
             }
-            return message.toAnthropicMessage()
+            return try message.toAnthropicMessage()
         }
     }
     
@@ -170,10 +181,10 @@ public func createAnthropicRequest(
     maxTokens: Int = 1000,
     temperature: Double? = nil,
     tools: [AnthropicTool]? = nil
-) -> AnthropicMessageRequestBody {
-    let anthropicMessages = messages.toAnthropicMessages()
+) throws -> AnthropicMessageRequestBody {
+    let anthropicMessages = try messages.toAnthropicMessages()
     let systemPrompt = messages.extractSystemPrompt()
-    
+
     return AnthropicMessageRequestBody(
         maxTokens: maxTokens,
         messages: anthropicMessages,
@@ -199,8 +210,8 @@ public func createAnthropicRequest(
     message: AIInputMessage,
     maxTokens: Int = 1000,
     temperature: Double? = nil
-) -> AnthropicMessageRequestBody {
-    return createAnthropicRequest(
+) throws -> AnthropicMessageRequestBody {
+    return try createAnthropicRequest(
         model: model,
         messages: [message],
         maxTokens: maxTokens,

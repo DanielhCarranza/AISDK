@@ -298,7 +298,7 @@ final class OpenAIResponsesSessionTests: XCTestCase {
             var chunks: [SimpleResponseChunk] = []
             var accumulatedText = ""
             
-            for try await chunk in provider.response("Count to 3")
+            for try await chunk in try provider.response("Count to 3")
                 .model("gpt-4o-mini")
                 .maxOutputTokens(20)
                 .stream() {

@@ -11,14 +11,14 @@ import Foundation
 
 extension AIInputMessage {
     /// Convert universal message to ResponseMessage for OpenAI Responses API
-    func toResponseMessage() -> ResponseMessage {
-        let responseContent = content.map { $0.toResponseContentItem() }
+    func toResponseMessage() throws -> ResponseMessage {
+        let responseContent = try content.map { try $0.toResponseContentItem() }
         return ResponseMessage(role: role.toResponseRole(), content: responseContent)
     }
-    
+
     /// Convert to ResponseInputItem for building requests
-    func toResponseInputItem() -> ResponseInputItem {
-        return .message(toResponseMessage())
+    func toResponseInputItem() throws -> ResponseInputItem {
+        return .message(try toResponseMessage())
     }
 }
 
@@ -36,34 +36,42 @@ extension AIMessageRole {
 
 extension AIContentPart {
     /// Convert universal content part to ResponseContentItem
-    func toResponseContentItem() -> ResponseContentItem {
+    func toResponseContentItem() throws -> ResponseContentItem {
         switch self {
         case .text(let text):
             return .inputText(ResponseInputText(text: text))
-            
+
         case .image(let imageContent):
             return .inputImage(imageContent.toResponseInputImage())
-            
-        case .audio(let audioContent):
-            // Audio not supported in current Response API, convert to text description
-            let description = audioContent.transcript ?? "[Audio content - not supported in Response API]"
-            return .inputText(ResponseInputText(text: description))
-            
-        case .file(let fileContent):
-            // File content not directly supported, convert to text description
-            return .inputText(ResponseInputText(text: "[File: \(fileContent.filename) - content not supported in Response API]"))
-            
+
+        case .audio:
+            throw ProviderError.unsupportedModality(
+                modality: "audio",
+                provider: "OpenAI Responses",
+                supportedProviders: ["Gemini"]
+            )
+
+        case .file:
+            throw ProviderError.unsupportedModality(
+                modality: "file",
+                provider: "OpenAI Responses",
+                supportedProviders: ["Anthropic (PDF only)", "Gemini"]
+            )
+
         case .video:
-            // Video not supported in current Response API, convert to text description
-            return .inputText(ResponseInputText(text: "[Video content - not supported in Response API]"))
-            
+            throw ProviderError.unsupportedModality(
+                modality: "video",
+                provider: "OpenAI Responses",
+                supportedProviders: ["Gemini"]
+            )
+
         case .json(let data):
             let jsonString = String(data: data, encoding: .utf8) ?? "[Invalid JSON]"
             return .inputText(ResponseInputText(text: jsonString))
-            
+
         case .html(let html):
             return .inputText(ResponseInputText(text: html))
-            
+
         case .markdown(let markdown):
             return .inputText(ResponseInputText(text: markdown))
         }
@@ -97,30 +105,30 @@ extension AIImageContent {
 
 extension Array where Element == AIInputMessage {
     /// Convert array of universal messages to ResponseInputItems
-    func toResponseInputItems() -> [ResponseInputItem] {
-        return map { $0.toResponseInputItem() }
+    func toResponseInputItems() throws -> [ResponseInputItem] {
+        return try map { try $0.toResponseInputItem() }
     }
-    
+
     /// Convert array of universal messages to ResponseMessages
-    func toResponseMessages() -> [ResponseMessage] {
-        return map { $0.toResponseMessage() }
+    func toResponseMessages() throws -> [ResponseMessage] {
+        return try map { try $0.toResponseMessage() }
     }
 }
 
 extension Array where Element == AIContentPart {
     /// Convert array of content parts to ResponseContentItems
-    func toResponseContentItems() -> [ResponseContentItem] {
-        return map { $0.toResponseContentItem() }
+    func toResponseContentItems() throws -> [ResponseContentItem] {
+        return try map { try $0.toResponseContentItem() }
     }
-    
+
     /// Convert to ResponseInput for simple content arrays
-    func toResponseInput() -> ResponseInput {
+    func toResponseInput() throws -> ResponseInput {
         if count == 1, case .text(let text) = first {
             // Single text content - use string format
             return .string(text)
         } else {
             // Multiple content parts - use items format with single message
-            let message = ResponseMessage(role: "user", content: toResponseContentItems())
+            let message = ResponseMessage(role: "user", content: try toResponseContentItems())
             return .items([.message(message)])
         }
     }
@@ -130,30 +138,30 @@ extension Array where Element == AIContentPart {
 
 extension AIInputMessage {
     /// Create ResponseInput from this message (for single message requests)
-    func toResponseInput() -> ResponseInput {
+    func toResponseInput() throws -> ResponseInput {
         if role == .user && content.count == 1, case .text(let text) = content.first {
             // Simple text message - use string format
             return .string(text)
         } else {
             // Complex message - use items format
-            return .items([toResponseInputItem()])
+            return .items([try toResponseInputItem()])
         }
     }
 }
 
 /// Helper to create ResponseInput from mixed content
-public func createResponseInput(from content: [AIContentPart]) -> ResponseInput {
-    return content.toResponseInput()
+public func createResponseInput(from content: [AIContentPart]) throws -> ResponseInput {
+    return try content.toResponseInput()
 }
 
 /// Helper to create ResponseInput from conversation
-public func createResponseInput(from conversation: [AIInputMessage]) -> ResponseInput {
-    return .items(conversation.toResponseInputItems())
+public func createResponseInput(from conversation: [AIInputMessage]) throws -> ResponseInput {
+    return .items(try conversation.toResponseInputItems())
 }
 
 /// Helper to create ResponseInput from single message
-public func createResponseInput(from message: AIInputMessage) -> ResponseInput {
-    return message.toResponseInput()
+public func createResponseInput(from message: AIInputMessage) throws -> ResponseInput {
+    return try message.toResponseInput()
 }
 
 /// Helper to create ResponseInput from text

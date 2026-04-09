@@ -11,13 +11,13 @@ import Foundation
 
 extension AIInputMessage {
     /// Convert universal message to Chat Completions LegacyMessage
-    func toChatCompletionMessage() -> LegacyMessage {
+    func toChatCompletionMessage() throws -> LegacyMessage {
         switch role {
         case .user:
             if content.count == 1, case .text(let text) = content.first {
                 return .user(content: .text(text), name: name)
             } else {
-                let parts = content.map { $0.toUserContentPart() }
+                let parts = try content.map { try $0.toUserContentPart() }
                 return .user(content: .parts(parts), name: name)
             }
         case .assistant:
@@ -39,15 +39,30 @@ extension AIInputMessage {
 
 extension AIContentPart {
     /// Convert universal content part to UserContent.Part
-    func toUserContentPart() -> UserContent.Part {
+    func toUserContentPart() throws -> UserContent.Part {
         switch self {
         case .text(let text):
             return .text(text)
         case .image(let imageContent):
             return imageContent.toUserContentImagePart()
-        case .audio, .file, .video:
-            // Convert to text description for unsupported content types in Chat Completions
-            return .text("[Unsupported content type in Chat Completions API]")
+        case .video:
+            throw ProviderError.unsupportedModality(
+                modality: "video",
+                provider: "OpenAI Chat Completions",
+                supportedProviders: ["Gemini"]
+            )
+        case .audio:
+            throw ProviderError.unsupportedModality(
+                modality: "audio",
+                provider: "OpenAI Chat Completions",
+                supportedProviders: ["Gemini"]
+            )
+        case .file:
+            throw ProviderError.unsupportedModality(
+                modality: "file",
+                provider: "OpenAI Chat Completions",
+                supportedProviders: ["Anthropic (PDF only)", "Gemini"]
+            )
         case .json(let data):
             return .text(String(data: data, encoding: .utf8) ?? "[Invalid JSON]")
         case .html(let html):
@@ -103,8 +118,8 @@ extension AIToolCall {
 
 extension Array where Element == AIInputMessage {
     /// Convert array of universal messages to Chat Completions Messages
-    func toChatCompletionMessages() -> [LegacyMessage] {
-        return map { $0.toChatCompletionMessage() }
+    func toChatCompletionMessages() throws -> [LegacyMessage] {
+        return try map { try $0.toChatCompletionMessage() }
     }
 }
 
@@ -117,10 +132,10 @@ public func createChatCompletionRequest(
     maxTokens: Int? = nil,
     temperature: Double? = nil,
     tools: [ToolSchema]? = nil
-) -> ChatCompletionRequest {
+) throws -> ChatCompletionRequest {
     return ChatCompletionRequest(
         model: model,
-        messages: messages.toChatCompletionMessages(),
+        messages: try messages.toChatCompletionMessages(),
         maxTokens: maxTokens,
         temperature: temperature,
         tools: tools
@@ -133,10 +148,10 @@ public func createChatCompletionRequest(
     message: AIInputMessage,
     maxTokens: Int? = nil,
     temperature: Double? = nil
-) -> ChatCompletionRequest {
+) throws -> ChatCompletionRequest {
     return ChatCompletionRequest(
         model: model,
-        messages: [message.toChatCompletionMessage()],
+        messages: [try message.toChatCompletionMessage()],
         maxTokens: maxTokens,
         temperature: temperature
     )

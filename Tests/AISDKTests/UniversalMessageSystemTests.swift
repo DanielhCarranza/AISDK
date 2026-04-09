@@ -133,14 +133,14 @@ final class UniversalMessageSystemTests: XCTestCase {
     
     // MARK: - Response API Conversion Tests
     
-    func testConvertToResponseMessage() {
+    func testConvertToResponseMessage() throws {
         let message = AIInputMessage.user([
             .text("Hello"),
             .html("<p>HTML content</p>"),
             .markdown("**Bold text**")
         ])
-        
-        let responseMessage = message.toResponseMessage()
+
+        let responseMessage = try message.toResponseMessage()
         
         XCTAssertEqual(responseMessage.role, "user")
         XCTAssertEqual(responseMessage.content.count, 3)
@@ -155,14 +155,14 @@ final class UniversalMessageSystemTests: XCTestCase {
         }
     }
     
-    func testConvertImageURLToResponseMessage() {
+    func testConvertImageURLToResponseMessage() throws {
         let url = URL(string: "https://example.com/image.jpg")!
         let message = AIInputMessage.user([
             .text("Look at this:"),
             .imageURL(url)
         ])
-        
-        let responseMessage = message.toResponseMessage()
+
+        let responseMessage = try message.toResponseMessage()
         
         XCTAssertEqual(responseMessage.content.count, 2)
         
@@ -180,10 +180,10 @@ final class UniversalMessageSystemTests: XCTestCase {
         }
     }
     
-    func testConvertToResponseInput() {
+    func testConvertToResponseInput() throws {
         // Test simple text conversion
         let simpleMessage = AIInputMessage.user("Hello")
-        let simpleInput = simpleMessage.toResponseInput()
+        let simpleInput = try simpleMessage.toResponseInput()
         
         if case .string(let text) = simpleInput {
             XCTAssertEqual(text, "Hello")
@@ -196,7 +196,7 @@ final class UniversalMessageSystemTests: XCTestCase {
             .text("Hello"),
             .markdown("**Bold**")
         ])
-        let complexInput = complexMessage.toResponseInput()
+        let complexInput = try complexMessage.toResponseInput()
         
         if case .items(let items) = complexInput {
             XCTAssertEqual(items.count, 1)
@@ -207,9 +207,9 @@ final class UniversalMessageSystemTests: XCTestCase {
     
     // MARK: - Chat Completions Conversion Tests
     
-    func testConvertToChatCompletionMessage() {
+    func testConvertToChatCompletionMessage() throws {
         let message = AIInputMessage.user("Hello, AI!")
-        let chatMessage = message.toChatCompletionMessage()
+        let chatMessage = try message.toChatCompletionMessage()
         
         if case .user(let content, let name) = chatMessage {
             if case .text(let text) = content {
@@ -223,14 +223,14 @@ final class UniversalMessageSystemTests: XCTestCase {
         }
     }
     
-    func testConvertMultimodalToChatCompletion() {
+    func testConvertMultimodalToChatCompletion() throws {
         let imageData = Data("image".utf8)
         let message = AIInputMessage.user([
             .text("What's in this image?"),
             .image(imageData, detail: .high)
         ])
-        
-        let chatMessage = message.toChatCompletionMessage()
+
+        let chatMessage = try message.toChatCompletionMessage()
         
         if case .user(let content, _) = chatMessage {
             if case .parts(let parts) = content {
@@ -262,19 +262,19 @@ final class UniversalMessageSystemTests: XCTestCase {
     
     // MARK: - Conversation Array Tests
     
-    func testConversationConversions() {
+    func testConversationConversions() throws {
         let conversation = [
             AIInputMessage.system("You are helpful."),
             AIInputMessage.user("Hello!"),
             AIInputMessage.assistant("Hi there!")
         ]
-        
+
         // Test Response API conversion
-        let responseItems = conversation.toResponseInputItems()
+        let responseItems = try conversation.toResponseInputItems()
         XCTAssertEqual(responseItems.count, 3)
-        
+
         // Test Chat Completions conversion
-        let chatMessages = conversation.toChatCompletionMessages()
+        let chatMessages = try conversation.toChatCompletionMessages()
         XCTAssertEqual(chatMessages.count, 3)
         
         // Verify types

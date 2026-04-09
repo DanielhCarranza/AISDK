@@ -102,14 +102,14 @@ public class ResponseSession {
     
     /// Execute the request and return a simplified response
     public func execute() async throws -> Response {
-        let request = content.buildResponseRequest()
+        let request = try content.buildResponseRequest()
         let responseObject = try await provider.createResponse(request: request)
         return Response(from: responseObject)
     }
-    
+
     /// Stream the response with simplified events
-    public func stream() -> AsyncThrowingStream<SimpleResponseChunk, Error> {
-        let request = content.buildResponseRequest(streaming: true)
+    public func stream() throws -> AsyncThrowingStream<SimpleResponseChunk, Error> {
+        let request = try content.buildResponseRequest(streaming: true)
         let originalStream = provider.createResponseStream(request: request)
         
         return AsyncThrowingStream { continuation in
@@ -152,16 +152,16 @@ internal class SessionContent {
     }
     
 
-    func buildResponseRequest(streaming: Bool = false) -> ResponseRequest {
+    func buildResponseRequest(streaming: Bool = false) throws -> ResponseRequest {
         // Convert content to ResponseInput
         let input: ResponseInput
         if let conversation = conversation {
             // Multiple messages for conversation
-            let inputItems = conversation.map { $0.toResponseInputItem() }
+            let inputItems = try conversation.map { try $0.toResponseInputItem() }
             input = .items(inputItems)
         } else if let message = message {
             // Single message
-            input = .items([message.toResponseInputItem()])
+            input = .items([try message.toResponseInputItem()])
         } else {
             // Fallback to simple text
             input = .string("Hello")

@@ -176,10 +176,22 @@ public actor LiteLLMClient: ProviderClient {
     }
 
     public func capabilities(for modelId: String) async -> LLMCapabilities? {
-        // LiteLLM can provide model metadata, but for now return nil
-        // This can be enhanced in a future task to parse model capabilities
-        // from the /models endpoint response
-        return nil
+        // Route capabilities based on the underlying model behind LiteLLM
+        let id = modelId.lowercased()
+        switch id {
+        case let m where m.contains("gemini"):
+            return [.text, .vision, .audio, .video, .tools, .streaming, .functionCalling, .jsonMode]
+        case let m where m.contains("gpt-4o"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .jsonMode, .webSearch]
+        case let m where m.contains("gpt-4"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .jsonMode]
+        case let m where m.contains("claude"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .jsonMode, .reasoning, .pdf]
+        case let m where m.hasPrefix("o1") || m.hasPrefix("o3") || m.hasPrefix("o4"):
+            return [.text, .tools, .streaming, .reasoning, .webSearch]
+        default:
+            return [.text, .tools, .streaming, .functionCalling]
+        }
     }
 
     // MARK: - Private Methods
@@ -209,13 +221,13 @@ public actor LiteLLMClient: ProviderClient {
     }
 
     private func buildRequestBody(from request: ProviderRequest, streaming: Bool) throws -> LiteLLMRequestBody {
-        let messages = request.messages.map { message -> LiteLLMMessage in
+        let messages = try request.messages.map { message -> LiteLLMMessage in
             let content: LiteLLMContent
             switch message.content {
             case .text(let text):
                 content = .text(text)
             case .parts(let parts):
-                let litellmParts = parts.map { part -> LiteLLMContentPart in
+                let litellmParts = try parts.map { part -> LiteLLMContentPart in
                     switch part {
                     case .text(let text):
                         return .text(text)
@@ -224,9 +236,24 @@ public actor LiteLLMClient: ProviderClient {
                         return .imageURL("data:\(mimeType);base64,\(base64)")
                     case .imageURL(let url):
                         return .imageURL(url)
-                    case .audio, .file, .video, .videoURL:
-                        // Not directly supported, fall back to text description
-                        return .text("[Unsupported content type]")
+                    case .video, .videoURL:
+                        throw ProviderError.unsupportedModality(
+                            modality: "video",
+                            provider: "LiteLLM",
+                            supportedProviders: ["Gemini"]
+                        )
+                    case .audio:
+                        throw ProviderError.unsupportedModality(
+                            modality: "audio",
+                            provider: "LiteLLM",
+                            supportedProviders: ["Gemini"]
+                        )
+                    case .file:
+                        throw ProviderError.unsupportedModality(
+                            modality: "file",
+                            provider: "LiteLLM",
+                            supportedProviders: ["Anthropic (PDF only)", "Gemini"]
+                        )
                     }
                 }
                 content = .parts(litellmParts)

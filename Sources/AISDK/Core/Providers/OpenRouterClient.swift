@@ -178,10 +178,22 @@ public actor OpenRouterClient: ProviderClient {
     }
 
     public func capabilities(for modelId: String) async -> LLMCapabilities? {
-        // OpenRouter provides model metadata, but for now return nil
-        // This can be enhanced in a future task to parse model capabilities
-        // from the /models endpoint response
-        return nil
+        // Route capabilities based on the underlying model behind OpenRouter
+        let id = modelId.lowercased()
+        switch id {
+        case let m where m.contains("gemini"):
+            return [.text, .vision, .audio, .video, .tools, .streaming, .functionCalling, .jsonMode]
+        case let m where m.contains("gpt-4o"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .jsonMode, .webSearch]
+        case let m where m.contains("gpt-4"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .jsonMode]
+        case let m where m.contains("claude"):
+            return [.text, .vision, .tools, .streaming, .functionCalling, .jsonMode, .reasoning, .pdf]
+        case let m where m.hasPrefix("o1") || m.hasPrefix("o3") || m.hasPrefix("o4"):
+            return [.text, .tools, .streaming, .reasoning, .webSearch]
+        default:
+            return [.text, .tools, .streaming, .functionCalling]
+        }
     }
 
     // MARK: - Private Methods
@@ -212,13 +224,13 @@ public actor OpenRouterClient: ProviderClient {
     }
 
     private func buildRequestBody(from request: ProviderRequest, streaming: Bool) throws -> OpenRouterRequestBody {
-        let messages = request.messages.map { message -> OpenRouterMessage in
+        let messages = try request.messages.map { message -> OpenRouterMessage in
             let content: OpenRouterContent
             switch message.content {
             case .text(let text):
                 content = .text(text)
             case .parts(let parts):
-                let openRouterParts = parts.map { part -> OpenRouterContentPart in
+                let openRouterParts = try parts.map { part -> OpenRouterContentPart in
                     switch part {
                     case .text(let text):
                         return .text(text)
@@ -227,10 +239,24 @@ public actor OpenRouterClient: ProviderClient {
                         return .imageURL("data:\(mimeType);base64,\(base64)")
                     case .imageURL(let url):
                         return .imageURL(url)
-                    case .audio, .file, .video, .videoURL:
-                        // Video/audio not supported via OpenAI-compatible chat completions format
-                        // Use Gemini provider for video support
-                        return .text("[Unsupported content type]")
+                    case .video, .videoURL:
+                        throw ProviderError.unsupportedModality(
+                            modality: "video",
+                            provider: "OpenRouter",
+                            supportedProviders: ["Gemini"]
+                        )
+                    case .audio:
+                        throw ProviderError.unsupportedModality(
+                            modality: "audio",
+                            provider: "OpenRouter",
+                            supportedProviders: ["Gemini"]
+                        )
+                    case .file:
+                        throw ProviderError.unsupportedModality(
+                            modality: "file",
+                            provider: "OpenRouter",
+                            supportedProviders: ["Anthropic (PDF only)", "Gemini"]
+                        )
                     }
                 }
                 content = .parts(openRouterParts)
