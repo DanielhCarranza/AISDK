@@ -231,51 +231,76 @@ extension ProviderError {
 
 ---
 
+## AgentError
+
+Primary error type thrown by the `Agent` actor. Conforms to `AIError`.
+
+```swift
+public enum AgentError: AIError {
+    case invalidModel
+    case missingAPIKey
+    case toolExecutionFailed(String)
+    case invalidToolResponse
+    case conversationLimitExceeded
+    case invalidParameterType(String)
+    case invalidConfiguration(String)
+    case streamingError(String)
+    case underlying(Error)
+    case operationCancelled
+    case computerUseHandlerNotConfigured
+}
+```
+
+---
+
 ## AIAgentError
 
 Errors from agent operations.
 
 ```swift
 public enum AIAgentError: Error, Sendable {
-    /// Maximum steps exceeded
-    case maxStepsExceeded(Int)
+    /// Operation was cancelled by a callback
+    case operationCancelled
 
     /// Tool execution failed
-    case toolExecutionFailed(tool: String, error: Error)
+    case toolExecutionFailed(String)
 
-    /// Tool not found
-    case toolNotFound(String)
+    /// Invalid tool response
+    case invalidToolResponse
 
-    /// Invalid tool arguments
-    case invalidToolArguments(tool: String, reason: String)
+    /// Maximum tool rounds exceeded
+    case maxToolRoundsExceeded
 
-    /// Model error
-    case modelError(Error)
+    /// No response from LLM
+    case noResponse
 
-    /// Operation cancelled
-    case cancelled
+    /// Stream error
+    case streamError(String)
+
+    /// Configuration error
+    case configurationError(String)
 }
 ```
 
 ---
 
-## AIToolError
+## ToolError
 
 Errors from tool operations.
 
 ```swift
-public enum AIToolError: Error, Sendable {
-    /// Invalid arguments
-    case invalidArguments(String)
-
-    /// Execution timeout
-    case timeout(Duration)
-
-    /// Tool not found
-    case notFound(String)
+public enum ToolError: AIError {
+    /// Invalid parameters
+    case invalidParameters(String)
 
     /// Execution failed
-    case executionFailed(Error)
+    case executionFailed(String)
+
+    /// Validation failed
+    case validationFailed(String)
+
+    /// Unsupported operation
+    case unsupportedOperation(String)
 }
 ```
 
@@ -381,7 +406,7 @@ do {
     handleAISDKError(error)
 } catch let error as ProviderError {
     handleProviderError(error)
-} catch let error as AIAgentError {
+} catch let error as AgentError {
     handleAgentError(error)
 } catch {
     handleUnknownError(error)
