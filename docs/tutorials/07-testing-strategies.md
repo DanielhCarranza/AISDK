@@ -19,12 +19,8 @@ import XCTest
 final class AgentTests: XCTestCase {
 
     func test_agent_returns_text_response() async throws {
-        // Create mock with predetermined responses
-        let mock = MockLLM(
-            responses: [
-                .text("Hello! How can I help you?")
-            ]
-        )
+        // Create mock with a fixed response using factory method
+        let mock = MockLLM.withResponse("Hello! How can I help you?")
 
         let agent = Agent(model: mock, tools: [])
 
@@ -41,60 +37,19 @@ final class AgentTests: XCTestCase {
 
 ```swift
 func test_agent_calls_weather_tool() async throws {
-    let mock = MockLLM(
-        responses: [
-            // First response: tool call
-            .toolCall(name: "get_weather", arguments: #"{"city": "Tokyo"}"#),
-            // Second response: final answer
-            .text("The weather in Tokyo is 72F and sunny.")
-        ]
-    )
+    // Create mock that triggers a tool call
+    let mock = MockLLM.withToolCall("get_weather", arguments: #"{"city": "Tokyo"}"#)
 
-    let weatherTool = MockWeatherTool()
     let agent = Agent(
         model: mock,
-        tools: [weatherTool]
+        tools: [WeatherTool.self]  // Pass tool metatypes, not instances
     )
 
     let result = try await agent.execute(
         messages: [.user("What's the weather in Tokyo?")]
     )
 
-    XCTAssertTrue(weatherTool.wasExecuted)
-    XCTAssertEqual(weatherTool.lastCity, "Tokyo")
-    XCTAssertTrue(result.text.contains("72F"))
-}
-```
-
-### Testing Multi-Step Workflows
-
-```swift
-func test_agent_multi_step_research() async throws {
-    let mock = MockLLM(
-        responses: [
-            // Step 1: Search
-            .toolCall(name: "web_search", arguments: #"{"query": "Swift history"}"#),
-            // Step 2: Wikipedia lookup
-            .toolCall(name: "wikipedia", arguments: #"{"topic": "Swift (programming language)"}"#),
-            // Step 3: Save note
-            .toolCall(name: "save_note", arguments: #"{"title": "Swift Research"}"#),
-            // Step 4: Final response
-            .text("I've researched Swift and saved a note with my findings.")
-        ]
-    )
-
-    let agent = Agent(
-        model: mock,
-        tools: [searchTool, wikiTool, noteTool]
-    )
-
-    let result = try await agent.execute(
-        messages: [.user("Research Swift programming language")]
-    )
-
-    // Verify all tools were called
-    XCTAssertEqual(mock.callCount, 4)
-    XCTAssertTrue(result.text.contains("saved a note"))
+    XCTAssertFalse(result.text.isEmpty)
 }
 ```
 
@@ -104,22 +59,16 @@ Test timeout handling:
 
 ```swift
 func test_request_timeout() async throws {
-    let mock = MockLLM(
-        responses: [.text("Response")],
-        delay: .seconds(5)  // Slow response
-    )
+    // Create mock with a slow response using factory method
+    let mock = MockLLM.withSlowResponse(delay: .seconds(5), response: "Response")
 
-    let agent = Agent(
-        model: mock,
-        tools: [],
-        timeout: .seconds(1)  // Short timeout
-    )
+    let agent = Agent(model: mock, tools: [])
 
     do {
         _ = try await agent.execute(messages: [.user("Hi")])
         XCTFail("Should have timed out")
     } catch {
-        XCTAssertTrue(error is TimeoutError)
+        // Expected timeout
     }
 }
 ```
@@ -132,9 +81,7 @@ Test concurrent operations and resource handling.
 
 ```swift
 func test_100_concurrent_executions() async throws {
-    let mock = MockLLM(
-        responses: [.text("Response")]
-    )
+    let mock = MockLLM.withResponse("Response")
 
     var successCount = 0
     var errorCount = 0
@@ -249,7 +196,7 @@ func test_agents_deallocate_after_execution() async throws {
     var weakRefs: [WeakRef<AnyObject>] = []
 
     for _ in 0..<100 {
-        let model = MockLLM(responses: [.text("Hi")])
+        let model = MockLLM.withResponse("Hi")
         let agent = Agent(model: model, tools: [])
 
         weakRefs.append(WeakRef(agent as AnyObject))
