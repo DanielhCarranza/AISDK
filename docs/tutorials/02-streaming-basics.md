@@ -38,7 +38,7 @@ for try await event in client.stream(request: request) {
 For agent conversations with tool support:
 
 ```swift
-let agent = AIAgentActor(model: client, tools: [])
+let agent = Agent(model: client, tools: [])
 
 for try await event in agent.streamExecute(messages: [.user("Count to 5")]) {
     switch event {

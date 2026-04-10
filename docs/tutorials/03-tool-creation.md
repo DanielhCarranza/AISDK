@@ -7,14 +7,14 @@
 Tools let AI agents interact with external systems - fetching data, performing calculations, or executing actions.
 
 AISDK provides a single, unified tool system:
-- **`AITool`** - Instance-based, parameterized with `@AIParameter` (or `@Parameter`).
+- **`Tool`** - Instance-based, parameterized with `@Parameter` (or `@Parameter`).
 
-## Creating a Simple AITool
+## Creating a Simple Tool
 
 ```swift
 import AISDK
 
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
 
@@ -23,18 +23,18 @@ struct WeatherTool: AITool {
         case fahrenheit
     }
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
 
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .fahrenheit
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // In real code, call a weather API here
         let temp = unit == .celsius ? "22C" : "72F"
-        return AIToolResult(content: "Weather in \(city): \(temp), sunny")
+        return ToolResult(content: "Weather in \(city): \(temp), sunny")
     }
 }
 ```
@@ -42,14 +42,14 @@ struct WeatherTool: AITool {
 ## Tool with Input Validation
 
 ```swift
-struct CalculatorTool: AITool {
+struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform math calculations"
 
-    @AIParameter(description: "First number", .range(-1000...1000))
+    @Parameter(description: "First number", .range(-1000...1000))
     var a: Double = 0
 
-    @AIParameter(description: "Second number", .range(-1000...1000))
+    @Parameter(description: "Second number", .range(-1000...1000))
     var b: Double = 0
 
     enum Operation: String, Codable, CaseIterable {
@@ -59,12 +59,12 @@ struct CalculatorTool: AITool {
         case divide = "/"
     }
 
-    @AIParameter(description: "Operation")
+    @Parameter(description: "Operation")
     var operation: Operation = .plus
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
         case .plus: result = a + b
@@ -74,7 +74,7 @@ struct CalculatorTool: AITool {
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
         }
-        return AIToolResult(content: "\(a) \(operation.rawValue) \(b) = \(result)")
+        return ToolResult(content: "\(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 ```
@@ -82,7 +82,7 @@ struct CalculatorTool: AITool {
 ## Tool Returning Metadata
 
 ```swift
-struct SearchTool: AITool {
+struct SearchTool: Tool {
     struct SearchMetadata: ToolMetadata {
         let resultCount: Int
         let sources: [String]
@@ -91,18 +91,18 @@ struct SearchTool: AITool {
     let name = "search"
     let description = "Search the web"
 
-    @AIParameter(description: "Search query")
+    @Parameter(description: "Search query")
     var query: String = ""
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let results = await performSearch(query)
         let metadata = SearchMetadata(
             resultCount: results.count,
             sources: results.map(\.url)
         )
-        return AIToolResult(
+        return ToolResult(
             content: results.map(\.title).joined(separator: "\n"),
             metadata: metadata
         )
@@ -125,16 +125,16 @@ struct WeatherToolUI: RenderableTool {
     let name = "get_weather"
     let description = "Get the current weather in a given city"
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let args = WeatherRenderArgs(city: city, temperature: 72, condition: "Sunny")
         let jsonData = try JSONEncoder().encode(args)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        return AIToolResult(content: "Weather in \(city): 72°F, Sunny", metadata: metadata)
+        return ToolResult(content: "Weather in \(city): 72°F, Sunny", metadata: metadata)
     }
 
     func render(from data: Data) -> AnyView {
@@ -149,7 +149,7 @@ struct WeatherToolUI: RenderableTool {
 ## Using Tools with Agent
 
 ```swift
-let agent = AIAgentActor(
+let agent = Agent(
     model: languageModel,
     tools: [WeatherTool.self],
     instructions: "You can check the weather."
@@ -174,11 +174,11 @@ for try await event in agent.streamExecute(messages: [.user("What's the weather 
 3. **Handle errors gracefully** - Return meaningful error messages in content
 4. **Keep tools focused** - One tool, one purpose
 5. **Use snake_case names** - e.g., `get_weather` not `getWeather`
-6. **Don’t duplicate wrappers** - When using `@Parameter`/`@AIParameter`, do not re-initialize in `init()`
+6. **Don’t duplicate wrappers** - When using `@Parameter`/`@Parameter`, do not re-initialize in `init()`
 
-## Notes on @Parameter vs @AIParameter
+## Notes on @Parameter vs @Parameter
 
-- They are equivalent. Prefer `@AIParameter` for new code.
+- They are equivalent. Prefer `@Parameter` for new code.
 - Both support validation and enum inference.
 
 ## Next Steps

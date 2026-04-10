@@ -81,7 +81,7 @@ struct ChatScreen: View {
     @State private var vm: ChatViewModel
     @State private var input = ""
 
-    init(agent: AIAgentActor, store: SessionStore) {
+    init(agent: Agent, store: SessionStore) {
         _vm = State(initialValue: ChatViewModel(agent: agent, store: store))
     }
 

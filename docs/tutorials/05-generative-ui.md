@@ -75,9 +75,9 @@ class GenerativeUIViewModel {
     private(set) var isLoading = false
 
     private let catalog: UICatalog
-    private let agent: AIAgentActor
+    private let agent: Agent
 
-    init(catalog: UICatalog = .core8, agent: AIAgentActor) {
+    init(catalog: UICatalog = .core8, agent: Agent) {
         self.catalog = catalog
         self.agent = agent
     }
@@ -307,7 +307,7 @@ class FormGeneratorViewModel: ObservableObject {
     @Published var formData: [String: String] = [:]
     @Published var isSubmitting = false
 
-    private let agent: AIAgentActor
+    private let agent: Agent
     private let catalog: UICatalog
 
     init() {
@@ -324,7 +324,7 @@ class FormGeneratorViewModel: ObservableObject {
         self.catalog = catalog
 
         // Create agent
-        self.agent = AIAgentActor(
+        self.agent = Agent(
             model: OpenRouterClient(),
             tools: [],
             instructions: catalog.generatePrompt()

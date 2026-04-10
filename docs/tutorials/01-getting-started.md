@@ -42,10 +42,10 @@ print(response.content)
 
 ## Using the Agent
 
-For conversations with tool support, use `AIAgentActor`:
+For conversations with tool support, use `Agent`:
 
 ```swift
-let agent = AIAgentActor(
+let agent = Agent(
     model: client,
     tools: [],
     instructions: "You are a helpful assistant."

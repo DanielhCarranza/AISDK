@@ -8,7 +8,7 @@ Testing AI applications presents unique challenges: non-deterministic outputs, e
 
 ## Mock Language Model
 
-AISDK provides `MockAILanguageModel` for deterministic testing.
+AISDK provides `MockLLM` for deterministic testing.
 
 ### Basic Mocking
 
@@ -20,13 +20,13 @@ final class AgentTests: XCTestCase {
 
     func test_agent_returns_text_response() async throws {
         // Create mock with predetermined responses
-        let mock = MockAILanguageModel(
+        let mock = MockLLM(
             responses: [
                 .text("Hello! How can I help you?")
             ]
         )
 
-        let agent = AIAgentActor(model: mock, tools: [])
+        let agent = Agent(model: mock, tools: [])
 
         let result = try await agent.execute(
             messages: [.user("Hi")]
@@ -41,7 +41,7 @@ final class AgentTests: XCTestCase {
 
 ```swift
 func test_agent_calls_weather_tool() async throws {
-    let mock = MockAILanguageModel(
+    let mock = MockLLM(
         responses: [
             // First response: tool call
             .toolCall(name: "get_weather", arguments: #"{"city": "Tokyo"}"#),
@@ -51,7 +51,7 @@ func test_agent_calls_weather_tool() async throws {
     )
 
     let weatherTool = MockWeatherTool()
-    let agent = AIAgentActor(
+    let agent = Agent(
         model: mock,
         tools: [weatherTool]
     )
@@ -70,7 +70,7 @@ func test_agent_calls_weather_tool() async throws {
 
 ```swift
 func test_agent_multi_step_research() async throws {
-    let mock = MockAILanguageModel(
+    let mock = MockLLM(
         responses: [
             // Step 1: Search
             .toolCall(name: "web_search", arguments: #"{"query": "Swift history"}"#),
@@ -83,7 +83,7 @@ func test_agent_multi_step_research() async throws {
         ]
     )
 
-    let agent = AIAgentActor(
+    let agent = Agent(
         model: mock,
         tools: [searchTool, wikiTool, noteTool]
     )
@@ -104,12 +104,12 @@ Test timeout handling:
 
 ```swift
 func test_request_timeout() async throws {
-    let mock = MockAILanguageModel(
+    let mock = MockLLM(
         responses: [.text("Response")],
         delay: .seconds(5)  // Slow response
     )
 
-    let agent = AIAgentActor(
+    let agent = Agent(
         model: mock,
         tools: [],
         timeout: .seconds(1)  // Short timeout
@@ -132,7 +132,7 @@ Test concurrent operations and resource handling.
 
 ```swift
 func test_100_concurrent_executions() async throws {
-    let mock = MockAILanguageModel(
+    let mock = MockLLM(
         responses: [.text("Response")]
     )
 
@@ -143,7 +143,7 @@ func test_100_concurrent_executions() async throws {
     await withTaskGroup(of: Void.self) { group in
         for _ in 0..<100 {
             group.addTask {
-                let agent = AIAgentActor(model: mock, tools: [])
+                let agent = Agent(model: mock, tools: [])
                 do {
                     _ = try await agent.execute(messages: [.user("Test")])
                     lock.lock()
@@ -249,8 +249,8 @@ func test_agents_deallocate_after_execution() async throws {
     var weakRefs: [WeakRef<AnyObject>] = []
 
     for _ in 0..<100 {
-        let model = MockAILanguageModel(responses: [.text("Hi")])
-        let agent = AIAgentActor(model: model, tools: [])
+        let model = MockLLM(responses: [.text("Hi")])
+        let agent = Agent(model: model, tools: [])
 
         weakRefs.append(WeakRef(agent as AnyObject))
 
@@ -472,7 +472,7 @@ extension XCTestCase {
 
 ## Best Practices
 
-1. **Mock external APIs** - Use MockAILanguageModel for unit tests
+1. **Mock external APIs** - Use MockLLM for unit tests
 2. **Test edge cases** - Empty responses, errors, timeouts
 3. **Run stress tests** - Verify concurrent behavior
 4. **Check for leaks** - Monitor object lifecycle
@@ -500,7 +500,7 @@ OPENROUTER_API_KEY=xxx swift test --filter IntegrationTests
 
 | Test Type | Purpose | Tools |
 |-----------|---------|-------|
-| Unit | Single component | MockAILanguageModel |
+| Unit | Single component | MockLLM |
 | Stress | Concurrency | withTaskGroup, StressTestMetrics |
 | Memory | Leak detection | WeakRef, autoreleasepool |
 | Integration | Real APIs | XCTSkip for optional |

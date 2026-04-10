@@ -16,7 +16,7 @@ When an agent receives a message, it may:
 
 ```swift
 // Agent automatically handles multi-step execution
-let agent = AIAgentActor(
+let agent = Agent(
     model: client,
     tools: [WeatherTool.self, CalendarTool.self, EmailTool.self],
     instructions: """
@@ -40,7 +40,7 @@ let result = try await agent.execute(
 Limit iterations to prevent runaway loops:
 
 ```swift
-let agent = AIAgentActor(
+let agent = Agent(
     model: client,
     tools: tools,
     maxSteps: 10  // Stop after 10 LLM calls
@@ -76,7 +76,7 @@ class ChatViewModel {
     var isProcessing = false
     var error: Error?
 
-    private let agent: AIAgentActor
+    private let agent: Agent
 
     func sendMessage(_ text: String) async {
         messages.append(.user(text))
@@ -169,7 +169,7 @@ struct NoteTool: AITool {
 }
 
 // Create research agent
-let researchAgent = AIAgentActor(
+let researchAgent = Agent(
     model: client,
     tools: [WebSearchTool.self, WikipediaTool.self, NoteTool.self],
     instructions: """
@@ -196,10 +196,10 @@ For simple, in-memory context tracking:
 
 ```swift
 class ConversationManager {
-    private let agent: AIAgentActor
+    private let agent: Agent
     private var history: [AIMessage] = []
 
-    init(agent: AIAgentActor) {
+    init(agent: Agent) {
         self.agent = agent
     }
 
@@ -232,7 +232,7 @@ See [Sessions & Persistence](08-sessions.md) for the full guide.
 When multiple tools can run independently:
 
 ```swift
-let agent = AIAgentActor(
+let agent = Agent(
     model: client,
     tools: [WeatherTool.self, StockTool.self, NewsTool.self],
     parallelToolCalls: true  // Enable parallel execution
