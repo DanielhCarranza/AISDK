@@ -633,7 +633,8 @@ public extension ProviderResponse {
             requestId: id,
             model: model,
             provider: provider,
-            sources: sources
+            sources: sources,
+            providerMetadata: metadata
         )
     }
 }

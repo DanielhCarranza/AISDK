@@ -524,6 +524,105 @@ final class GeminiResponseParsingTests: XCTestCase {
         XCTAssertNil(body["cachedContent"])
     }
 
+    // MARK: - Tool Call ID Preservation Tests
+
+    func testToolCallIdPreservedInFunctionCall() async throws {
+        let body = await captureGeminiRequestBodyForMultiTurn(messages: [
+            AIMessage(role: .user, content: .text("What's the weather?")),
+            AIMessage(
+                role: .assistant,
+                content: .text(""),
+                toolCalls: [AIMessage.ToolCall(id: "call_weather_abc123", name: "get_weather", arguments: "{\"city\":\"Tokyo\"}")]
+            ),
+            AIMessage(role: .tool, content: .text("72°F"), name: "get_weather", toolCallId: "call_weather_abc123"),
+            AIMessage(role: .user, content: .text("Thanks"))
+        ])
+
+        let contents = body["contents"] as? [[String: Any]] ?? []
+        // The assistant message (second content) should have functionCall with id
+        guard contents.count >= 2,
+              let parts = contents[1]["parts"] as? [[String: Any]] else {
+            XCTFail("Missing assistant content with parts")
+            return
+        }
+
+        let hasFunctionCallWithId = parts.contains { part in
+            guard let fc = part["functionCall"] as? [String: Any] else { return false }
+            return fc["id"] as? String == "call_weather_abc123"
+        }
+        XCTAssertTrue(hasFunctionCallWithId, "Function call should preserve tool call ID")
+    }
+
+    func testToolResponseIdPreserved() async throws {
+        let body = await captureGeminiRequestBodyForMultiTurn(messages: [
+            AIMessage(role: .user, content: .text("What's the weather?")),
+            AIMessage(
+                role: .assistant,
+                content: .text(""),
+                toolCalls: [AIMessage.ToolCall(id: "call_weather_abc123", name: "get_weather", arguments: "{}")]
+            ),
+            AIMessage(role: .tool, content: .text("72°F"), name: "get_weather", toolCallId: "call_weather_abc123")
+        ])
+
+        let contents = body["contents"] as? [[String: Any]] ?? []
+        // The tool response (third content) should have functionResponse with id
+        guard contents.count >= 3,
+              let parts = contents[2]["parts"] as? [[String: Any]] else {
+            XCTFail("Missing tool response content with parts")
+            return
+        }
+
+        let hasFunctionResponseWithId = parts.contains { part in
+            guard let fr = part["functionResponse"] as? [String: Any] else { return false }
+            return fr["id"] as? String == "call_weather_abc123"
+        }
+        XCTAssertTrue(hasFunctionResponseWithId, "Function response should preserve tool call ID")
+    }
+
+    // MARK: - Thought Re-injection Tests
+
+    func testThoughtContentReinjectedForAssistantMessages() async throws {
+        var assistantMsg = AIMessage(role: .assistant, content: .text("The answer is 42."))
+        assistantMsg.providerMetadata = ["reasoning": "Let me think about this carefully..."]
+
+        let body = await captureGeminiRequestBodyForMultiTurn(messages: [
+            AIMessage(role: .user, content: .text("What's the meaning of life?")),
+            assistantMsg,
+            AIMessage(role: .user, content: .text("Why?"))
+        ])
+
+        let contents = body["contents"] as? [[String: Any]] ?? []
+        // The assistant message (second content) should have thought part
+        guard contents.count >= 2,
+              let parts = contents[1]["parts"] as? [[String: Any]] else {
+            XCTFail("Missing assistant content with parts")
+            return
+        }
+
+        let hasThoughtPart = parts.contains { part in
+            part["thought"] as? Bool == true && (part["text"] as? String)?.contains("think about this") == true
+        }
+        XCTAssertTrue(hasThoughtPart, "Thought content should be re-injected for assistant messages")
+    }
+
+    func testNoThoughtPartWhenNoProviderMetadata() async throws {
+        let body = await captureGeminiRequestBodyForMultiTurn(messages: [
+            AIMessage(role: .user, content: .text("Hello")),
+            AIMessage(role: .assistant, content: .text("Hi!")),
+            AIMessage(role: .user, content: .text("Bye"))
+        ])
+
+        let contents = body["contents"] as? [[String: Any]] ?? []
+        guard contents.count >= 2,
+              let parts = contents[1]["parts"] as? [[String: Any]] else {
+            XCTFail("Missing assistant content with parts")
+            return
+        }
+
+        let hasThoughtPart = parts.contains { $0["thought"] as? Bool == true }
+        XCTAssertFalse(hasThoughtPart, "No thought part should be present without providerMetadata")
+    }
+
     func testParseStreamChunk() throws {
         let json = """
         {
@@ -600,6 +699,59 @@ private func captureGeminiRequestBody(
         messages: [AIMessage(role: .user, content: .text("Hello"))],
         reasoning: reasoning,
         providerOptions: providerOptions
+    )
+
+    _ = try? await client.execute(request: providerRequest)
+    return capturedBody
+}
+
+private func captureGeminiRequestBodyForMultiTurn(
+    messages: [AIMessage]
+) async -> [String: Any] {
+    MockURLProtocol.reset()
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let client = GeminiClientAdapter(apiKey: "test-api-key", session: session)
+
+    var capturedBody: [String: Any] = [:]
+    MockURLProtocol.requestHandler = { request in
+        let bodyData = readRequestBody(request)
+        if let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            capturedBody = json
+        }
+
+        let responseJSON = """
+        {
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": "ok"}]
+                },
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 1,
+                "totalTokenCount": 2
+            },
+            "modelVersion": "gemini-2.5-pro",
+            "responseId": "resp-test"
+        }
+        """.data(using: .utf8) ?? Data()
+
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://generativelanguage.googleapis.com/v1beta")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (response, responseJSON)
+    }
+
+    let providerRequest = ProviderRequest(
+        modelId: "gemini-2.5-pro",
+        messages: messages
     )
 
     _ = try? await client.execute(request: providerRequest)

@@ -283,6 +283,7 @@ public actor GeminiClientAdapter: ProviderClient {
                     // The response is wrapped in a response object
                     parts = [.functionResponse(GCAFunctionResponse(
                         name: message.name ?? toolCallId,
+                        id: toolCallId,
                         response: ["result": .string(text)]
                     ))]
                 } else {
@@ -364,9 +365,18 @@ public actor GeminiClientAdapter: ProviderClient {
 
                     finalParts.append(.functionCall(GCAFunctionCall(
                         name: toolCall.name,
+                        id: toolCall.id,
                         args: argsDict
                     )))
                 }
+            }
+
+            // Re-inject reasoning/thought content for assistant messages in multi-turn
+            if message.role == .assistant,
+               let reasoning = message.providerMetadata?["reasoning"],
+               !reasoning.isEmpty {
+                // Prepend thought part before the regular content
+                finalParts.insert(.thought(reasoning), at: 0)
             }
 
             // Map roles: user -> user, assistant -> model, tool -> user (with functionResponse)
@@ -885,8 +895,10 @@ public actor GeminiClientAdapter: ProviderClient {
                         argsString = "{}"
                     }
 
+                    // Use API-provided ID if present, else generate synthetic
+                    let callId = fc.id ?? "call_\(fc.name)_\(UUID().uuidString.prefix(8))"
                     toolCalls.append(ProviderToolCall(
-                        id: "call_\(fc.name)_\(UUID().uuidString.prefix(8))",
+                        id: callId,
                         name: fc.name,
                         arguments: argsString
                     ))
@@ -1357,6 +1369,7 @@ private struct GCAContent: Codable {
 
 private enum GCAPart: Codable {
     case text(String)
+    case thought(String)                // Thought/reasoning content with thought: true
     case inlineData(GCAInlineData)
     case fileData(GCAFileData)          // For Files API references
     case functionCall(GCAFunctionCall)
@@ -1366,6 +1379,7 @@ private enum GCAPart: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case text
+        case thought
         case inlineData
         case fileData
         case functionCall
@@ -1377,7 +1391,12 @@ private enum GCAPart: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
-        if let text = try container.decodeIfPresent(String.self, forKey: .text) {
+        // Check for thought text first (has both text and thought: true)
+        if let text = try container.decodeIfPresent(String.self, forKey: .text),
+           let isThought = try container.decodeIfPresent(Bool.self, forKey: .thought),
+           isThought {
+            self = .thought(text)
+        } else if let text = try container.decodeIfPresent(String.self, forKey: .text) {
             self = .text(text)
         } else if let inlineData = try container.decodeIfPresent(GCAInlineData.self, forKey: .inlineData) {
             self = .inlineData(inlineData)
@@ -1406,6 +1425,9 @@ private enum GCAPart: Codable {
         switch self {
         case .text(let text):
             try container.encode(text, forKey: .text)
+        case .thought(let text):
+            try container.encode(text, forKey: .text)
+            try container.encode(true, forKey: .thought)
         case .inlineData(let data):
             try container.encode(data, forKey: .inlineData)
         case .fileData(let data):
@@ -1463,12 +1485,26 @@ private struct GCAFileData: Codable, Sendable {
 
 private struct GCAFunctionCall: Codable {
     let name: String
+    let id: String?
     let args: [String: ProviderJSONValue]
+
+    init(name: String, id: String? = nil, args: [String: ProviderJSONValue]) {
+        self.name = name
+        self.id = id
+        self.args = args
+    }
 }
 
 private struct GCAFunctionResponse: Codable {
     let name: String
+    let id: String?
     let response: [String: ProviderJSONValue]
+
+    init(name: String, id: String? = nil, response: [String: ProviderJSONValue]) {
+        self.name = name
+        self.id = id
+        self.response = response
+    }
 }
 
 private struct GCAExecutableCode: Codable {

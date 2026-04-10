@@ -45,6 +45,10 @@ public struct AIMessage: Sendable, Codable, Identifiable {
     /// Checkpoint index (if this is a checkpoint)
     public var checkpointIndex: Int?
 
+    /// Provider-specific metadata carried across turns (e.g., Gemini reasoning content).
+    /// Not sent to providers that don't need it.
+    public var providerMetadata: [String: String]?
+
     public init(
         id: String = UUID().uuidString,
         role: Role,
@@ -55,7 +59,8 @@ public struct AIMessage: Sendable, Codable, Identifiable {
         agentId: String? = nil,
         agentName: String? = nil,
         isCheckpoint: Bool = false,
-        checkpointIndex: Int? = nil
+        checkpointIndex: Int? = nil,
+        providerMetadata: [String: String]? = nil
     ) {
         self.id = id
         self.role = role
@@ -67,6 +72,7 @@ public struct AIMessage: Sendable, Codable, Identifiable {
         self.agentName = agentName
         self.isCheckpoint = isCheckpoint
         self.checkpointIndex = checkpointIndex
+        self.providerMetadata = providerMetadata
     }
 
     // MARK: - CodingKeys
@@ -74,6 +80,7 @@ public struct AIMessage: Sendable, Codable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, role, content, name, toolCalls, toolCallId
         case agentId, agentName, isCheckpoint, checkpointIndex
+        case providerMetadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -88,6 +95,7 @@ public struct AIMessage: Sendable, Codable, Identifiable {
         self.agentName = try container.decodeIfPresent(String.self, forKey: .agentName)
         self.isCheckpoint = try container.decodeIfPresent(Bool.self, forKey: .isCheckpoint) ?? false
         self.checkpointIndex = try container.decodeIfPresent(Int.self, forKey: .checkpointIndex)
+        self.providerMetadata = try container.decodeIfPresent([String: String].self, forKey: .providerMetadata)
     }
 
     // MARK: - Role

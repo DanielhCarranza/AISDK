@@ -803,7 +803,7 @@ public actor Agent {
 
             // Add assistant message to history
             let toolCalls = result.toolCalls
-            let assistantMessage: AIMessage
+            var assistantMessage: AIMessage
             if !toolCalls.isEmpty {
                 let aiToolCalls = toolCalls.map { call in
                     AIMessage.ToolCall(id: call.id, name: call.name, arguments: call.arguments)
@@ -812,6 +812,7 @@ public actor Agent {
             } else {
                 assistantMessage = .assistant(result.text)
             }
+            assistantMessage.providerMetadata = result.providerMetadata
             workingMessages.append(assistantMessage)
             messageHistory = workingMessages
 

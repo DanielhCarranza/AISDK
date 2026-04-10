@@ -38,6 +38,9 @@ public struct AITextResult: Sendable, Equatable {
     /// Sources/citations from the response (populated when web search or citations are used)
     public let sources: [AISource]
 
+    /// Provider-specific metadata to carry across turns (e.g., Gemini reasoning content).
+    public let providerMetadata: [String: String]?
+
     public init(
         text: String,
         toolCalls: [ToolCallResult] = [],
@@ -47,7 +50,8 @@ public struct AITextResult: Sendable, Equatable {
         model: String? = nil,
         provider: String? = nil,
         responseId: String? = nil,
-        sources: [AISource] = []
+        sources: [AISource] = [],
+        providerMetadata: [String: String]? = nil
     ) {
         self.text = text
         self.toolCalls = toolCalls
@@ -58,6 +62,7 @@ public struct AITextResult: Sendable, Equatable {
         self.provider = provider
         self.responseId = responseId
         self.sources = sources
+        self.providerMetadata = providerMetadata
     }
 }
 
