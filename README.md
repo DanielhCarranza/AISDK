@@ -16,11 +16,11 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/DanielhCarranza/AISDK.git", exact: "2.0.0-beta.6")
+    .package(url: "https://github.com/DanielhCarranza/AISDK.git", exact: "2.0.0-beta.7")
 ]
 ```
 
-In Xcode: File > Add Package Dependencies, paste the repository URL, and select **Exact Version** `2.0.0-beta.6`.
+In Xcode: File > Add Package Dependencies, paste the repository URL, and select **Exact Version** `2.0.0-beta.7`.
 
 > **Note:** Beta versions require `.exact()` — SPM does not resolve pre-release versions with range-based requirements like `.upToNextMajor()`.
 

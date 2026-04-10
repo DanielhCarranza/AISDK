@@ -8,7 +8,7 @@ AISDK is a single-import Swift SDK for multi-provider LLM integration on Apple p
 
 **Vision:** The definitive AI SDK for iOS/macOS development — multimodal, supporting all frontier models (OpenAI, Anthropic, Gemini) with model routing via LiteLLM and OpenRouter. One import, any model, any modality.
 
-**Current state:** `2.0.0-beta.6` on `main`. Active development toward stable v2 release.
+**Current state:** `2.0.0-beta.7` on `main`. Active development toward stable v2 release.
 
 **Key abstractions:**
 - `LLM` protocol — unified interface for all providers (`generateText`, `streamText`, `generateObject`)
