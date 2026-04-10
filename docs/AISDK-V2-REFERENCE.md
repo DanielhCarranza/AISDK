@@ -6,7 +6,7 @@ Single-import Swift SDK for multi-provider LLM integration with agents, tools, s
 import AISDK
 ```
 
-**Platforms**: iOS 16+, macOS 13+, watchOS 9+, tvOS 16+, visionOS 1+
+**Platforms**: iOS 17+, macOS 14+, watchOS 10+, tvOS 17+
 
 **5 Core Protocols**: `LLM`, `Tool`, `SessionStore`, `ProviderClient`, `JSONSchemaModel`
 
@@ -720,7 +720,7 @@ public protocol SessionStore: Sendable {
 }
 ```
 
-Implement this protocol for your storage backend (CoreData, CloudKit, Firebase, etc.). All methods have default no-op implementations.
+Implement this protocol for your storage backend (CoreData, CloudKit, Firebase, etc.). The 5 core methods (`create`, `load`, `save`, `delete`, `list`) are required. The incremental update methods (`appendMessage`, `updateLastMessage`, `updateStatus`) and `observe` have default implementations that fall back to full `load` + `save`.
 
 ### Context Compaction
 
@@ -1166,8 +1166,8 @@ What each provider supports natively vs. what requires adapter wrapping or direc
 | File Upload | No | No | Yes (resumable) | No | No |
 | Reasoning/Thinking | Yes (o1/o3) | Yes (extended thinking) | Yes | Model-dependent | Model-dependent |
 | Computer Use | Yes (Responses API) | Yes (native) | No | No | No |
-| Web Search | Yes (built-in tool) | No | Yes (grounding) | Model-dependent | No |
-| Code Execution | Yes (built-in tool) | No | Yes (native) | No | No |
+| Web Search | Yes (built-in tool) | Yes (built-in tool) | Yes (grounding) | Model-dependent | No |
+| Code Execution | Yes (built-in tool) | Yes (built-in tool) | Yes (native) | No | No |
 | Image Generation | Yes (built-in tool) | No | Yes (Imagen) | No | No |
 | Caching | No | Yes (prompt caching) | Yes (cached content) | No | No |
 | Responses API | Yes | No | No | No | No |
