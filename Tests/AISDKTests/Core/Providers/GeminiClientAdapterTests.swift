@@ -503,6 +503,27 @@ final class GeminiResponseParsingTests: XCTestCase {
         XCTAssertNotNil(json)
     }
 
+    // MARK: - Caching Tests
+
+    func testCachedContentIdIncludedInRequestBody() async throws {
+        let body = await captureGeminiRequestBodyWithCaching(
+            caching: AICacheConfig(cachedContentId: "cachedContents/abc123")
+        )
+        XCTAssertEqual(body["cachedContent"] as? String, "cachedContents/abc123")
+    }
+
+    func testCachingEnabledWithoutIdOmitsCachedContent() async throws {
+        let body = await captureGeminiRequestBodyWithCaching(
+            caching: AICacheConfig(enabled: true)
+        )
+        XCTAssertNil(body["cachedContent"])
+    }
+
+    func testNoCachingConfigOmitsCachedContent() async throws {
+        let body = await captureGeminiRequestBodyWithCaching(caching: nil)
+        XCTAssertNil(body["cachedContent"])
+    }
+
     func testParseStreamChunk() throws {
         let json = """
         {
@@ -579,6 +600,60 @@ private func captureGeminiRequestBody(
         messages: [AIMessage(role: .user, content: .text("Hello"))],
         reasoning: reasoning,
         providerOptions: providerOptions
+    )
+
+    _ = try? await client.execute(request: providerRequest)
+    return capturedBody
+}
+
+private func captureGeminiRequestBodyWithCaching(
+    caching: AICacheConfig?
+) async -> [String: Any] {
+    MockURLProtocol.reset()
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let client = GeminiClientAdapter(apiKey: "test-api-key", session: session)
+
+    var capturedBody: [String: Any] = [:]
+    MockURLProtocol.requestHandler = { request in
+        let bodyData = readRequestBody(request)
+        if let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            capturedBody = json
+        }
+
+        let responseJSON = """
+        {
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": "ok"}]
+                },
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 1,
+                "totalTokenCount": 2
+            },
+            "modelVersion": "gemini-2.5-pro",
+            "responseId": "resp-test"
+        }
+        """.data(using: .utf8) ?? Data()
+
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://generativelanguage.googleapis.com/v1beta")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (response, responseJSON)
+    }
+
+    let providerRequest = ProviderRequest(
+        modelId: "gemini-2.5-pro",
+        messages: [AIMessage(role: .user, content: .text("Hello"))],
+        caching: caching
     )
 
     _ = try? await client.execute(request: providerRequest)

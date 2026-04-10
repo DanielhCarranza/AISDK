@@ -390,6 +390,11 @@ public actor GeminiClientAdapter: ProviderClient {
         // System instruction
         body.systemInstruction = systemInstruction
 
+        // Context caching — pass through pre-created cached content reference
+        if let cacheConfig = request.caching, let cachedContentId = cacheConfig.cachedContentId {
+            body.cachedContent = cachedContentId
+        }
+
         // Generation config
         var config = GCAGenerationConfig()
         config.maxOutputTokens = request.maxTokens
@@ -1254,6 +1259,7 @@ private struct GCARequestBody: Encodable {
     var generationConfig: GCAGenerationConfig?
     var tools: [GCAToolEntry]?
     var toolConfig: GCAToolConfig?
+    var cachedContent: String?
 
     enum CodingKeys: String, CodingKey {
         case contents
@@ -1261,6 +1267,7 @@ private struct GCARequestBody: Encodable {
         case generationConfig
         case tools
         case toolConfig
+        case cachedContent
     }
 }
 
