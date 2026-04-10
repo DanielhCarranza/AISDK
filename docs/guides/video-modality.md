@@ -62,23 +62,17 @@ When building a multi-provider app, route video requests to a capable model:
 func analyzeContent(text: String, video: Data?) async throws -> String {
     if let video {
         // Route to Gemini for video
-        let gemini = AILanguageModelAdapter(
-            provider: GeminiProvider(apiKey: geminiKey),
-            modelId: "gemini-2.0-flash"
-        )
-        let result = try await gemini.generateText(
+        let gemini = ProviderLanguageModelAdapter.gemini(apiKey: geminiKey, modelId: "gemini-2.0-flash")
+        let request = AITextRequest(
             messages: [.user([.text(text), .video(video, format: .mp4)])]
         )
+        let result = try await gemini.generateText(request: request)
         return result.text
     } else {
         // Any provider works for text-only
-        let openai = ProviderLanguageModelAdapter.openAIResponses(
-            apiKey: openAIKey,
-            modelId: "gpt-4o"
-        )
-        let result = try await openai.generateText(
-            messages: [.user(text)]
-        )
+        let openai = ProviderLanguageModelAdapter.openAIResponses(apiKey: openAIKey, modelId: "gpt-4o")
+        let request = AITextRequest(messages: [.user(text)])
+        let result = try await openai.generateText(request: request)
         return result.text
     }
 }
