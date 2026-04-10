@@ -221,15 +221,16 @@ public actor AnthropicClientAdapter: ProviderClient {
 
     public func capabilities(for modelId: String) async -> LLMCapabilities? {
         // Return known capabilities for Claude models
+        let base: LLMCapabilities = [.text, .vision, .tools, .streaming, .functionCalling]
+        if Self.supportsReasoning(for: modelId) {
+            return base.union([.reasoning, .longContext])
+        }
         switch modelId {
-        case let id where id.contains("opus"):
-            return [.text, .vision, .tools, .streaming, .functionCalling, .reasoning, .longContext]
         case let id where id.contains("sonnet"):
-            return [.text, .vision, .tools, .streaming, .functionCalling, .longContext]
+            return base.union([.longContext])
         case let id where id.contains("haiku"):
-            return [.text, .vision, .tools, .streaming, .functionCalling]
+            return base
         default:
-            // Generic Claude capabilities
             return [.text, .tools, .streaming, .functionCalling]
         }
     }
@@ -237,7 +238,12 @@ public actor AnthropicClientAdapter: ProviderClient {
     // MARK: - Private Methods
 
     private static func supportsReasoning(for modelId: String) -> Bool {
-        modelId.contains("opus")
+        let id = modelId.lowercased()
+        // Claude Opus 4+, Sonnet 4+, Sonnet 3.7, and Haiku 4.5+ support extended thinking
+        if id.contains("opus") { return true }
+        if id.contains("sonnet-4") || id.contains("sonnet-3.7") || id.contains("sonnet-3-7") { return true }
+        if id.contains("haiku-4.5") || id.contains("haiku-4-5") { return true }
+        return false
     }
 
     private func buildHTTPRequest(for request: ProviderRequest, streaming: Bool) throws -> URLRequest {
