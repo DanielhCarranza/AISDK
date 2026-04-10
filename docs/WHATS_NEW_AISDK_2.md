@@ -14,7 +14,7 @@ AISDK 2.0 is a **comprehensive modernization** bringing the Swift AI SDK to feat
 
 | Area | AISDK 1.0 | AISDK 2.0 |
 |------|-----------|-----------|
-| **Agent System** | Class-based `Agent.swift` | Actor-based `AIAgentActor` (thread-safe) |
+| **Agent System** | Class-based `Agent.swift` | Actor-based `Agent` (thread-safe) |
 | **Concurrency** | GCD/Completion handlers | Swift Concurrency (async/await) |
 | **Streaming** | Callback-based | `AsyncThrowingStream` with bounded buffers |
 | **State Management** | KVO/Delegates | `@Observable` pattern for SwiftUI |
@@ -32,7 +32,7 @@ AISDK 2.0 is a **comprehensive modernization** bringing the Swift AI SDK to feat
 ## New Components Added
 
 ### 1. Actor-Based Agent System
-**File:** `Sources/AISDK/Agents/AIAgentActor.swift` (1,088 lines)
+**File:** `Sources/AISDK/Agents/Agent.swift`
 
 The heart of AISDK 2.0 - a fully thread-safe, actor-based agent.
 
@@ -42,14 +42,14 @@ let agent = Agent(llm: provider)
 let response = try await agent.send("Hello")
 
 // After (2.0) - Actor-based, thread-safe
-let agent = AIAgentActor(model: openRouterModel, tools: [])
-let result = try await agent.execute(messages: [.user("Hello")])
+let agent = Agent(model: model, instructions: "You are helpful.")
+let result = try await agent.execute(messages: [AIMessage(role: .user, content: .text("Hello"))])
 ```
 
 **Key Features:**
 - Thread-safe concurrent execution
-- Streaming with `streamExecute()`
-- Tool execution with `AITool` protocol
+- Streaming with `streamExecute(messages:)`
+- Tool execution with `Tool` protocol
 - Sendable-compliant
 
 ---
@@ -159,7 +159,7 @@ GenerativeUIView(viewModel: viewModel)
 | `AITextResult.swift` | 82 | Text generation result |
 | `AIObjectRequest.swift` | 190 | Structured output request |
 | `AIObjectResult.swift` | 98 | Structured output result |
-| `AIStreamEvent.swift` | 197 | 14 Vercel-compatible events |
+| `AIStreamEvent.swift` | ~280 | 20+ Vercel-compatible events |
 | `AIStepResult.swift` | 137 | Agent step results |
 | `AIUsage.swift` | 206 | Token usage tracking |
 | `AITraceContext.swift` | 476 | Distributed tracing |
@@ -167,14 +167,16 @@ GenerativeUIView(viewModel: viewModel)
 **Stream Events (Vercel AI SDK Compatible):**
 ```swift
 enum AIStreamEvent {
-    case start(id: String, model: String)
+    case start(metadata: AIStreamMetadata?)
     case textDelta(String)
+    case textCompletion(String)
     case toolCallStart(id: String, name: String)
     case toolCallDelta(id: String, argumentsDelta: String)
-    case toolCallComplete(id: String, result: String)
-    case finish(reason: FinishReason, usage: AIUsage?)
+    case toolCall(id: String, name: String, arguments: String)
+    case toolResult(id: String, result: String, metadata: ToolMetadata?)
+    case finish(finishReason: AIFinishReason, usage: AIUsage)
     case error(Error)
-    // ... 7 more events
+    // ... plus reasoning, objectDelta, source, file, usage, stepStart/Finish, uiPatch, computerUseAction, webSearch events
 }
 ```
 
@@ -182,16 +184,16 @@ enum AIStreamEvent {
 
 ### 6. Modern Tool System
 **Files:**
-- `AITool.swift` (455 lines) - New Sendable-compliant tool protocol
-- `ToolCallRepair.swift` (392 lines) - Auto-fix malformed tool calls
+- `Tool.swift` - Sendable-compliant tool protocol
+- `ToolCallRepair.swift` - Auto-fix malformed tool calls
 
-**New Tool Protocol:**
+**Tool Protocol:**
 ```swift
-protocol AITool: Sendable {
-    static var name: String { get }
-    static var description: String { get }
-    static func schema() -> ProviderJSONValue
-    func execute(arguments: String) async throws -> AIToolResult
+protocol Tool: Sendable {
+    var name: String { get }
+    var description: String { get }
+    static var parameters: ParameterSchema { get }
+    func execute(arguments: String) async throws -> ToolResult
 }
 ```
 
@@ -222,7 +224,7 @@ Full conversation persistence with pluggable storage backends, streaming integra
 
 | Component | Purpose |
 |-----------|---------|
-| `AISession` | Core session model with messages, checkpoints, metadata |
+| `AISession` (struct) | Core session model with messages, checkpoints, metadata |
 | `SessionStore` protocol | Pluggable persistence (InMemory, FileSystem, SQLite) |
 | `ChatViewModel` | `@Observable` ViewModel integrating agent + store + streaming |
 | `SessionListViewModel` | Paginated session list with filtering |
@@ -277,10 +279,14 @@ let stream = SafeAsyncStream<String>(bufferSize: 1000)
 let legacyLLM = OpenAIProvider(apiKey: key)
 
 // Wrap with adapter
-let adapted = AILanguageModelAdapter(legacyLLM: legacyLLM)
+let adapted = AILanguageModelAdapter(
+    llm: legacyLLM,
+    provider: "openai",
+    modelId: "gpt-4o"
+)
 
 // Use with new agent
-let agent = AIAgentActor(model: adapted, tools: [])
+let agent = Agent(model: adapted)
 ```
 
 ---
@@ -291,7 +297,7 @@ let agent = AIAgentActor(model: adapted, tools: [])
 
 | Category | Lines | Purpose |
 |----------|-------|---------|
-| **Agent Tests** | 2,153 | AIAgentActor comprehensive tests |
+| **Agent Tests** | 2,153 | Agent actor comprehensive tests |
 | **Reliability Tests** | 3,732 | Circuit breaker, failover, retry |
 | **Generative UI Tests** | 6,471 | UI catalog, tree, rendering |
 | **Provider Tests** | 3,560 | OpenRouter, LiteLLM, adapters |
@@ -317,9 +323,9 @@ let agent = AIAgentActor(model: adapted, tools: [])
 | `generateText()` | Yes | `execute()` | Yes |
 | `streamText()` | Yes | `streamExecute()` | Yes |
 | `generateObject<T>()` | Yes | `AIObjectRequest` | Yes |
-| Stream Events | 14 types | 14 types | Yes |
-| Tool Calling | Yes | `AITool` | Yes |
-| Multi-step Agents | Yes | `AIAgentActor` | Yes |
+| Stream Events | 14 types | 20+ types | Better |
+| Tool Calling | Yes | `Tool` | Yes |
+| Multi-step Agents | Yes | `Agent` (actor) | Yes |
 | Provider Abstraction | Yes | `ProviderClient` | Yes |
 | Circuit Breaker | No | Yes | Better |
 | Failover Chain | No | Yes | Better |
@@ -342,8 +348,8 @@ let agent = AIAgentActor(model: adapted, tools: [])
 
 ### What's Verified Working
 1. OpenRouterClient - chat, streaming, JSON, tools
-2. AIAgentActor - basic execution
-3. Stream events - all 14 types
+2. Agent actor - basic execution
+3. Stream events - all 20+ types
 4. Tool calling - with `tool_choice: .auto`
 
 ### What Still Needs Real Model Testing
