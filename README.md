@@ -16,11 +16,11 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/DanielhCarranza/AISDK.git", exact: "2.0.0-beta.1")
+    .package(url: "https://github.com/DanielhCarranza/AISDK.git", exact: "2.0.0-beta.6")
 ]
 ```
 
-In Xcode: File > Add Package Dependencies, paste the repository URL, and select **Exact Version** `2.0.0-beta.1`.
+In Xcode: File > Add Package Dependencies, paste the repository URL, and select **Exact Version** `2.0.0-beta.6`.
 
 > **Note:** Beta versions require `.exact()` — SPM does not resolve pre-release versions with range-based requirements like `.upToNextMajor()`.
 
@@ -29,26 +29,23 @@ In Xcode: File > Add Package Dependencies, paste the repository URL, and select 
 ```swift
 import AISDK
 
-// Create a provider
-let provider = OpenAIProvider(apiKey: "sk-...")
-
-// Wrap in v2 adapter
-let model = AILanguageModelAdapter(
-    llm: provider,
-    provider: "openai",
-    modelId: "gpt-4o",
-    capabilities: [.text, .tools, .streaming]
+// Recommended: use a factory method for v2 providers
+let model = ProviderLanguageModelAdapter.openAIResponses(
+    apiKey: "sk-...",
+    modelId: "gpt-4o"
 )
 
 // Create an agent
-let agent = Agent(model: model, systemPrompt: "You are a helpful assistant.")
+let agent = Agent(model: model, instructions: "You are a helpful assistant.")
 
 // Stream a response
-for try await event in agent.streamExecute("Hello!") {
+for try await event in agent.streamExecute(messages: [
+    AIMessage(role: .user, content: "Hello!")
+]) {
     switch event {
     case .textDelta(let text):
         print(text, terminator: "")
-    case .finished:
+    case .finish:
         print()
     default:
         break
@@ -56,17 +53,31 @@ for try await event in agent.streamExecute("Hello!") {
 }
 ```
 
+### Using legacy providers
+
+```swift
+let provider = OpenAIProvider(apiKey: "sk-...")
+let model = AILanguageModelAdapter(
+    llm: provider,
+    provider: "openai",
+    modelId: "gpt-4o",
+    capabilities: [.text, .streaming]
+)
+```
+
 ## Providers
 
-| Provider | Class | Setup |
-|----------|-------|-------|
-| OpenAI | `OpenAIProvider` | `OpenAIProvider(apiKey: "sk-...")` |
-| Anthropic | `AnthropicProvider` | `AnthropicProvider(apiKey: "sk-ant-...")` |
-| Gemini | `GeminiProvider` | `GeminiProvider(apiKey: "AIza...")` |
-| OpenRouter | `OpenRouterClient` | `OpenRouterClient(apiKey: "sk-or-...", appName: "MyApp")` |
-| LiteLLM | `LiteLLMClient` | `LiteLLMClient(baseURL: URL(string: "http://localhost:4000")!)` |
+| Provider | Type | Setup |
+|----------|------|-------|
+| OpenAI (Responses) | `ProviderLanguageModelAdapter` | `.openAIResponses(apiKey:modelId:)` |
+| OpenAI (Chat) | `ProviderLanguageModelAdapter` | `.openAIChatCompletions(apiKey:modelId:)` |
+| OpenAI (Legacy) | `OpenAIProvider` | Wrap with `AILanguageModelAdapter` |
+| Anthropic | `AnthropicProvider` | Wrap with `AILanguageModelAdapter` |
+| Gemini | `GeminiProvider` | Wrap with `AILanguageModelAdapter` |
+| OpenRouter | `OpenRouterClient` (actor) | `OpenRouterClient(apiKey:)` → `ProviderLanguageModelAdapter` |
+| LiteLLM | `LiteLLMClient` (actor) | `LiteLLMClient(baseURL:)` → `ProviderLanguageModelAdapter` |
 
-All legacy providers (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`) must be wrapped with `AILanguageModelAdapter` to use with the v2 `Agent` and `LLM` protocol.
+Legacy providers (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`) must be wrapped with `AILanguageModelAdapter` to use with the v2 `Agent` and `LLM` protocol. The recommended path for new code is `ProviderLanguageModelAdapter` with factory methods.
 
 ## Features
 
@@ -75,6 +86,9 @@ All legacy providers (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`) m
 - **Generative UI** — spec-driven SwiftUI generation from LLM responses
 - **Sessions** — persistence with InMemory, FileSystem, and SQLite stores
 - **MCP** — Model Context Protocol client for external tool servers
+- **Computer use** — Anthropic computer use tool integration
+- **Web search** — built-in web search tool with citation support
+- **Reasoning controls** — extended thinking for o1/o3 and Claude models
 - **v1 compatibility** — typealiases and adapters for gradual migration
 
 ## Documentation
