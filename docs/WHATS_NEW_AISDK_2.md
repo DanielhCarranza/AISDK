@@ -271,7 +271,7 @@ let stream = SafeAsyncStream<String>(bufferSize: 1000)
 | `AILanguageModelAdapter.swift` | 528 | Wrap old LLM for new API |
 | `AIUsage+Legacy.swift` | 26 | Usage conversion |
 
-> Tools are now unified under `AITool`. Migrate legacy tools to `AITool` directly (there is no ToolAdapter).
+> Tools are now unified under `Tool`. Migrate legacy tools to `Tool` directly (there is no ToolAdapter).
 
 **Migration path:**
 ```swift
