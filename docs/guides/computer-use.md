@@ -43,7 +43,7 @@ await agent.setComputerUseHandler { toolCall in
 }
 
 // Run the agent — it will call your handler when it needs to interact
-let result = try await agent.run(messages: [.user("Open Safari and search for Swift")])
+let result = try await agent.execute(messages: [.user("Open Safari and search for Swift")])
 ```
 
 ## Configuration
@@ -89,7 +89,7 @@ If no handler is configured, the agent receives `"Computer use handler not confi
 Computer use actions appear as tool call events during streaming:
 
 ```swift
-for try await event in agent.streamRun(messages: [.user("Click the submit button")]) {
+for try await event in agent.streamExecute(messages: [.user("Click the submit button")]) {
     switch event {
     case .toolCallStart(let call) where call.name == "computer_use":
         print("Agent requesting: \(call)")
