@@ -5,8 +5,8 @@ import PackageDescription
 
 let package = Package(
     name: "AISDK",
-    // Version: 2.0.0-beta.7 - Comprehensive AI SDK for Swift
-    // Release Date: April 9, 2026
+    // Version: 2.0.0-beta.8 - Comprehensive AI SDK for Swift
+    // Release Date: April 10, 2026
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
