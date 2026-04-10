@@ -8,10 +8,8 @@ AISDK provides a unified `AIReasoningConfig` that works across OpenAI, Anthropic
 import AISDK
 
 // Unified reasoning — works with any reasoning-capable model
-let result = try await llm.generateText(
-    messages: [.user("What is 127 * 893?")],
-    reasoning: .effort(.high)
-)
+let request = AITextRequest(messages: [.user("What is 127 * 893?")], reasoning: .effort(.high))
+let result = try await llm.generateText(request: request)
 ```
 
 ## Configure Per Provider in 3 Lines
