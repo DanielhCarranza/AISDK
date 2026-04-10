@@ -27,12 +27,12 @@ if let caps = await client.capabilities(for: "google/gemini-2.0-flash"),
 ## Send Video to Gemini
 
 ```swift
-let gemini = GeminiProvider(apiKey: geminiKey)
-let llm = AILanguageModelAdapter(provider: gemini, modelId: "gemini-2.0-flash")
+// Recommended: use factory method
+let gemini = ProviderLanguageModelAdapter.gemini(apiKey: geminiKey, modelId: "gemini-2.0-flash")
 
 // From data
 let videoData = try Data(contentsOf: videoFileURL)
-let response = try await llm.generateText(
+let request = AITextRequest(
     messages: [
         .user([
             .text("Describe what happens in this video"),
@@ -40,9 +40,10 @@ let response = try await llm.generateText(
         ])
     ]
 )
+let response = try await gemini.generateText(request: request)
 
 // From URL
-let response2 = try await llm.generateText(
+let request2 = AITextRequest(
     messages: [
         .user([
             .text("Summarize this clip"),
@@ -50,6 +51,7 @@ let response2 = try await llm.generateText(
         ])
     ]
 )
+let response2 = try await gemini.generateText(request: request2)
 ```
 
 ## Route by Capability
