@@ -20,7 +20,8 @@ let llm = ProviderLanguageModelAdapter.anthropic(apiKey: anthropicKey, modelId: 
 let llm = ProviderLanguageModelAdapter.gemini(apiKey: geminiKey, modelId: "gemini-2.0-flash")
 
 // All use the same API:
-let result = try await llm.generateText(messages: [.user("Hello")])
+let request = AITextRequest(messages: [.user("Hello")])
+let result = try await llm.generateText(request: request)
 ```
 
 ## Proxy Providers
