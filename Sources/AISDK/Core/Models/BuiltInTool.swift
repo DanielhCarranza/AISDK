@@ -10,7 +10,7 @@ import Foundation
 /// |-------------------|--------------------|--------|-----------|
 /// | `.webSearch`      | web_search         | google_search | web_search_20250305 |
 /// | `.codeExecution`  | code_interpreter   | code_execution | code_execution_20250825 |
-/// | `.fileSearch`     | file_search        | -      | -         |
+/// | `.fileSearch`     | file_search        | file_search | -      |
 /// | `.imageGeneration`| image_generation   | -      | -         |
 /// | `.urlContext`     | -                  | url_context | -     |
 /// | `.computerUse`   | computer_use_prev  | -           | computer_20250124  |
@@ -27,7 +27,7 @@ public enum BuiltInTool: Sendable, Equatable, Hashable {
     /// Code execution with default configuration.
     case codeExecutionDefault
 
-    /// File/vector search (OpenAI only).
+    /// File/vector search (OpenAI, Gemini).
     case fileSearch(FileSearchConfig)
 
     /// Image generation (OpenAI only).
@@ -121,11 +121,13 @@ public extension BuiltInTool {
     }
 
     struct FileSearchConfig: Sendable, Equatable, Hashable, Codable {
-        /// Vector store IDs to search (required).
+        /// Store identifiers to search (required).
+        /// - OpenAI: Vector store IDs (e.g., `["vs_abc123"]`)
+        /// - Gemini: File search store names (e.g., `["fileSearchStores/store-id"]`)
         public var vectorStoreIds: [String]
-        /// Maximum number of results.
+        /// Maximum number of results (OpenAI only).
         public var maxNumResults: Int?
-        /// Minimum relevance score threshold (0.0-1.0).
+        /// Minimum relevance score threshold 0.0-1.0 (OpenAI only).
         public var scoreThreshold: Double?
 
         public init(vectorStoreIds: [String], maxNumResults: Int? = nil, scoreThreshold: Double? = nil) {

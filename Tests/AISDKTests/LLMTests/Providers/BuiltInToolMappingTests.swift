@@ -50,25 +50,16 @@ final class BuiltInToolMappingTests: XCTestCase {
         XCTAssertTrue(tools?.contains(where: { $0["url_context"] != nil }) ?? false)
     }
 
-    func testGeminiRejectsFileSearch() async throws {
-        let client = GeminiClientAdapter(apiKey: "test-api-key")
-        let request = ProviderRequest(
-            modelId: "gemini-2.5-pro",
-            messages: [.user("Hello")],
-            builtInTools: [.fileSearch(BuiltInTool.FileSearchConfig(vectorStoreIds: ["vs_1"]))]
-        )
-
-        do {
-            _ = try await client.execute(request: request)
-            XCTFail("Expected invalidRequest error")
-        } catch let error as ProviderError {
-            guard case .invalidRequest = error else {
-                XCTFail("Expected invalidRequest error")
-                return
-            }
-        } catch {
-            XCTFail("Unexpected error: \(error)")
-        }
+    func testGeminiFileSearchMapping() async throws {
+        let config = BuiltInTool.FileSearchConfig(vectorStoreIds: ["fileSearchStores/my-store"])
+        let body = await captureGeminiRequestBody(builtInTools: [.fileSearch(config)], tools: nil)
+        let tools = body["tools"] as? [[String: Any]]
+        let hasFileSearch = tools?.contains(where: { toolEntry in
+            guard let fs = toolEntry["file_search"] as? [String: Any],
+                  let names = fs["file_search_store_names"] as? [String] else { return false }
+            return names.contains("fileSearchStores/my-store")
+        }) ?? false
+        XCTAssertTrue(hasFileSearch, "Expected file_search tool with store names in request body")
     }
 
     func testGeminiRejectsImageGeneration() async throws {

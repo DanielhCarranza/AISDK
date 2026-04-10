@@ -492,10 +492,8 @@ public actor GeminiClientAdapter: ProviderClient {
                     body.tools?.append(.codeExecution)
                 case .urlContext:
                     body.tools?.append(.urlContext)
-                case .fileSearch:
-                    throw ProviderError.invalidRequest(
-                        "fileSearch is not supported by Gemini. Supported: webSearch, codeExecution, urlContext."
-                    )
+                case .fileSearch(let config):
+                    body.tools?.append(.fileSearch(config.vectorStoreIds))
                 case .imageGeneration, .imageGenerationDefault:
                     throw ProviderError.invalidRequest(
                         "imageGeneration is not supported by Gemini. Supported: webSearch, codeExecution, urlContext."
@@ -920,26 +918,43 @@ public actor GeminiClientAdapter: ProviderClient {
                     }
 
                     for chunkIndex in indices {
-                        guard chunkIndex < groundingChunks.count,
-                              let web = groundingChunks[chunkIndex].web else { continue }
-                        let sourceId = web.uri ?? "source_\(chunkIndex)"
-                        sources.append(AISource(
-                            id: sourceId,
-                            url: web.uri,
-                            title: web.title,
-                            snippet: snippet,
-                            startIndex: utf16Start,
-                            endIndex: utf16End,
-                            sourceType: .web
-                        ))
+                        guard chunkIndex < groundingChunks.count else { continue }
+                        let chunk = groundingChunks[chunkIndex]
+                        if let web = chunk.web {
+                            let sourceId = web.uri ?? "source_\(chunkIndex)"
+                            sources.append(AISource(
+                                id: sourceId,
+                                url: web.uri,
+                                title: web.title,
+                                snippet: snippet,
+                                startIndex: utf16Start,
+                                endIndex: utf16End,
+                                sourceType: .web
+                            ))
+                        } else if let ctx = chunk.retrievedContext {
+                            let sourceId = ctx.uri ?? "file_source_\(chunkIndex)"
+                            sources.append(AISource(
+                                id: sourceId,
+                                url: ctx.uri,
+                                title: ctx.title,
+                                snippet: ctx.text ?? snippet,
+                                startIndex: utf16Start,
+                                endIndex: utf16End,
+                                sourceType: .file
+                            ))
+                        }
                     }
                 }
             } else {
                 // Fallback: sources from groundingChunks without positional data
                 for (index, chunk) in groundingChunks.enumerated() {
-                    guard let web = chunk.web else { continue }
-                    let sourceId = web.uri ?? "source_\(index)"
-                    sources.append(AISource(id: sourceId, url: web.uri, title: web.title, sourceType: .web))
+                    if let web = chunk.web {
+                        let sourceId = web.uri ?? "source_\(index)"
+                        sources.append(AISource(id: sourceId, url: web.uri, title: web.title, sourceType: .web))
+                    } else if let ctx = chunk.retrievedContext {
+                        let sourceId = ctx.uri ?? "file_source_\(index)"
+                        sources.append(AISource(id: sourceId, url: ctx.uri, title: ctx.title, snippet: ctx.text, sourceType: .file))
+                    }
                 }
             }
         }
@@ -1483,6 +1498,7 @@ private enum GCAToolEntry: Encodable {
     case googleSearch
     case codeExecution
     case urlContext
+    case fileSearch([String])
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -1495,7 +1511,17 @@ private enum GCAToolEntry: Encodable {
             try container.encode(["code_execution": EmptyObject()])
         case .urlContext:
             try container.encode(["url_context": EmptyObject()])
+        case .fileSearch(let storeNames):
+            try container.encode(["file_search": GCAFileSearchConfig(fileSearchStoreNames: storeNames)])
         }
+    }
+}
+
+private struct GCAFileSearchConfig: Encodable {
+    let fileSearchStoreNames: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case fileSearchStoreNames = "file_search_store_names"
     }
 }
 
@@ -1567,6 +1593,13 @@ private struct GCAGroundingMetadata: Decodable {
 
 private struct GCAGroundingChunk: Decodable {
     let web: GCAWebChunk?
+    let retrievedContext: GCARetrievedContext?
+}
+
+private struct GCARetrievedContext: Decodable {
+    let uri: String?
+    let title: String?
+    let text: String?
 }
 
 private struct GCAWebChunk: Decodable {
