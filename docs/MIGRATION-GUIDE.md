@@ -28,12 +28,12 @@ AISDK 2.0 introduces significant architectural improvements:
 | Aspect | 1.x | 2.0 |
 |--------|-----|-----|
 | **Concurrency** | Closures, GCD | Swift Concurrency (`async`/`await`) |
-| **Agent** | Class-based (`Agent`) | Actor-based (`AIAgentActor`) |
+| **Agent** | Class-based (now `LegacyAgent`) | Actor-based (`Agent`) |
 | **Streaming** | Callback-based | `AsyncThrowingStream` |
 | **State** | KVO patterns | `@Observable` |
 | **Reliability** | None | Circuit breakers, failover, health monitoring |
-| **Provider Protocol** | `LLM` protocol | `AILanguageModel` protocol |
-| **Tool Protocol** | `Tool` with `@Parameter` | `AITool` protocol |
+| **Provider Protocol** | `LegacyLLM` protocol | `LLM` protocol |
+| **Tool Protocol** | `Tool` with `@Parameter` | `Tool` protocol (same name, new design) |
 
 To enable gradual migration, AISDK 2.0 provides **adapter classes** that wrap legacy implementations.
 
@@ -51,7 +51,7 @@ protocol LLM {
 }
 
 // 2.0 Protocol
-protocol AILanguageModel {
+protocol LLM {
     var provider: String { get }
     var modelId: String { get }
     var capabilities: LLMCapabilities { get }
@@ -59,7 +59,6 @@ protocol AILanguageModel {
     func generateText(request: AITextRequest) async throws -> AITextResult
     func streamText(request: AITextRequest) -> AsyncThrowingStream<AIStreamEvent, Error>
     func generateObject<T: Codable & Sendable>(request: AIObjectRequest<T>) async throws -> AIObjectResult<T>
-    func streamObject<T: Codable & Sendable>(request: AIObjectRequest<T>) -> AsyncThrowingStream<AIStreamEvent, Error>
 }
 ```
 
@@ -71,7 +70,7 @@ let agent = Agent(llm: provider, tools: [WeatherTool.self])
 let response = try await agent.send("Hello")
 
 // 2.0 Agent (actor-based)
-let agent = AIAgentActor(model: languageModel, tools: [weatherTool])
+let agent = Agent(model: languageModel, tools: [WeatherTool.self])
 let result = try await agent.execute(messages: [.user("Hello")])
 ```
 
@@ -93,9 +92,9 @@ let systemMessage = AIMessage.system("You are helpful")
 
 AISDK 2.0 provides three adapter classes for incremental migration.
 
-### AILanguageModelAdapter
+### LLMAdapter
 
-Wraps a legacy `LLM` to conform to `AILanguageModel`:
+Wraps a `LegacyLLM` to conform to `LLM`:
 
 ```swift
 import AISDK
@@ -104,7 +103,7 @@ import AISDK
 let openai = OpenAIProvider(apiKey: "sk-...")
 
 // Wrap with adapter
-let adaptedModel = AILanguageModelAdapter(
+let adaptedModel = LLMAdapter(
     llm: openai,
     provider: "openai",
     modelId: "gpt-4",
@@ -112,42 +111,38 @@ let adaptedModel = AILanguageModelAdapter(
 )
 
 // Now use with 2.0 agent
-let agent = AIAgentActor(model: adaptedModel, tools: [])
+let agent = Agent(model: adaptedModel)
 let result = try await agent.execute(messages: [.user("Hello")])
 ```
 
-**Factory methods for common providers:**
+**For new code, use v2 factory methods instead of adapters:**
 
 ```swift
-// OpenAI
-let adapted = AILanguageModelAdapter.fromOpenAI(openaiProvider, model: "gpt-4")
+// OpenAI (recommended)
+let model = ProviderLanguageModelAdapter.openAIResponses(apiKey: "sk-...", modelId: "gpt-4o")
 
 // Anthropic
-let adapted = AILanguageModelAdapter.fromAnthropic(anthropicProvider, model: "claude-3-opus")
+let model = ProviderLanguageModelAdapter.anthropic(apiKey: "sk-ant-...", modelId: "claude-sonnet-4-20250514")
 
-// Any LLM
-let adapted = AILanguageModelAdapter.from(
-    customLLM,
-    provider: "custom",
-    model: "my-model",
-    capabilities: [.text, .streaming]
-)
+// Gemini
+let model = ProviderLanguageModelAdapter.gemini(apiKey: "AIza...", modelId: "gemini-2.0-flash")
 ```
 
 ### Tool Migration
 
-Tools are now unified under `AITool`. There is no adapter layer—migrate tools directly to the instance-based `AITool` pattern with `@AIParameter`.
+Tools use the `Tool` protocol with `@Parameter`. There is no adapter layer—migrate tools directly.
 
 ### AIAgentAdapter
 
-Wraps a legacy `Agent` to provide 2.0 interfaces:
+Wraps a `LegacyAgent` to provide 2.0 interfaces:
 
 ```swift
 // Existing 1.x agent
-let legacyAgent = Agent(llm: openai, tools: [WeatherTool.self])
+let legacyAgent = LegacyAgent(llm: openai, tools: [WeatherTool.self])
 
-// Wrap with adapter
-let adapter = AIAgentAdapter(legacyAgent: legacyAgent)
+// Wrap with adapter (requires both the agent and an adapted model)
+let adaptedModel = LLMAdapter(llm: openai, provider: "openai", modelId: "gpt-4")
+let adapter = AIAgentAdapter(agent: legacyAgent, modelAdapter: adaptedModel)
 
 // Use 2.0 streaming interface
 for try await event in adapter.streamExecute(messages: [.user("What's the weather?")]) {
@@ -191,11 +186,11 @@ class MyService {
 
 ```swift
 class MyService {
-    let model: AILanguageModel
+    let model: any LLM
 
     init() {
         let openai = OpenAIProvider(apiKey: "sk-...")
-        self.model = AILanguageModelAdapter.fromOpenAI(openai, model: "gpt-4")
+        self.model = LLMAdapter(llm: openai, provider: "openai", modelId: "gpt-4")
     }
 
     func chat(message: String) async throws -> String {
@@ -265,26 +260,23 @@ class ChatManager {
 
 ```swift
 class ChatManager {
-    let agent: AIAgentActor
-    @Observable var state = ObservableAgentState()
+    let agent: Agent
+    let state = ObservableAgentState()
 
     init() {
-        let client = OpenRouterClient(apiKey: "sk-...")
-        agent = AIAgentActor(
-            model: client,
-            tools: [weatherTool, searchTool],
-            systemPrompt: "You are a helpful assistant"
+        let model = ProviderLanguageModelAdapter.openAIResponses(apiKey: "sk-...", modelId: "gpt-4o")
+        agent = Agent(
+            model: model,
+            tools: [WeatherTool.self, SearchTool.self],
+            instructions: "You are a helpful assistant"
         )
     }
 
     func send(_ message: String) async throws -> AIAgentResult {
-        state.isProcessing = true
-        defer { state.isProcessing = false }
-
         return try await agent.execute(messages: [.user(message)])
     }
 
-    func stream(_ message: String) -> AsyncThrowingStream<AIAgentEvent, Error> {
+    func stream(_ message: String) -> AsyncThrowingStream<AIStreamEvent, Error> {
         return agent.streamExecute(messages: [.user(message)])
     }
 }
@@ -294,18 +286,14 @@ class ChatManager {
 
 ```swift
 class ChatManager {
-    let legacyAgent: Agent
+    let legacyAgent: LegacyAgent
     let adapter: AIAgentAdapter
 
     init() {
         let llm = OpenAIProvider(apiKey: "sk-...")
-        legacyAgent = Agent(llm: llm, tools: [WeatherTool.self])
-        adapter = AIAgentAdapter(legacyAgent: legacyAgent)
-    }
-
-    // Use new streaming interface with legacy agent
-    func stream(_ message: String) -> AsyncThrowingStream<AIAgentEvent, Error> {
-        return adapter.streamExecute(messages: [.user(message)])
+        legacyAgent = LegacyAgent(llm: llm, tools: [WeatherTool.self])
+        let adaptedModel = LLMAdapter(llm: llm, provider: "openai", modelId: "gpt-4")
+        adapter = AIAgentAdapter(agent: legacyAgent, modelAdapter: adaptedModel)
     }
 }
 ```
@@ -338,10 +326,10 @@ class WeatherTool: Tool {
 }
 ```
 
-### After (2.0) - Native AITool
+### After (2.0) - Native Tool
 
 ```swift
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     enum TemperatureUnit: String, Codable, CaseIterable {
         case celsius
         case fahrenheit
@@ -350,17 +338,17 @@ struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a location"
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var location: String = ""
 
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .fahrenheit
 
-    init() {}
+    required init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let temp = unit == .celsius ? "22C" : "72F"
-        return AIToolResult(content: "Weather in \(location): \(temp), sunny")
+        return ToolResult(content: "Weather in \(location): \(temp), sunny")
     }
 }
 ```
@@ -447,15 +435,12 @@ for try await event in agent.streamExecute(messages: [.user("Hello")]) {
     case .toolCall(let id, let name, let args):
         showToolResult(name)
 
-    case .toolResult(let id, let result):
+    case .toolResult(let id, let result, _):
         updateToolResult(result)
 
-    case .finish(let reason, let usage):
+    case .finish(let finishReason, let usage):
         hideLoadingIndicator()
         showUsage(usage)
-
-    case .error(let error):
-        showError(error)
 
     default:
         break
@@ -496,12 +481,12 @@ let result = try await aiAgent.execute(messages: [message])
 
 ```swift
 // WRONG - Compiler error in concurrent context
-class MyAdapter: AILanguageModel {
+class MyAdapter: LLM {
     var mutableState: Int = 0  // Not Sendable!
 }
 
 // CORRECT - Mark as @unchecked Sendable with proper synchronization
-final class MyAdapter: AILanguageModel, @unchecked Sendable {
+final class MyAdapter: LLM, @unchecked Sendable {
     private let lock = NSLock()
     private var _state: Int = 0
 
@@ -518,7 +503,7 @@ final class MyAdapter: AILanguageModel, @unchecked Sendable {
 ```swift
 // WRONG - Blocking call in actor context
 actor MyActor {
-    let agent = AIAgentActor(...)
+    let agent = Agent(...)
 
     func process() {
         agent.execute(...)  // Missing await!
@@ -527,7 +512,7 @@ actor MyActor {
 
 // CORRECT - Await actor methods
 actor MyActor {
-    let agent = AIAgentActor(...)
+    let agent = Agent(...)
 
     func process() async throws {
         let result = try await agent.execute(messages: [.user("Hi")])
@@ -566,25 +551,29 @@ let request = AITextRequest(
 
 ```swift
 // Wrap existing providers
-let adaptedModel = AILanguageModelAdapter.fromOpenAI(existingProvider)
+let adaptedModel = AILanguageModelAdapter(
+    llm: existingProvider,
+    provider: "openai",
+    modelId: "gpt-4"
+)
 
-// Migrate tools to AITool (no adapter layer)
-let tools: [AITool.Type] = [WeatherTool.self, CalculatorTool.self]
+// Migrate tools to Tool (no adapter layer)
+let tools: [Tool.Type] = [WeatherTool.self, CalculatorTool.self]
 
 // Create 2.0 agent with adapted components
-let agent = AIAgentActor(model: adaptedModel, tools: tools)
+let agent = Agent(model: adaptedModel, tools: tools)
 ```
 
 ### Phase 2: Migrate New Code
 
 1. Write all new code using 2.0 patterns
-2. Use `AIAgentActor` for new agents
-3. Use `AITool` protocol for new tools
+2. Use `Agent` for new agents
+3. Use `Tool` protocol for new tools
 
 ### Phase 3: Replace Legacy Components
 
-1. Migrate tools from `Tool` to `AITool`
-2. Switch from `LLM` to `AILanguageModel`
+1. Migrate tools from `Tool` to `Tool`
+2. Switch from `LegacyLLM` to `LLM` protocol
 3. Update message handling to `AIMessage`
 
 ### Phase 4: Remove Adapters
@@ -599,9 +588,9 @@ let agent = AIAgentActor(model: adaptedModel, tools: tools)
 
 | Migration Task | Adapter | Native Alternative |
 |---------------|---------|-------------------|
-| Wrap `LLM` provider | `AILanguageModelAdapter` | Implement `AILanguageModel` |
-| Wrap `Agent` | `AIAgentAdapter` | Use `AIAgentActor` |
+| Wrap `LegacyLLM` provider | `AILanguageModelAdapter` | Use `ProviderLanguageModelAdapter` factory methods |
+| Wrap `LegacyAgent` | `AIAgentAdapter` | Use `Agent` actor |
 | Convert messages | Manual | Use `AIMessage` constructors |
 | Handle streaming | Adapter auto-converts | Use `AsyncThrowingStream` events |
 
-The adapter approach allows incremental migration without rewriting everything at once. Start by wrapping providers/agents, and migrate tools directly to `AITool`.
+The adapter approach allows incremental migration without rewriting everything at once. Start by wrapping providers/agents, and migrate tools directly to `Tool`.
