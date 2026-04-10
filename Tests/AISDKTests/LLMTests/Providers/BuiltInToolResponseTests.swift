@@ -49,8 +49,11 @@ final class BuiltInToolResponseTests: XCTestCase {
         )
 
         let response = try await client.execute(request: providerRequest)
-        XCTAssertTrue(response.content.contains("Example"))
-        XCTAssertTrue(response.content.contains("https://example.com"))
+        // Web search results are structured as AISource, not dumped into text content
+        XCTAssertTrue(response.content.contains("Results:"))
+        XCTAssertEqual(response.sources.count, 1)
+        XCTAssertEqual(response.sources.first?.title, "Example")
+        XCTAssertEqual(response.sources.first?.url, "https://example.com")
     }
 
     func testAnthropicServerToolUseBlock() async throws {
@@ -131,8 +134,10 @@ final class BuiltInToolResponseTests: XCTestCase {
         )
 
         let response = try await client.execute(request: providerRequest)
-        XCTAssertTrue(response.content.contains("AISDK"))
-        XCTAssertTrue(response.content.contains("https://example.org"))
+        // Web search results are structured as AISource, not in text content
+        XCTAssertEqual(response.sources.count, 1)
+        XCTAssertEqual(response.sources.first?.title, "AISDK")
+        XCTAssertEqual(response.sources.first?.url, "https://example.org")
     }
 
     func testAnthropicStreamWebSearchEvents() async throws {
