@@ -84,7 +84,7 @@ graph TB
 
     subgraph "Core AISDK - 66 files"
         AGENT[Agent<br/>Agent.swift]
-        TOOLS[AITool Framework<br/>AITool.swift]
+        TOOLS[Tool Framework<br/>Tool.swift]
         MSG[Message System<br/>AIMessage.swift]
         MODELS[Model Registry<br/>LLMModelProtocol.swift]
     end
@@ -129,7 +129,7 @@ sequenceDiagram
     LLM-->>Agent: AITextResult
 
     Agent->>Tool: execute()
-    Tool-->>Agent: AIToolResult
+    Tool-->>Agent: ToolResult
 
     Agent->>LLM: generateText(with tool result)
     LLM->>API: POST /v1/chat/completions
@@ -146,12 +146,12 @@ stateDiagram-v2
     [*] --> idle
     idle --> thinking: execute() / streamExecute()
     thinking --> responding: Received content
-    thinking --> executingTool: AITool call detected
-    executingTool --> thinking: AITool executed, get final response
+    thinking --> executingTool: Tool call detected
+    executingTool --> thinking: Tool executed, get final response
     executingTool --> idle: returnToolResponse = true
     responding --> idle: Stream complete
     thinking --> error: Error occurred
-    executingTool --> error: AITool failed
+    executingTool --> error: Tool failed
     error --> idle: Reset
 ```
 
@@ -413,12 +413,12 @@ The SDK automatically converts `AIInputMessage` to provider-specific formats:
 
 ## 6. Tool Framework
 
-### AITool Protocol
+### Tool Protocol
 
-**Files:** `Sources/AISDK/Tools/AITool.swift`, `Sources/AISDK/Tools/Tool.swift`
+**File:** `Sources/AISDK/Tools/Tool.swift`
 
 ```swift
-public protocol AITool: Sendable {
+public protocol Tool: Sendable {
     var name: String { get }
     var description: String { get }
     var returnToolResponse: Bool { get }
@@ -428,21 +428,21 @@ public protocol AITool: Sendable {
     static func validate(arguments: [String: Any]) throws
     mutating func setParameters(from arguments: [String: Any]) throws
     mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
-    func execute() async throws -> AIToolResult
+    func execute() async throws -> ToolResult
 }
 ```
 
-### @AIParameter Property Wrapper
+### @Parameter Property Wrapper
 
 ```swift
-@AIParameter(description: "City name")
+@Parameter(description: "City name")
 var city: String = ""
 ```
 
 ### Complete Tool Example
 
 ```swift
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     enum TemperatureUnit: String, Codable, CaseIterable {
         case celsius
         case fahrenheit
@@ -451,18 +451,18 @@ struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a city"
 
-    @AIParameter(description: "City name (e.g., San Francisco)")
+    @Parameter(description: "City name (e.g., San Francisco)")
     var city: String = ""
 
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .fahrenheit
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         // Fetch weather data...
         let result = "Weather in \(city): 72°F, sunny"
-        return AIToolResult(content: result)
+        return ToolResult(content: result)
     }
 }
 
@@ -509,7 +509,7 @@ ToolMetadataDecoderRegistry.register(MyCustomMetadata.self)
 ### RenderableTool Protocol
 
 ```swift
-public protocol RenderableTool: AITool {
+public protocol RenderableTool: Tool {
     func render(from data: Data) -> AnyView
 }
 ```
@@ -1227,20 +1227,24 @@ try catalog.register(MyCardDefinition.self)
 
 AISDK provides comprehensive testing utilities.
 
-### 13.1 MockAILanguageModel
+### 13.1 MockLLM
 
-**File:** `Tests/AISDKTests/Mocks/MockAILanguageModel.swift`
+**File:** `Tests/AISDKTests/Mocks/MockLLM.swift`
 
-Configurable mock for unit testing.
+Configurable mock for unit testing. Uses factory methods for common scenarios.
 
 ```swift
-let mock = MockAILanguageModel(
-    responses: [
-        .text("Hello, I'm a mock!"),
-        .toolCall(name: "get_weather", arguments: "{}"),
-        .text("Final response")
-    ]
-)
+// Fixed response
+let mock = MockLLM.withResponse("Hello, I'm a mock!")
+
+// Tool call
+let mock = MockLLM.withToolCall("get_weather", arguments: "{}")
+
+// Slow response for timeout testing
+let mock = MockLLM.withSlowResponse(delay: .seconds(5))
+
+// Error injection
+let mock = MockLLM.failing(with: AgentError.invalidModel)
 
 let agent = Agent(model: mock, tools: [])
 let result = try await agent.execute(messages: [.user("Test")])
