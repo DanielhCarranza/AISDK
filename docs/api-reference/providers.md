@@ -132,7 +132,7 @@ let model = ProviderLanguageModelAdapter.openAIResponses(
 
 // Use with Agent
 let agent = Agent(model: model, builtInTools: [.webSearchDefault])
-let result = try await agent.run(input: "Search for the latest Swift version")
+let result = try await agent.execute(messages: [.user("Search for the latest Swift version")])
 
 // Basic text generation
 let request = AITextRequest(
