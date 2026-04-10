@@ -7,19 +7,20 @@ Prompt caching reduces costs and latency by reusing previously processed context
 ```swift
 import AISDK
 
-let anthropic = AILanguageModelAdapter(
-    provider: AnthropicProvider(apiKey: key),
+let anthropic = ProviderLanguageModelAdapter.anthropic(
+    apiKey: key,
     modelId: "claude-sonnet-4-20250514"
 )
 
 // Enable caching — system prompt and tools get cache_control markers
-let result = try await anthropic.generateText(
+let request = AITextRequest(
     messages: [
         .system("You are a medical assistant with extensive knowledge..."),  // Cached
         .user("What causes migraines?")
     ],
     caching: .enabled
 )
+let result = try await anthropic.generateText(request: request)
 
 // Check cache usage
 if let cached = result.usage?.cachedTokens {
@@ -32,10 +33,8 @@ if let cached = result.usage?.cachedTokens {
 By default, Anthropic caches expire after 5 minutes. Use `.extended()` for 1-hour TTL:
 
 ```swift
-let result = try await anthropic.generateText(
-    messages: messages,
-    caching: .extended()
-)
+let request = AITextRequest(messages: messages, caching: .extended())
+let result = try await anthropic.generateText(request: request)
 ```
 
 ## Per-Provider Caching Behavior
@@ -63,10 +62,11 @@ let result = try await anthropic.generateText(
 - **Explicit**: Pre-create a cache resource via Gemini API, then reference it:
 
 ```swift
-let result = try await gemini.generateText(
+let request = AITextRequest(
     messages: [.user("Analyze this document")],
     caching: .withCachedContent("cachedContents/abc123xyz")
 )
+let result = try await gemini.generateText(request: request)
 ```
 
 ## Track Cache Usage
