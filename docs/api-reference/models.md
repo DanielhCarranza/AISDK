@@ -265,7 +265,7 @@ public struct AITextResult: Sendable, Equatable {
     public let text: String
 
     /// Tool calls made by the model
-    public let toolCalls: [AIToolCallResult]
+    public let toolCalls: [ToolCallResult]
 
     /// Token usage statistics
     public let usage: AIUsage
@@ -360,10 +360,10 @@ public enum AIStreamEvent: Sendable {
 }
 ```
 
-### AIToolCallResult
+### ToolCallResult
 
 ```swift
-public struct AIToolCallResult: Sendable, Equatable, Codable {
+public struct ToolCallResult: Sendable, Equatable, Codable {
     public let id: String
     public let name: String
     public let arguments: String
@@ -449,7 +449,7 @@ AITextRequest
     └── produces ──► AITextResult
                         ├── AIUsage
                         ├── AIFinishReason
-                        └── AIToolCallResult[]
+                        └── ToolCallResult[]
 
 AITextRequest (streaming)
     │

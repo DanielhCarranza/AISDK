@@ -585,5 +585,5 @@ SessionListViewModel
 ## See Also
 
 - [Sessions Tutorial](../tutorials/08-sessions.md) - Step-by-step guide
-- [Agents](agents.md) - AIAgentActor and streaming
+- [Agents](agents.md) - Agent actor and streaming
 - [Models](models.md) - AIMessage and AIStreamEvent

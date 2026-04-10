@@ -2,12 +2,12 @@
 
 > Foundational protocols that define AISDK's architecture
 
-## AILanguageModel
+## LLM
 
 The unified interface for all language model providers.
 
 ```swift
-public protocol AILanguageModel: Actor, Sendable {
+public protocol LLM: Actor, Sendable {
     /// Provider identifier (e.g., "openrouter", "litellm")
     var provider: String { get }
 
@@ -70,7 +70,7 @@ The unified interface for AI agents with tool execution.
 ```swift
 public protocol AIAgent: Actor {
     /// The underlying language model
-    var model: any AILanguageModel { get }
+    var model: any LLM { get }
 
     /// Current agent state
     var state: AIAgentState { get }
@@ -289,9 +289,9 @@ public enum ProviderHealthStatus: Sendable {
 ## Type Hierarchy
 
 ```
-AILanguageModel (protocol)
+LLM (protocol)
 ├── OpenRouterClient (actor)
-└── MockAILanguageModel (class, for testing)
+└── MockLLM (class, for testing)
 
 AIAgent (protocol)
 └── AIAgentActor (actor)

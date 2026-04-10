@@ -2,12 +2,12 @@
 
 > Tool system for extending AI agent capabilities
 
-## AITool Protocol
+## Tool Protocol
 
 The unified, instance-based tool protocol.
 
 ```swift
-public protocol AITool: Sendable {
+public protocol Tool: Sendable {
     /// Tool identifier
     var name: String { get }
 
@@ -33,13 +33,13 @@ public protocol AITool: Sendable {
     mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
 
     /// Execute the tool
-    func execute() async throws -> AIToolResult
+    func execute() async throws -> ToolResult
 }
 ```
 
 ### Default Implementations
 
-`AITool` provides defaults for `returnToolResponse`, `jsonSchema()`, `validate(arguments:)`, and parameter binding when you use `@AIParameter` or `@Parameter`.
+`Tool` provides defaults for `returnToolResponse`, `jsonSchema()`, `validate(arguments:)`, and parameter binding when you use `@AIParameter` or `@Parameter`.
 
 ---
 
@@ -48,7 +48,7 @@ public protocol AITool: Sendable {
 ### Basic Tool
 
 ```swift
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     let name = "get_weather"
     let description = "Get current weather for a city"
 
@@ -65,9 +65,9 @@ struct WeatherTool: AITool {
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let temp = unit == .celsius ? "22C" : "72F"
-        return AIToolResult(content: "Weather in \(city): \(temp), sunny")
+        return ToolResult(content: "Weather in \(city): \(temp), sunny")
     }
 }
 ```
@@ -75,7 +75,7 @@ struct WeatherTool: AITool {
 ### Tool with Validation
 
 ```swift
-struct CalculatorTool: AITool {
+struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform basic arithmetic"
 
@@ -97,7 +97,7 @@ struct CalculatorTool: AITool {
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let result: Double
         switch operation {
         case .plus: result = a + b
@@ -107,7 +107,7 @@ struct CalculatorTool: AITool {
             guard b != 0 else { throw ToolError.executionFailed("Division by zero") }
             result = a / b
         }
-        return AIToolResult(content: "\(a) \(operation.rawValue) \(b) = \(result)")
+        return ToolResult(content: "\(a) \(operation.rawValue) \(b) = \(result)")
     }
 }
 ```
@@ -115,7 +115,7 @@ struct CalculatorTool: AITool {
 ### Tool with Metadata
 
 ```swift
-struct SearchTool: AITool {
+struct SearchTool: Tool {
     struct SearchMetadata: ToolMetadata {
         let resultCount: Int
         let sources: [String]
@@ -129,13 +129,13 @@ struct SearchTool: AITool {
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let results = await performSearch(query)
         let metadata = SearchMetadata(
             resultCount: results.count,
             sources: results.map(\.url)
         )
-        return AIToolResult(
+        return ToolResult(
             content: results.map(\.title).joined(separator: "\n"),
             metadata: metadata
         )
@@ -145,10 +145,10 @@ struct SearchTool: AITool {
 
 ---
 
-## AIToolResult
+## ToolResult
 
 ```swift
-public struct AIToolResult: Sendable {
+public struct ToolResult: Sendable {
     public let content: String
     public let metadata: ToolMetadata?
     public let artifacts: [ToolArtifact]?
@@ -187,11 +187,11 @@ struct WeatherToolUI: RenderableTool {
     @AIParameter(description: "City name")
     var city: String = ""
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let args = WeatherRenderArgs(city: city, temperature: 72, condition: "Sunny")
         let jsonData = try JSONEncoder().encode(args)
         let metadata = RenderMetadata(toolName: name, jsonData: jsonData)
-        return AIToolResult(content: "Weather in \(city): 72°F, Sunny", metadata: metadata)
+        return ToolResult(content: "Weather in \(city): 72°F, Sunny", metadata: metadata)
     }
 
     func render(from data: Data) -> AnyView {
@@ -204,12 +204,12 @@ struct WeatherToolUI: RenderableTool {
 
 ---
 
-## AIToolRegistry
+## ToolRegistry
 
 Thread-safe registry for tool management.
 
 ```swift
-let registry = AIToolRegistry()
+let registry = ToolRegistry()
 
 // Register tools
 registry.register(WeatherTool.self)
@@ -226,8 +226,8 @@ print(result.content)
 You can also use the shared registry:
 
 ```swift
-AIToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
-let toolType = AIToolRegistry.toolType(forName: "get_weather")
+ToolRegistry.registerAll(tools: [WeatherTool.self, CalculatorTool.self])
+let toolType = ToolRegistry.toolType(forName: "get_weather")
 ```
 
 ---

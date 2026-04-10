@@ -10,11 +10,11 @@ AISDK is a Swift framework for building AI-powered applications with a unified i
 
 | Section | Description |
 |---------|-------------|
-| [Core Protocols](core-protocols.md) | AILanguageModel, AIAgent, AITool |
+| [Core Protocols](core-protocols.md) | LLM, AIAgent, Tool |
 | [Models](models.md) | AIMessage, AITextRequest, AITextResult, AIStreamEvent |
 | [Providers](providers.md) | OpenRouterClient, ProviderClient protocol |
-| [Agents](agents.md) | AIAgentActor, ObservableAgentState, StopCondition |
-| [Tools](tools.md) | AITool protocol, AIToolRegistry, AIToolResult |
+| [Agents](agents.md) | Agent, ObservableAgentState, StopCondition |
+| [Tools](tools.md) | Tool protocol, ToolRegistry, ToolResult |
 | [Computer Use](computer-use.md) | ComputerUseAction, ComputerUseResult, agent handler |
 | [Reliability](reliability.md) | AdaptiveCircuitBreaker, FailoverExecutor, RetryPolicy |
 | [Sessions](sessions.md) | AISession, SessionStore, ChatViewModel, context compaction |
@@ -27,7 +27,7 @@ AISDK is a Swift framework for building AI-powered applications with a unified i
 ┌─────────────────────────────────────────────────────────────┐
 │                      Application Layer                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ AIAgentActor │  │GenerativeUI  │  │ Custom Tools     │  │
+│  │ Agent │  │GenerativeUI  │  │ Custom Tools     │  │
 │  └──────┬───────┘  │  ViewModel   │  └────────┬─────────┘  │
 │         │          └──────┬───────┘           │            │
 │  ┌──────┴──────────────────────────────────────┘            │
@@ -47,7 +47,7 @@ AISDK is a Swift framework for building AI-powered applications with a unified i
 ├─────────────────────────────────────────────────────────────┤
 │                    Core Protocols                           │
 │  ┌─────────────────┐ ┌─────────────────┐ ┌──────────────┐ │
-│  │ AILanguageModel │ │    AIAgent      │ │   AITool     │ │
+│  │ LLM │ │    AIAgent      │ │   Tool     │ │
 │  └─────────────────┘ └─────────────────┘ └──────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -71,7 +71,7 @@ let multimodal = AIMessage.user(parts: [
 Agent execution uses Swift actors for thread-safe state management:
 
 ```swift
-let agent = AIAgentActor(model: client, tools: [MyTool.self])
+let agent = Agent(model: client, tools: [MyTool.self])
 let result = try await agent.execute(messages: [.user("Hello")])
 ```
 
@@ -80,8 +80,8 @@ let result = try await agent.execute(messages: [.user("Hello")])
 Core functionality is defined through protocols for flexibility:
 
 ```swift
-protocol AILanguageModel: Actor, Sendable { ... }
-protocol AITool: Sendable { ... }
+protocol LLM: Actor, Sendable { ... }
+protocol Tool: Sendable { ... }
 protocol AIAgent: Sendable { ... }
 ```
 
