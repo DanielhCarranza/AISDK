@@ -8,10 +8,11 @@ AISDK supports provider-native built-in tools: web search, code execution, file 
 import AISDK
 
 let openai = ProviderLanguageModelAdapter.openAIResponses(apiKey: key, modelId: "gpt-4o")
-let result = try await openai.generateText(
+let request = AITextRequest(
     messages: [.user("What's the population of Tokyo? Calculate the per-capita GDP.")],
     builtInTools: [.webSearchDefault, .codeExecutionDefault]
 )
+let result = try await openai.generateText(request: request)
 print(result.text)
 print("Sources: \(result.sources)")  // Structured citations
 ```
@@ -32,10 +33,11 @@ print("Sources: \(result.sources)")  // Structured citations
 Web search results include full citation metadata:
 
 ```swift
-let result = try await llm.generateText(
+let request = AITextRequest(
     messages: [.user("Latest Swift concurrency updates")],
     builtInTools: [.webSearchDefault]
 )
+let result = try await llm.generateText(request: request)
 
 for source in result.sources {
     print("Title: \(source.title ?? "N/A")")
@@ -63,10 +65,11 @@ let config = WebSearchConfig(
     userLocation: UserLocation(country: "US", timezone: "America/New_York")
 )
 
-let result = try await llm.generateText(
+let request = AITextRequest(
     messages: [.user("Latest COVID vaccine research")],
     builtInTools: [.webSearch(config)]
 )
+let result = try await llm.generateText(request: request)
 ```
 
 ## Error Handling for Unsupported Tools
@@ -76,10 +79,11 @@ When you request a tool the provider doesn't support, you get an actionable erro
 ```swift
 do {
     // fileSearch is OpenAI-only
-    let result = try await gemini.generateText(
+    let request = AITextRequest(
         messages: [.user("Search my files")],
         builtInTools: [.fileSearch(FileSearchConfig(vectorStoreIds: ["vs_123"]))]
     )
+    let result = try await gemini.generateText(request: request)
 } catch let error as ProviderError {
     // "fileSearch is not supported by Gemini.
     //  Supported: webSearch, codeExecution, urlContext."
@@ -92,10 +96,11 @@ Note: OpenAI Chat Completions API does not support any built-in tools. Use the R
 ## Streaming with Tools
 
 ```swift
-for try await event in llm.streamText(
+let request = AITextRequest(
     messages: [.user("Find and summarize recent AI papers")],
     builtInTools: [.webSearchDefault]
-) {
+)
+for try await event in llm.streamText(request: request) {
     switch event {
     case .textDelta(let text):
         print(text, terminator: "")
