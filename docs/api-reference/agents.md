@@ -2,25 +2,25 @@
 
 > Agent implementation for multi-step AI workflows
 
-## AIAgent Protocol vs AIAgentActor
+## AIAgent Protocol vs Agent
 
 AISDK provides two related but distinct types for agent functionality:
 
 - **`AIAgent`** (protocol) - Defines the unified interface for AI agents. Located in `Sources/AISDK/Core/Protocols/AIAgent.swift`.
-- **`AIAgentActor`** (actor) - The concrete actor-based implementation of the agent pattern. Located in `Sources/AISDK/Agents/AIAgentActor.swift`.
+- **`Agent`** (actor) - The concrete actor-based implementation of the agent pattern. Located in `Sources/AISDK/Agents/Agent.swift`.
 
 The protocol defines the contract (properties like `agentId`, `state`, `messages`, `tools` and methods like `send()`, `sendStream()`, `reset()`), while the actor provides the thread-safe, observable implementation.
 
-In most cases, you'll use `AIAgentActor` directly for creating agents.
+In most cases, you'll use `Agent` directly for creating agents.
 
 ---
 
-## AIAgentActor
+## Agent
 
 The primary agent implementation using Swift actors.
 
 ```swift
-public actor AIAgentActor {
+public actor Agent {
     /// Execute a non-streaming agent loop
     public func execute(messages: [AIMessage]) async throws -> AIAgentResult
 
@@ -45,13 +45,18 @@ public actor AIAgentActor {
 
 ```swift
 public init(
-    model: any AILanguageModel,
-    tools: [AITool.Type] = [],
+    model: any LLM,
+    tools: [Tool.Type] = [],
+    builtInTools: [BuiltInTool] = [],
+    mcpServers: [MCPServerConfiguration] = [],
+    skillConfiguration: SkillConfiguration = .default,
     instructions: String? = nil,
-    requestOptions: AIAgentActor.RequestOptions = AIAgentActor.RequestOptions(),
+    requestOptions: Agent.RequestOptions = RequestOptions(),
     stopCondition: StopCondition = .stepCount(20),
     timeout: TimeoutPolicy = .default,
     maxToolRounds: Int = 10,
+    progressiveRendering: ProgressiveRenderingMode = .disabled,
+    contextPolicy: ContextPolicy? = nil,
     name: String? = nil,
     agentId: String? = nil
 )
@@ -61,7 +66,7 @@ public init(
 
 ```swift
 // Create agent with tools
-let agent = AIAgentActor(
+let agent = Agent(
     model: openRouterClient,
     tools: [WeatherTool.self, SearchTool.self],
     instructions: "You are a helpful assistant."
@@ -191,7 +196,7 @@ public final class ObservableAgentState: Sendable {
 
 ```swift
 struct ChatView: View {
-    let agent: AIAgentActor
+    let agent: Agent
     @State private var state: ObservableAgentState
 
     var body: some View {
@@ -230,7 +235,7 @@ Configuration options for creating an agent.
 ```swift
 public struct AIAgentConfiguration: Sendable {
     /// The language model to use
-    public let model: AILanguageModel
+    public let model: LLM
 
     /// Tool schemas available to the agent
     public let tools: [ToolSchema]
@@ -347,7 +352,7 @@ do {
 
 ```swift
 // Prevent runaway loops
-let agent = AIAgentActor(
+let agent = Agent(
     model: model,
     tools: tools,
     stopCondition: .stepCount(10)
@@ -357,7 +362,7 @@ let agent = AIAgentActor(
 ### 2. Use Instructions
 
 ```swift
-let agent = AIAgentActor(
+let agent = Agent(
     model: model,
     tools: tools,
     instructions: """
