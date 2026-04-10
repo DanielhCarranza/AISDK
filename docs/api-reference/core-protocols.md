@@ -294,7 +294,7 @@ LLM (protocol)
 └── MockLLM (class, for testing)
 
 AIAgent (protocol)
-└── AIAgentActor (actor)
+└── Agent (actor)
 
 AITool (protocol)
 ├── WeatherTool (struct)
