@@ -120,51 +120,54 @@ Example: An agent that researches topics using multiple tools.
 
 ```swift
 // Define research tools
-struct WebSearchTool: AITool {
-    static let name = "web_search"
-    static let description = "Search the web for information"
+struct WebSearchTool: Tool {
+    let name = "web_search"
+    let description = "Search the web for information"
 
-    struct Parameters: Codable, Sendable {
-        let query: String
-        let maxResults: Int?
-    }
+    @Parameter(description: "Search query")
+    var query: String = ""
 
-    static func execute(parameters: Parameters) async throws -> AIToolResult {
-        let results = await searchWeb(
-            query: parameters.query,
-            limit: parameters.maxResults ?? 5
-        )
-        return AIToolResult(content: formatResults(results))
-    }
-}
+    @Parameter(description: "Maximum number of results")
+    var maxResults: Int = 5
 
-struct WikipediaTool: AITool {
-    static let name = "wikipedia"
-    static let description = "Look up information on Wikipedia"
+    init() {}
 
-    struct Parameters: Codable, Sendable {
-        let topic: String
-    }
-
-    static func execute(parameters: Parameters) async throws -> AIToolResult {
-        let article = await fetchWikipediaArticle(parameters.topic)
-        return AIToolResult(content: article.summary)
+    func execute() async throws -> ToolResult {
+        let results = await searchWeb(query: query, limit: maxResults)
+        return ToolResult(content: formatResults(results))
     }
 }
 
-struct NoteTool: AITool {
-    static let name = "save_note"
-    static let description = "Save a research note"
+struct WikipediaTool: Tool {
+    let name = "wikipedia"
+    let description = "Look up information on Wikipedia"
 
-    struct Parameters: Codable, Sendable {
-        let title: String
-        let content: String
-        let sources: [String]
+    @Parameter(description: "Topic to look up")
+    var topic: String = ""
+
+    init() {}
+
+    func execute() async throws -> ToolResult {
+        let article = await fetchWikipediaArticle(topic)
+        return ToolResult(content: article.summary)
     }
+}
 
-    static func execute(parameters: Parameters) async throws -> AIToolResult {
-        await saveNote(parameters)
-        return AIToolResult(content: "Note saved: \(parameters.title)")
+struct NoteTool: Tool {
+    let name = "save_note"
+    let description = "Save a research note"
+
+    @Parameter(description: "Note title")
+    var title: String = ""
+
+    @Parameter(description: "Note content")
+    var content: String = ""
+
+    init() {}
+
+    func execute() async throws -> ToolResult {
+        await saveNote(title: title, content: content)
+        return ToolResult(content: "Note saved: \(title)")
     }
 }
 
@@ -249,21 +252,22 @@ let result = try await agent.execute(
 Handle tool failures gracefully:
 
 ```swift
-struct ResilientTool: AITool {
-    static let name = "api_call"
-    static let description = "Call an external API"
+struct ResilientTool: Tool {
+    let name = "api_call"
+    let description = "Call an external API"
 
-    struct Parameters: Codable, Sendable {
-        let endpoint: String
-    }
+    @Parameter(description: "API endpoint URL")
+    var endpoint: String = ""
 
-    static func execute(parameters: Parameters) async throws -> AIToolResult {
+    init() {}
+
+    func execute() async throws -> ToolResult {
         do {
-            let data = try await callAPI(parameters.endpoint)
-            return AIToolResult(content: data)
+            let data = try await callAPI(endpoint)
+            return ToolResult(content: data)
         } catch {
             // Return error as content so agent can adapt
-            return AIToolResult(
+            return ToolResult(
                 content: "API call failed: \(error.localizedDescription). Please try an alternative approach.",
                 isError: true
             )
