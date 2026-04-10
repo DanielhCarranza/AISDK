@@ -151,7 +151,7 @@ Response from a non-streaming agent execution:
 public struct AIAgentResponse: Sendable {
     public let text: String
     public let toolCalls: [AIToolCall]
-    public let toolResults: [AIToolResult]
+    public let toolResults: [ToolResult]
     public let usage: AIUsage
     public let finishReason: AIFinishReason
 }
@@ -180,12 +180,12 @@ public enum AIAgentEvent: Sendable {
 
 ---
 
-## AITool
+## Tool
 
 The unified, instance-based tool protocol.
 
 ```swift
-public protocol AITool: Sendable {
+public protocol Tool: Sendable {
     /// Tool identifier
     var name: String { get }
 
@@ -211,16 +211,16 @@ public protocol AITool: Sendable {
     mutating func validateAndSetParameters(_ argumentsData: Data) throws -> Self
 
     /// Execute the tool
-    func execute() async throws -> AIToolResult
+    func execute() async throws -> ToolResult
 }
 ```
 
-### AIToolResult
+### ToolResult
 
 Result returned from tool execution:
 
 ```swift
-public struct AIToolResult: Sendable {
+public struct ToolResult: Sendable {
     /// Text content of the result
     public let content: String
 
@@ -235,7 +235,7 @@ public struct AIToolResult: Sendable {
 ### Example Tool
 
 ```swift
-struct WeatherTool: AITool {
+struct WeatherTool: Tool {
     enum TemperatureUnit: String, Codable, CaseIterable {
         case celsius
         case fahrenheit
@@ -252,9 +252,9 @@ struct WeatherTool: AITool {
 
     init() {}
 
-    func execute() async throws -> AIToolResult {
+    func execute() async throws -> ToolResult {
         let weather = await fetchWeather(city: city)
-        return AIToolResult(content: "Weather in \(city): \(weather)")
+        return ToolResult(content: "Weather in \(city): \(weather)")
     }
 }
 ```
