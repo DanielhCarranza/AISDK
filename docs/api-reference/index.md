@@ -103,7 +103,7 @@ AISDK leverages Swift's type system:
 
 - **Sendable**: All types crossing concurrency boundaries are Sendable
 - **Codable**: Request/response types are Codable for serialization
-- **Property Wrappers**: Tools use `@AIParameter` for typed, validated arguments
+- **Property Wrappers**: Tools use `@Parameter` for typed, validated arguments
 
 ## Next Steps
 

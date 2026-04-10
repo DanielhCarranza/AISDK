@@ -39,7 +39,7 @@ public protocol Tool: Sendable {
 
 ### Default Implementations
 
-`Tool` provides defaults for `returnToolResponse`, `jsonSchema()`, `validate(arguments:)`, and parameter binding when you use `@AIParameter` or `@Parameter`.
+`Tool` provides defaults for `returnToolResponse`, `jsonSchema()`, `validate(arguments:)`, and parameter binding when you use `@Parameter` or `@Parameter`.
 
 ---
 
@@ -57,10 +57,10 @@ struct WeatherTool: Tool {
         case fahrenheit
     }
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
 
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .celsius
 
     init() {}
@@ -79,10 +79,10 @@ struct CalculatorTool: Tool {
     let name = "calculate"
     let description = "Perform basic arithmetic"
 
-    @AIParameter(description: "First number", .range(-1000...1000))
+    @Parameter(description: "First number", .range(-1000...1000))
     var a: Double = 0
 
-    @AIParameter(description: "Second number", .range(-1000...1000))
+    @Parameter(description: "Second number", .range(-1000...1000))
     var b: Double = 0
 
     enum Operation: String, Codable, CaseIterable {
@@ -92,7 +92,7 @@ struct CalculatorTool: Tool {
         case divide = "/"
     }
 
-    @AIParameter(description: "Operation")
+    @Parameter(description: "Operation")
     var operation: Operation = .plus
 
     init() {}
@@ -124,7 +124,7 @@ struct SearchTool: Tool {
     let name = "search"
     let description = "Search the web"
 
-    @AIParameter(description: "Search query")
+    @Parameter(description: "Search query")
     var query: String = ""
 
     init() {}
@@ -184,7 +184,7 @@ struct WeatherToolUI: RenderableTool {
     let name = "get_weather"
     let description = "Get the current weather in a given city"
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
 
     func execute() async throws -> ToolResult {
@@ -259,7 +259,7 @@ For computer use details, see [Computer Use](computer-use.md).
 
 ## Notes on Parameters
 
-- `@AIParameter` and `@Parameter` are equivalent. Prefer `@AIParameter` for new tools.
+- `@Parameter` and `@Parameter` are equivalent. Prefer `@Parameter` for new tools.
 - Do **not** re-initialize parameter wrappers inside `init()`. The property wrapper declaration is the single source of truth.
 - Enums are supported (recommended: `Codable & CaseIterable`), and enum values are emitted in JSON schema.
 

@@ -244,10 +244,10 @@ struct WeatherTool: AITool {
     let name = "get_weather"
     let description = "Get current weather for a city"
 
-    @AIParameter(description: "City name")
+    @Parameter(description: "City name")
     var city: String = ""
 
-    @AIParameter(description: "Temperature unit")
+    @Parameter(description: "Temperature unit")
     var unit: TemperatureUnit = .celsius
 
     init() {}
