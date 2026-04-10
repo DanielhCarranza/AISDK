@@ -82,13 +82,17 @@ Legacy providers (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`) must 
 ## Features
 
 - **Multi-provider agents** with tool calling, streaming, and structured output
+- **One-line provider switching** — change a single line to switch between OpenAI, Anthropic, and Gemini ([guide](docs/guides/provider-switching.md))
+- **Built-in tools** — web search with structured citations, code execution, file search, image generation ([guide](docs/guides/built-in-tools.md))
+- **Reasoning controls** — unified config for OpenAI o-series, Anthropic extended thinking, and Gemini thinking ([guide](docs/guides/reasoning-controls.md))
+- **Video input** — send video to Gemini models with actionable errors for unsupported providers ([guide](docs/guides/video-modality.md))
+- **Prompt caching** — reduce Anthropic costs by 90% with cache_control markers ([guide](docs/guides/prompt-caching.md))
+- **Sessions** — persistence with InMemory, FileSystem, and SQLite stores ([guide](docs/guides/sessions-storage.md))
+- **Computer use** — handler pattern for screenshot/click with error propagation ([guide](docs/guides/computer-use.md))
+- **Agentic skills** — markdown-defined capabilities with SKILL.md discovery ([guide](docs/guides/agentic-skills.md))
 - **Reliability** — retry policies, circuit breakers, failover, health monitoring
 - **Generative UI** — spec-driven SwiftUI generation from LLM responses
-- **Sessions** — persistence with InMemory, FileSystem, and SQLite stores
 - **MCP** — Model Context Protocol client for external tool servers
-- **Computer use** — Anthropic computer use tool integration
-- **Web search** — built-in web search tool with citation support
-- **Reasoning controls** — extended thinking for o1/o3 and Claude models
 - **v1 compatibility** — typealiases and adapters for gradual migration
 
 ## Documentation
