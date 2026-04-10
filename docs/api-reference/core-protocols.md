@@ -7,11 +7,11 @@
 The unified interface for all language model providers.
 
 ```swift
-public protocol LLM: Actor, Sendable {
-    /// Provider identifier (e.g., "openrouter", "litellm")
+public protocol LLM: Sendable {
+    /// Provider name (e.g., "openai", "anthropic", "google")
     var provider: String { get }
 
-    /// Model identifier within the provider
+    /// Model identifier (e.g., "gpt-4", "claude-3-opus")
     var modelId: String { get }
 
     /// Capabilities supported by this model
@@ -40,13 +40,40 @@ public protocol LLM: Actor, Sendable {
 Flags indicating model capabilities:
 
 ```swift
-public struct LLMCapabilities: OptionSet, Sendable {
-    public static let streaming = LLMCapabilities(rawValue: 1 << 0)
-    public static let toolCalling = LLMCapabilities(rawValue: 1 << 1)
-    public static let vision = LLMCapabilities(rawValue: 1 << 2)
-    public static let audio = LLMCapabilities(rawValue: 1 << 3)
-    public static let structuredOutput = LLMCapabilities(rawValue: 1 << 4)
-    public static let reasoning = LLMCapabilities(rawValue: 1 << 5)
+public struct LLMCapabilities: OptionSet, Hashable, Sendable {
+    // Input/Output Modalities
+    public static let text = LLMCapabilities(rawValue: 1 << 0)
+    public static let vision = LLMCapabilities(rawValue: 1 << 1)
+    public static let audio = LLMCapabilities(rawValue: 1 << 2)
+    public static let video = LLMCapabilities(rawValue: 1 << 3)
+    public static let pdf = LLMCapabilities(rawValue: 1 << 4)
+
+    // Functional Capabilities
+    public static let tools = LLMCapabilities(rawValue: 1 << 5)
+    public static let functionCalling = LLMCapabilities(rawValue: 1 << 6)
+    public static let codeExecution = LLMCapabilities(rawValue: 1 << 7)
+    public static let structuredOutputs = LLMCapabilities(rawValue: 1 << 8)
+    public static let jsonMode = LLMCapabilities(rawValue: 1 << 9)
+
+    // Advanced Capabilities
+    public static let reasoning = LLMCapabilities(rawValue: 1 << 10)
+    public static let thinking = LLMCapabilities(rawValue: 1 << 11)
+    public static let search = LLMCapabilities(rawValue: 1 << 12)
+    public static let webSearch = LLMCapabilities(rawValue: 1 << 13)
+    public static let grounding = LLMCapabilities(rawValue: 1 << 14)
+
+    // Generation Capabilities
+    public static let imageGeneration = LLMCapabilities(rawValue: 1 << 15)
+    public static let audioGeneration = LLMCapabilities(rawValue: 1 << 16)
+    public static let videoGeneration = LLMCapabilities(rawValue: 1 << 17)
+    public static let speechToText = LLMCapabilities(rawValue: 1 << 18)
+    public static let textToSpeech = LLMCapabilities(rawValue: 1 << 19)
+
+    // Operational Capabilities
+    public static let streaming = LLMCapabilities(rawValue: 1 << 20)
+    public static let realtime = LLMCapabilities(rawValue: 1 << 21)
+    public static let liveAPI = LLMCapabilities(rawValue: 1 << 22)
+    public static let caching = LLMCapabilities(rawValue: 1 << 23)
 }
 ```
 
@@ -55,9 +82,10 @@ public struct LLMCapabilities: OptionSet, Sendable {
 ```swift
 // Check capabilities before using features
 if model.capabilities.contains(.vision) {
-    let request = AITextRequest(messages: [
-        .user(parts: [.text("Describe this"), .imageURL(url)])
-    ])
+    // Model supports image input
+}
+if model.capabilities.contains(.tools) {
+    // Model supports tool calling
 }
 ```
 
@@ -68,9 +96,12 @@ if model.capabilities.contains(.vision) {
 The unified interface for AI agents with tool execution.
 
 ```swift
-public protocol AIAgent: Actor {
-    /// The underlying language model
-    var model: any LLM { get }
+public protocol AIAgent: Sendable {
+    /// The agent's unique identifier
+    var agentId: String { get }
+
+    /// The name of this agent
+    var name: String? { get }
 
     /// Current agent state
     var state: AIAgentState { get }
@@ -78,17 +109,23 @@ public protocol AIAgent: Actor {
     /// Current message history
     var messages: [AIMessage] { get }
 
-    /// Send a message and get a response
-    func send(_ message: AIMessage) async throws -> AIAgentResponse
+    /// Available tools for this agent
+    var tools: [ToolSchema] { get }
+
+    /// The underlying language model
+    var model: LLM { get }
+
+    /// Send a message and get a response (non-streaming)
+    func send(_ message: String) async throws -> AIAgentResponse
 
     /// Send a message with streaming response
-    func sendStream(_ message: AIMessage) -> AsyncThrowingStream<AIAgentEvent, Error>
+    func sendStream(_ message: String, requiredTool: String?) -> AsyncThrowingStream<AIAgentEvent, Error>
 
     /// Reset agent state and message history
-    func reset() async
+    func reset()
 
     /// Set message history directly
-    func setMessages(_ messages: [AIMessage]) async
+    func setMessages(_ messages: [AIMessage])
 }
 ```
 
@@ -229,27 +266,27 @@ struct WeatherTool: AITool {
 Protocol for provider-level API clients.
 
 ```swift
-public protocol ProviderClient: Actor, Sendable {
+public protocol ProviderClient: Sendable {
     /// Provider identifier
-    nonisolated var providerId: String { get }
+    var providerId: String { get }
 
     /// Human-readable display name
-    nonisolated var displayName: String { get }
+    var displayName: String { get }
 
     /// Base URL for API requests
-    nonisolated var baseURL: URL { get }
+    var baseURL: URL { get }
 
     /// Current health status
-    var healthStatus: ProviderHealthStatus { get }
+    var healthStatus: ProviderHealthStatus { get async }
 
     /// Whether provider is accepting requests
-    var isAvailable: Bool { get }
+    var isAvailable: Bool { get async }
 
     /// Execute a non-streaming request
     func execute(request: ProviderRequest) async throws -> ProviderResponse
 
     /// Execute a streaming request
-    nonisolated func stream(
+    func stream(
         request: ProviderRequest
     ) -> AsyncThrowingStream<ProviderStreamEvent, Error>
 
@@ -289,21 +326,24 @@ public enum ProviderHealthStatus: Sendable {
 ## Type Hierarchy
 
 ```
-LLM (protocol)
-├── OpenRouterClient (actor)
+LLM (protocol: Sendable)
+├── ProviderLanguageModelAdapter (struct)
+├── AILanguageModelAdapter (struct)
 └── MockLLM (class, for testing)
 
-AIAgent (protocol)
+AIAgent (protocol: Sendable)
 └── Agent (actor)
 
-AITool (protocol)
+Tool (protocol: Sendable)
 ├── WeatherTool (struct)
 ├── SearchTool (struct)
 └── [User-defined tools]
 
-ProviderClient (protocol)
+ProviderClient (protocol: Sendable)
 ├── OpenRouterClient (actor)
-└── LiteLLMClient (actor)
+├── LiteLLMClient (actor)
+├── AnthropicClientAdapter (actor)
+└── GeminiClientAdapter (actor)
 ```
 
 ## See Also
