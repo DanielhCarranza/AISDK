@@ -263,11 +263,11 @@ Flow in `Examples/AISDKCLI/CLIController.swift`:
 
 ## AIAgents integration
 
-There is no dedicated json-render mode inside `AIAgentActor` or `Agent`.
+There is no dedicated json-render mode inside `Agent` or `Agent`.
 Integration is done by:
 
 1. Including `UICatalog.generatePrompt()` in the system message.
-2. Setting `AIAgentActor.RequestOptions.responseFormat = .jsonObject`
+2. Setting `Agent.RequestOptions.responseFormat = .jsonObject`
    (or equivalent in a provider request) to bias the model toward JSON.
 3. Parsing the resulting text into a `UITree` using `UITree.parse(...)`.
 4. Rendering via `GenerativeUIView` or a custom renderer.
@@ -276,7 +276,7 @@ Example flow:
 
 ```swift
 let catalog = UICatalog.core8
-let agent = AIAgentActor(
+let agent = Agent(
     model: myModel,
     instructions: catalog.generatePrompt(),
     requestOptions: .init(responseFormat: .jsonObject)
@@ -288,7 +288,7 @@ let tree = try UITree.parse(from: result.text, validatingWith: catalog)
 
 Streaming note:
 
-- `AIAgentActor.streamExecute` streams text deltas, not `UITree` objects.
+- `Agent.streamExecute` streams text deltas, not `UITree` objects.
 - To get incremental UI updates, you must accumulate JSON yourself and emit
   `UITree` values to `GenerativeUIViewModel.scheduleUpdate` or
   `GenerativeUIViewModel.subscribe`.

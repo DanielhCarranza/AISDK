@@ -8,11 +8,11 @@
 
 | Component | Purpose | Key Types |
 |-----------|---------|-----------|
-| **Core AISDK** | Multi-provider LLM abstraction | `AIAgentActor`, `AILanguageModel`, `AITool`, `AIMessage` |
-| **Providers** | API implementations | `OpenRouterClient`, `LiteLLMClient`, `OpenAIProvider` |
+| **Core AISDK** | Multi-provider LLM abstraction | `Agent` (actor), `LLM` (protocol), `Tool`, `AIMessage` |
+| **Providers** | API implementations | `OpenRouterClient`, `LiteLLMClient`, `OpenAIProvider`, `AnthropicClientAdapter`, `GeminiClientAdapter` |
 | **Reliability** | Fault tolerance | `AdaptiveCircuitBreaker`, `FailoverExecutor`, `ProviderHealthMonitor` |
 | **Generative UI** | LLM-generated interfaces | `UICatalog`, `UITree`, `GenerativeUIViewModel` |
-| **Tools** | Function calling framework | `AITool`, `AIToolResult`, `AIToolRegistry` |
+| **Tools** | Function calling framework | `Tool`, `ToolResult`, `ParameterSchema` |
 | **Messages** | Universal message format | `AIMessage`, `AITextRequest`, `AITextResult` |
 
 ---
@@ -83,7 +83,7 @@ graph TB
     end
 
     subgraph "Core AISDK - 66 files"
-        AGENT[AIAgentActor<br/>AIAgentActor.swift]
+        AGENT[Agent<br/>Agent.swift]
         TOOLS[AITool Framework<br/>AITool.swift]
         MSG[Message System<br/>AIMessage.swift]
         MODELS[Model Registry<br/>LLMModelProtocol.swift]
@@ -117,7 +117,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant App
-    participant Agent as AIAgentActor
+    participant Agent as Agent
     participant LLM as AILanguageModel
     participant Tool as AITool
     participant API as External API
@@ -518,16 +518,16 @@ public protocol RenderableTool: AITool {
 
 ## 7. Agent System
 
-### AIAgentActor
+### Agent
 
-**File:** `Sources/AISDK/Agents/AIAgentActor.swift`
+**File:** `Sources/AISDK/Agents/Agent.swift`
 
-The `AIAgentActor` orchestrates LLM interactions with automatic tool execution using Swift actors for thread safety.
+The `Agent` orchestrates LLM interactions with automatic tool execution using Swift actors for thread safety.
 
 ```swift
 // Initialize with provider (non-throwing)
 let client = OpenRouterClient(apiKey: "sk-...")
-let agent = AIAgentActor(
+let agent = Agent(
     model: client,
     tools: [WeatherTool.self, CalculatorTool.self],
     instructions: "You are a helpful assistant."
@@ -565,7 +565,7 @@ for try await event in agent.streamExecute(messages: [.user("Tell me about...")]
 ```swift
 // SwiftUI binding via @Observable
 struct ChatView: View {
-    let agent: AIAgentActor
+    let agent: Agent
 
     var body: some View {
         if agent.observableState.isProcessing {
@@ -777,7 +777,7 @@ let fruits: FruitList = try await openai.generateObject(request: request)
 ```swift
 // Create agent (non-throwing)
 let client = OpenRouterClient(apiKey: "sk-...")
-let agent = AIAgentActor(
+let agent = Agent(
     model: client,
     tools: [WeatherTool.self, SearchTool.self],
     instructions: "You are a helpful assistant."
@@ -1242,7 +1242,7 @@ let mock = MockAILanguageModel(
     ]
 )
 
-let agent = AIAgentActor(model: mock, tools: [])
+let agent = Agent(model: mock, tools: [])
 let result = try await agent.execute(messages: [.user("Test")])
 ```
 
@@ -1258,7 +1258,7 @@ func test_concurrent_agent_executions() async throws {
     await withTaskGroup(of: Void.self) { group in
         for _ in 0..<100 {
             group.addTask {
-                let agent = AIAgentActor(model: mock, tools: [])
+                let agent = Agent(model: mock, tools: [])
                 do {
                     _ = try await agent.execute(messages: [.user("Test")])
                     metrics.recordCompletion()
@@ -1329,7 +1329,7 @@ func test_concurrent_streaming_requests() async throws {
 
 | Feature | 1.x | 2.0 |
 |---------|-----|-----|
-| Agent Implementation | Class-based | Actor-based (`AIAgentActor`) |
+| Agent Implementation | Class-based | Actor-based (`Agent`) |
 | Concurrency | GCD/Closures | Swift Concurrency |
 | Streaming | Completion handlers | `AsyncThrowingStream` |
 | State Management | KVO | `@Observable` pattern |
@@ -1348,16 +1348,16 @@ let legacyProvider = OldStyleLLM()
 let adapted = AILanguageModelAdapter(legacyLLM: legacyProvider)
 
 // Now use with modern agent
-let agent = AIAgentActor(model: adapted, tools: [])
+let agent = Agent(model: adapted, tools: [])
 ```
 
-### AIAgentActor
+### Agent
 
 The modern, actor-based agent implementation:
 
 ```swift
 // Create agent with modern API
-let agent = AIAgentActor(
+let agent = Agent(
     model: openRouterModel,
     tools: [weatherTool, calculatorTool],
     instructions: "You are a helpful assistant"
@@ -1419,7 +1419,7 @@ struct ChatView: View {
 #### Agents/ (9 files)
 | File | Purpose |
 |------|---------|
-| `Agent.swift` | Legacy agent class (see `AIAgentActor.swift` for v2) |
+| `Agent.swift` | Legacy agent class (see `Agent.swift` for v2) |
 | `AgentState.swift` | State enum (idle, thinking, responding, executingTool, error) |
 | `AgentCallbacks.swift` | Callback protocol for lifecycle hooks |
 | `ResponseAgent.swift` | Specialized agent for OpenAI Responses API |
