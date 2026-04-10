@@ -361,6 +361,107 @@ let agent = Agent(model: adapted)
 
 ---
 
+## Phase 1+2 Features (beta.7)
+
+The following features were added, polished, and hardened across 8 feature branches merged into beta.7.
+
+### 11. Video Modality
+
+Send video to models that support it (Gemini). Non-video providers throw `ProviderError.unsupportedModality(.video)` with an actionable message naming which providers support video.
+
+```swift
+if model.hasCapability(.video) { /* safe to send video */ }
+
+let result = try await gemini.generateText(request: AITextRequest(
+    messages: [.user([.text("Describe this"), .video(data, format: .mp4)])]
+))
+```
+
+OpenRouter and LiteLLM correctly report `.video` for Gemini-backed models. See [Video Modality Guide](guides/video-modality.md).
+
+### 12. Reasoning Controls
+
+Unified `AIReasoningConfig` for OpenAI o-series, Anthropic extended thinking, and Gemini thinking models:
+
+```swift
+let result = try await llm.generateText(request: AITextRequest(
+    messages: [.user("What is 127 * 893?")],
+    reasoning: .effort(.high)
+))
+```
+
+Handles edge cases: Anthropic budget clamping when `maxTokens < 1024`, non-reasoning models silently ignore the config. See [Reasoning Controls Guide](guides/reasoning-controls.md).
+
+### 13. Agentic Skills
+
+Markdown-defined capabilities (`SKILL.md` files) that agents discover and activate at runtime:
+
+```swift
+let config = SkillConfiguration(searchRoots: [URL(fileURLWithPath: ".myapp/skills/")])
+let agent = Agent(model: myModel, skillConfiguration: config)
+```
+
+Configurable discovery paths, strict frontmatter validation, no memory leaks in long sessions. See [Agentic Skills Guide](guides/agentic-skills.md).
+
+### 14. Built-in Tools
+
+Provider-native tools (web search with structured citations, code execution, file search, image generation):
+
+```swift
+let result = try await llm.generateText(request: AITextRequest(
+    messages: [.user("Latest Swift concurrency updates")],
+    builtInTools: [.webSearchDefault, .codeExecutionDefault]
+))
+// result.sources contains structured citations with title, URL, snippet
+```
+
+Unsupported tool requests throw `ProviderError` naming the tool and listing alternatives. See [Built-in Tools Guide](guides/built-in-tools.md).
+
+### 15. Computer Use
+
+Handler pattern for AI-driven GUI control — the SDK manages the protocol, your app implements screenshot/click:
+
+```swift
+let agent = Agent(model: myModel, builtInTools: [.computerUseDefault])
+await agent.setComputerUseHandler { toolCall in
+    switch toolCall.action {
+    case .screenshot: return .screenshot(captureScreenshot())
+    case .click(let x, let y, let button):
+        performClick(x: x, y: y, button: button)
+        return .screenshot(captureScreenshot())
+    default: return .error("Unsupported")
+    }
+}
+```
+
+Handler errors propagate cleanly as tool results. See [Computer Use Guide](guides/computer-use.md).
+
+### 16. Prompt Caching
+
+Reduce Anthropic input token costs by 90% with cache_control markers:
+
+```swift
+let result = try await anthropic.generateText(request: AITextRequest(
+    messages: messages, caching: .enabled  // 5-min TTL; use .extended() for 1-hour
+))
+```
+
+OpenAI and Gemini caching is automatic. See [Prompt Caching Guide](guides/prompt-caching.md).
+
+### 17. Provider Switching & Integration Polish
+
+Switch providers by changing one line:
+
+```swift
+let llm = ProviderLanguageModelAdapter.openAIResponses(apiKey: key, modelId: "gpt-4o")
+// or: .anthropic(apiKey: key, modelId: "claude-sonnet-4-20250514")
+// or: .gemini(apiKey: key, modelId: "gemini-2.0-flash")
+```
+
+Actionable `ProviderError` messages name the unsupported feature and list alternatives. See [Provider Switching Guide](guides/provider-switching.md).
+
+---
+
 ## Summary: AISDK 2.0 is Modernized
 
 ### What's Actually New (Not Just Renamed)
