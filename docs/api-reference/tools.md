@@ -39,7 +39,7 @@ public protocol Tool: Sendable {
 
 ### Default Implementations
 
-`Tool` provides defaults for `returnToolResponse`, `jsonSchema()`, `validate(arguments:)`, and parameter binding when you use `@Parameter` or `@Parameter`.
+`Tool` provides defaults for `returnToolResponse`, `jsonSchema()`, `validate(arguments:)`, and parameter binding when you use `@Parameter`.
 
 ---
 
@@ -259,7 +259,7 @@ For computer use details, see [Computer Use](computer-use.md).
 
 ## Notes on Parameters
 
-- `@Parameter` and `@Parameter` are equivalent. Prefer `@Parameter` for new tools.
+- `@Parameter` is the property wrapper for declaring tool parameters. There is no alias.
 - Do **not** re-initialize parameter wrappers inside `init()`. The property wrapper declaration is the single source of truth.
 - Enums are supported (recommended: `Codable & CaseIterable`), and enum values are emitted in JSON schema.
 
