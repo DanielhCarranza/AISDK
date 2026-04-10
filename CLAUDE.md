@@ -8,7 +8,7 @@ AISDK is a single-import Swift SDK for multi-provider LLM integration on Apple p
 
 **Vision:** The definitive AI SDK for iOS/macOS development — multimodal, supporting all frontier models (OpenAI, Anthropic, Gemini) with model routing via LiteLLM and OpenRouter. One import, any model, any modality.
 
-**Current state:** `2.0.0-beta.1` on `main`. Active development toward stable v2 release.
+**Current state:** `2.0.0-beta.6` on `main`. Active development toward stable v2 release.
 
 **Key abstractions:**
 - `LLM` protocol — unified interface for all providers (`generateText`, `streamText`, `generateObject`)
@@ -147,17 +147,19 @@ docs/tutorials/         — Getting started through sessions
 ```
 
 ### Providers
-| Provider | Class | v2 Wrapper | API Endpoint |
-|----------|-------|------------|--------------|
+| Provider | Client (ProviderClient) | v2 Wrapper | API Endpoint |
+|----------|------------------------|------------|--------------|
 | OpenAI (Responses) | `OpenAIResponsesClientAdapter` | `ProviderLanguageModelAdapter` (native v2) | `POST /v1/responses` |
 | OpenAI (Chat Completions) | `OpenAIClientAdapter` | `ProviderLanguageModelAdapter` (native v2) | `POST /v1/chat/completions` |
 | OpenAI (Legacy) | `OpenAIProvider` | `AILanguageModelAdapter` | Both endpoints |
-| Anthropic | `AnthropicProvider` | `AILanguageModelAdapter` | Messages API |
-| Gemini | `GeminiProvider` | `AILanguageModelAdapter` | Gemini API |
-| OpenRouter | `OpenRouterClient` | `ProviderLanguageModelAdapter` (native v2) | OpenAI-compatible |
-| LiteLLM | `LiteLLMClient` | `ProviderLanguageModelAdapter` (native v2) | OpenAI-compatible |
+| Anthropic (v2) | `AnthropicClientAdapter` (actor) | `ProviderLanguageModelAdapter` (native v2) | Messages API |
+| Anthropic (Legacy) | `AnthropicProvider` | `AILanguageModelAdapter` | Messages API |
+| Gemini (v2) | `GeminiClientAdapter` (actor) | `ProviderLanguageModelAdapter` (native v2) | Gemini API |
+| Gemini (Legacy) | `GeminiProvider` | `AILanguageModelAdapter` | Gemini API |
+| OpenRouter | `OpenRouterClient` (actor) | `ProviderLanguageModelAdapter` (native v2) | OpenAI-compatible |
+| LiteLLM | `LiteLLMClient` (actor) | `ProviderLanguageModelAdapter` (native v2) | OpenAI-compatible |
 
-**Factory methods:** `ProviderLanguageModelAdapter.openAIResponses(apiKey:modelId:)` (recommended) and `.openAIChatCompletions(apiKey:modelId:)` for quick setup.
+**Factory methods:** `ProviderLanguageModelAdapter.openAIResponses(apiKey:modelId:)` (recommended), `.openAIChatCompletions(apiKey:modelId:)`, `.anthropic(apiKey:modelId:)`, `.gemini(apiKey:modelId:)` for quick setup.
 
 ## Security
 
