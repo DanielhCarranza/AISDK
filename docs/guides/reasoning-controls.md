@@ -100,7 +100,7 @@ Non-reasoning models silently ignore the config (no error thrown).
 If `maxTokens <= 1024` (the minimum thinking budget), reasoning is silently skipped and a warning is logged. The request proceeds without thinking. Set `maxTokens` above 1024 to use reasoning.
 
 ### Non-reasoning models
-Sending `reasoning` config to a model that doesn't support it (e.g., `gpt-4o`, `claude-sonnet-4`) is safe — the config is ignored.
+Sending `reasoning` config to a model that doesn't support it (e.g., `gpt-4o`, `claude-haiku-3.5`) is safe — the config is ignored.
 
 ### Provider-specific overrides
 Provider-specific options take precedence over unified `AIReasoningConfig`. For Anthropic, if you set `betaConfiguration.extendedThinking = true` on the adapter, it acts as a fallback when no unified config is set.
