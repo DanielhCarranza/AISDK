@@ -23,7 +23,7 @@ print("Sources: \(result.sources)")  // Structured citations
 |------|:---:|:---:|:---:|:---:|
 | `.webSearchDefault` | Yes | Yes | Yes | No |
 | `.codeExecutionDefault` | Yes | Yes | Yes | No |
-| `.fileSearch(config)` | Yes | No | No | No |
+| `.fileSearch(config)` | Yes | No | Yes | No |
 | `.imageGenerationDefault` | Yes | No | No | No |
 | `.urlContext` | No | No | Yes | No |
 | `.computerUseDefault` | Yes | Yes | No | No |
@@ -72,21 +72,71 @@ let request = AITextRequest(
 let result = try await llm.generateText(request: request)
 ```
 
+## File Search
+
+Search uploaded documents server-side. Store identifiers are provider-specific:
+
+```swift
+// OpenAI — vector store IDs
+let openaiConfig = FileSearchConfig(
+    vectorStoreIds: ["vs_abc123"],
+    maxNumResults: 5,
+    scoreThreshold: 0.7
+)
+
+// Gemini — file search store names
+let geminiConfig = FileSearchConfig(
+    vectorStoreIds: ["fileSearchStores/my-store-id"]
+)
+
+let request = AITextRequest(
+    messages: [.user("What does the contract say about termination?")],
+    builtInTools: [.fileSearch(geminiConfig)]
+)
+let result = try await gemini.generateText(request: request)
+
+// File search citations use sourceType: .file
+for source in result.sources {
+    print("Document: \(source.title ?? "N/A")")
+    print("Excerpt: \(source.snippet ?? "N/A")")
+}
+```
+
+| Config field | OpenAI | Gemini |
+|---|---|---|
+| `vectorStoreIds` | Vector store IDs (`vs_...`) | Store names (`fileSearchStores/...`) |
+| `maxNumResults` | Supported | Not supported |
+| `scoreThreshold` | Supported | Not supported |
+
+## URL Context (Gemini)
+
+Fetches and grounds responses against the content of up to 20 URLs. The model extracts text from the URLs and uses it as context.
+
+```swift
+let gemini = ProviderLanguageModelAdapter.gemini(apiKey: key, modelId: "gemini-2.5-flash")
+let request = AITextRequest(
+    messages: [.user("Summarize https://example.com/article")],
+    builtInTools: [.urlContext]
+)
+let result = try await gemini.generateText(request: request)
+```
+
+Limits: max 20 URLs per request, 34 MB total content. Cannot combine with custom function calling tools.
+
 ## Error Handling for Unsupported Tools
 
 When you request a tool the provider doesn't support, you get an actionable error:
 
 ```swift
 do {
-    // fileSearch is OpenAI-only
+    // imageGeneration is OpenAI-only
     let request = AITextRequest(
-        messages: [.user("Search my files")],
-        builtInTools: [.fileSearch(FileSearchConfig(vectorStoreIds: ["vs_123"]))]
+        messages: [.user("Generate an image")],
+        builtInTools: [.imageGenerationDefault]
     )
     let result = try await gemini.generateText(request: request)
 } catch let error as ProviderError {
-    // "fileSearch is not supported by Gemini.
-    //  Supported: webSearch, codeExecution, urlContext."
+    // "imageGeneration is not supported by Gemini."
     print(error.localizedDescription)
 }
 ```

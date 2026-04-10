@@ -248,7 +248,7 @@ let request = AITextRequest(
 |------|-------------|-----------|
 | `.webSearch` / `.webSearchDefault` | Web search grounding | OpenAI, Anthropic, Gemini |
 | `.codeExecution` / `.codeExecutionDefault` | Server-side code execution | OpenAI, Anthropic, Gemini |
-| `.fileSearch(config)` | Vector store search | OpenAI |
+| `.fileSearch(config)` | File/vector store search | OpenAI, Gemini |
 | `.imageGeneration` / `.imageGenerationDefault` | Image generation | OpenAI |
 | `.urlContext` | URL content fetching | Gemini |
 | `.computerUse` / `.computerUseDefault` | Screen interaction | OpenAI, Anthropic |
