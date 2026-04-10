@@ -19,7 +19,8 @@ try await store.appendMessage(userMsg, toSession: session.id)
 
 // Stream assistant response and persist incrementally
 let buffer = StreamingPersistenceBuffer(store: store, sessionId: session.id)
-for try await event in llm.streamText(messages: session.messages) {
+let request = AITextRequest(messages: session.messages)
+for try await event in llm.streamText(request: request) {
     switch event {
     case .textDelta(let text):
         await buffer.bufferDelta(text)

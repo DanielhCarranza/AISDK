@@ -72,7 +72,8 @@ let result = try await gemini.generateText(
 ## Track Cache Usage
 
 ```swift
-let result = try await llm.generateText(messages: msgs, caching: .enabled)
+let request = AITextRequest(messages: msgs, caching: .enabled)
+let result = try await llm.generateText(request: request)
 
 if let usage = result.usage {
     print("Input tokens: \(usage.promptTokens ?? 0)")

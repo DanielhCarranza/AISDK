@@ -19,15 +19,18 @@ let result = try await llm.generateText(
 ```swift
 // OpenAI (o4-mini, o3, o1)
 let openai = ProviderLanguageModelAdapter.openAIResponses(apiKey: key, modelId: "o4-mini")
-let result = try await openai.generateText(messages: msgs, reasoning: .effort(.medium))
+let request = AITextRequest(messages: msgs, reasoning: .effort(.medium))
+let result = try await openai.generateText(request: request)
 
 // Anthropic (claude-opus-4)
-let anthropic = AILanguageModelAdapter(provider: AnthropicProvider(apiKey: key), modelId: "claude-opus-4-20250514")
-let result = try await anthropic.generateText(messages: msgs, reasoning: .effort(.high))
+let anthropic = ProviderLanguageModelAdapter.anthropic(apiKey: key, modelId: "claude-opus-4-20250514")
+let request = AITextRequest(messages: msgs, reasoning: .effort(.high))
+let result = try await anthropic.generateText(request: request)
 
 // Gemini (gemini-2.5-flash, gemini-2.5-pro)
-let gemini = AILanguageModelAdapter(provider: GeminiProvider(apiKey: key), modelId: "gemini-2.5-flash")
-let result = try await gemini.generateText(messages: msgs, reasoning: .effort(.low))
+let gemini = ProviderLanguageModelAdapter.gemini(apiKey: key, modelId: "gemini-2.5-flash")
+let request = AITextRequest(messages: msgs, reasoning: .effort(.low))
+let result = try await gemini.generateText(request: request)
 ```
 
 ## AIReasoningConfig Options
@@ -51,7 +54,8 @@ AIReasoningConfig(effort: .high, budgetTokens: 8192, summary: .concise)
 ## Streaming Reasoning
 
 ```swift
-for try await event in llm.streamText(messages: msgs, reasoning: .effort(.high)) {
+let request = AITextRequest(messages: msgs, reasoning: .effort(.high))
+for try await event in llm.streamText(request: request) {
     switch event {
     case .reasoningDelta(let thinking):
         // Show reasoning/thinking as it arrives
@@ -104,8 +108,9 @@ Provider-specific options take precedence over unified `AIReasoningConfig`. For 
 ## Track Reasoning Token Usage
 
 ```swift
-let result = try await llm.generateText(messages: msgs, reasoning: .effort(.high))
-if let reasoningTokens = result.usage?.reasoningTokens {
+let request = AITextRequest(messages: msgs, reasoning: .effort(.high))
+let result = try await llm.generateText(request: request)
+if let reasoningTokens = result.usage.reasoningTokens {
     print("Used \(reasoningTokens) tokens for reasoning")
 }
 ```
