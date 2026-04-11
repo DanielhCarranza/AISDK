@@ -8,9 +8,17 @@ import Foundation
 final class AnthropicServiceRealAPITests: XCTestCase {
     
     var service: AnthropicService!
-    
-    override func setUp() {
-        super.setUp()
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        // Gate the entire class behind RUN_LIVE_TESTS=1 BEFORE loading .env.
+        // Without this guard, loadEnvironmentVariables() would setenv() API keys
+        // into the process, contaminating downstream tests that only check for
+        // key presence and causing them to accidentally hit live APIs.
+        guard ProcessInfo.processInfo.environment["RUN_LIVE_TESTS"] == "1" else {
+            throw XCTSkip("Live tests disabled (set RUN_LIVE_TESTS=1)")
+        }
+
         loadEnvironmentVariables()
 
         guard shouldUseRealAPI() else {
