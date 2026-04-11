@@ -349,6 +349,7 @@ final class OpenRouterIntegrationTests: XCTestCase {
     }
 
     func test_tool_calling_with_configured_model() async throws {
+        try LiveTestHelpers.skipIfProviderBroken(.openRouter)
         let client = try createClient()
         let model = try toolModelOrSkip()
 
@@ -385,7 +386,12 @@ final class OpenRouterIntegrationTests: XCTestCase {
             toolChoice: .auto
         )
 
-        let response = try await client.execute(request: request)
+        let response: ProviderResponse
+        do {
+            response = try await client.execute(request: request)
+        } catch {
+            try LiveTestHelpers.handle(error, provider: .openRouter)
+        }
         XCTAssertFalse(response.toolCalls.isEmpty, "Expected a tool call from \(model)")
 
         let toolCall = response.toolCalls.first

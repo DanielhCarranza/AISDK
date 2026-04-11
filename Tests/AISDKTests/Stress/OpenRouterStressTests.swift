@@ -64,6 +64,7 @@ final class OpenRouterStressTests: XCTestCase {
 
     /// Tests concurrent non-streaming requests to verify rate limit handling
     func test_concurrent_execute_requests() async throws {
+        try LiveTestHelpers.skipIfProviderBroken(.openRouter)
         let client = try createClient()
         let metrics = StressTestMetrics()
         let concurrency = Self.maxConcurrentRequests
@@ -88,6 +89,13 @@ final class OpenRouterStressTests: XCTestCase {
                     }
                 }
             }
+        }
+
+        // If every request errored out, surface the real reason via the live
+        // helper (quota/auth/payment) rather than asserting a flaky success
+        // rate against a broken provider.
+        if metrics.completedCount == 0, let firstError = metrics.errors.first {
+            try LiveTestHelpers.handle(firstError, provider: .openRouter)
         }
 
         // Most requests should succeed

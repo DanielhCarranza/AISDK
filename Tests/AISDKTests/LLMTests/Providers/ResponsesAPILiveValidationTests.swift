@@ -141,6 +141,7 @@ final class ResponsesAPILiveValidationTests: XCTestCase {
     // MARK: - Reasoning Summary via AITextRequest (Path B)
 
     func testReasoningSummaryStreaming_PathB() async throws {
+        try LiveTestHelpers.skipIfProviderBroken(.openAI)
         // Uses AITextRequest → convertToResponseRequest (Path B) → createResponseStream
         // Verifies: AIReasoningConfig.effort(.medium) → summary auto-defaults to "auto" → SSE reasoning deltas
         let aiRequest = AITextRequest(
@@ -154,11 +155,15 @@ final class ResponsesAPILiveValidationTests: XCTestCase {
         XCTAssertEqual(responseRequest.reasoning?.summary, "auto", "Path B should auto-default summary")
 
         var reasoningText = ""
-        let stream = provider.createResponseStream(request: responseRequest)
-        for try await chunk in stream {
-            if let reasoning = chunk.delta?.reasoning, let summary = reasoning.summary {
-                reasoningText += summary
+        do {
+            let stream = provider.createResponseStream(request: responseRequest)
+            for try await chunk in stream {
+                if let reasoning = chunk.delta?.reasoning, let summary = reasoning.summary {
+                    reasoningText += summary
+                }
             }
+        } catch {
+            try LiveTestHelpers.handle(error, provider: .openAI)
         }
 
         XCTAssertFalse(reasoningText.isEmpty, "Expected reasoning summary deltas via Path B with effort(.medium)")

@@ -80,6 +80,7 @@ final class CachingLiveTests: XCTestCase {
     // MARK: - Test: Second identical request reads from cache
 
     func testCacheHitOnSecondRequest() async throws {
+        try LiveTestHelpers.skipIfProviderBroken(.anthropic)
         let apiKey = try skipIfNoKey()
         let client = AnthropicClientAdapter(apiKey: apiKey)
 
@@ -98,15 +99,22 @@ final class CachingLiveTests: XCTestCase {
             caching: AICacheConfig(retention: .standard)
         )
 
-        // First request — creates the cache
-        let response1 = try await client.execute(request: request)
+        let response1: ProviderResponse
+        let response2: ProviderResponse
+        do {
+            // First request — creates the cache
+            response1 = try await client.execute(request: request)
+            // Second request — same system prompt should hit cache
+            response2 = try await client.execute(request: request)
+        } catch {
+            try LiveTestHelpers.handle(error, provider: .anthropic)
+        }
+
         XCTAssertFalse(response1.content.isEmpty)
         let usage1 = try XCTUnwrap(response1.usage)
         let cached1 = usage1.cachedTokens ?? 0
         print("  Request 1: prompt=\(usage1.promptTokens), cached=\(cached1)")
 
-        // Second request — same system prompt should hit cache
-        let response2 = try await client.execute(request: request)
         XCTAssertFalse(response2.content.isEmpty)
         let usage2 = try XCTUnwrap(response2.usage)
         let cached2 = usage2.cachedTokens ?? 0
