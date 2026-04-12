@@ -23,36 +23,60 @@ public class MockLLMProvider: LegacyLLM {
     public var mockStreamChunks: [ChatCompletionChunk] = []
     
     // MARK: - Tracking
-    
-    public private(set) var lastRequest: ChatCompletionRequest?
-    public private(set) var requestCount = 0
-    
+    //
+    // `requestCount` and `lastRequest` are written from inside the async
+    // provider methods, which `StreamingChatTests.testConcurrentStreaming`
+    // invokes from multiple child tasks concurrently. Guard them behind a
+    // lock so the writes are serialized and any post-run reads see a
+    // consistent value. See #49.
+
+    private let stateLock = NSLock()
+    private var _lastRequest: ChatCompletionRequest?
+    private var _requestCount = 0
+
+    public var lastRequest: ChatCompletionRequest? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _lastRequest
+    }
+
+    public var requestCount: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _requestCount
+    }
+
+    private func recordRequest(_ request: ChatCompletionRequest) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        _lastRequest = request
+        _requestCount += 1
+    }
+
     // MARK: - Initialization
-    
+
     public init() {
         setupDefaultResponses()
     }
-    
+
     // MARK: - LegacyLLM Protocol Implementation
-    
+
     public func sendChatCompletion(request: ChatCompletionRequest) async throws -> ChatCompletionResponse {
-        lastRequest = request
-        requestCount += 1
-        
+        recordRequest(request)
+
         if shouldThrowError {
             throw errorToThrow
         }
-        
+
         // Simulate network delay
         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-        
+
         return mockChatResponse ?? createDefaultResponse(for: request)
     }
-    
+
     public func sendChatCompletionStream(request: ChatCompletionRequest) async throws -> AsyncThrowingStream<ChatCompletionChunk, Error> {
-        lastRequest = request
-        requestCount += 1
-        
+        recordRequest(request)
+
         if shouldThrowError {
             throw errorToThrow
         }
@@ -87,8 +111,10 @@ public class MockLLMProvider: LegacyLLM {
     // MARK: - Helper Methods
     
     public func reset() {
-        requestCount = 0
-        lastRequest = nil
+        stateLock.lock()
+        _requestCount = 0
+        _lastRequest = nil
+        stateLock.unlock()
         shouldThrowError = false
         setupDefaultResponses()
     }
